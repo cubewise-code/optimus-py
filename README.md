@@ -1,2 +1,43 @@
-# tm1-optipyzer
-Find the best cube dimension order with TM1py
+
+# TM1 Optipyzer
+
+Find the ideal dimension order for your cube
+
+## Installing
+
+Install TM1py:
+```
+pip install TM1py
+```
+
+Clone or download the `tm-optipyzer` Repository from GitHub
+
+
+## Usage
+
+* Adjust config.ini to match your TM1 environments
+* Execute the `optipyzer.py` script: 
+```
+C:\Projects\tm1-optipyzer\optipyzer.py -c="FIN General Ledger" -v="view1,view2" -e="10" -p="50" -m="All"
+```
+
+## Considerations
+- Run on the same machine
+- Use big views 
+- Choose a sensible number of permutations for BruteForce and greedy mode
+- OneShot mode requires DefaultMembers to be configured
+
+
+## Running the tests
+
+No tests yet
+
+## Built With
+
+* [requests](http://docs.python-requests.org/en/master/) - Python HTTP Requests for Humans
+* [TM1py](https://github.com/cubewise-code/TM1py) - A python wrapper for the TM1 REST API
+
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details

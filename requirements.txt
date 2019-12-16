@@ -1,0 +1,6 @@
+matplotlib
+requests>=2.21.0
+numpy>=1.16.2
+pandas>=0.24.2
+TM1py>=1.4.0
+pytz>=2018.9
