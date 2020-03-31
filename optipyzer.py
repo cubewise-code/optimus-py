@@ -280,7 +280,7 @@ class OneShotExecutor(OptipyzerExecutor):
     FROM [{}]
     """.format(
             "{Tm1FilterByLevel({Tm1SubsetAll([" + dimension + "])}, 0)}",
-            "*".join("{[" + dimension_name + "].[DefaultMember]}" for dimension_name in other_dimensions),
+            "*".join("{[" + dimension_name + "].DefaultMember}" for dimension_name in other_dimensions),
             cube_name)
         populated_rows = self.tm1.cubes.cells.execute_mdx_cellcount(mdx)
         return populated_rows / number_of_leaves
