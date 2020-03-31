@@ -32,7 +32,8 @@ class ExecutionMode(Enum):
     BRUTE_FORCE = 1
     ONE_SHOT = 2
     GREEDY = 3
-    ORIGINAL_ORDER = 4
+    SMART = 4
+    ORIGINAL_ORDER = 5
 
     @classmethod
     def _missing_(cls, value):
@@ -195,6 +196,18 @@ class OptipyzerExecutor:
             raise RuntimeError("Aborting " + APP_NAME + " - Performance Monitor must be activated")
         return value
 
+    @staticmethod
+    def swap(order: list, i1, i2) -> list:
+        seq = order[:]
+        seq[i1], seq[i2] = seq[i2], seq[i1]
+        return seq
+
+    @staticmethod
+    def swap_random(order: list) -> list:
+        idx = range(len(order))
+        i1, i2 = random.sample(idx, 2)
+        return OptipyzerExecutor.swap(order, i1, i2)
+
 
 class OriginalOrderExecutor(OptipyzerExecutor):
     def __init__(self, tm1: TM1Service, cube_name, view_names, dimensions, executions,
@@ -298,25 +311,15 @@ class GreedyExecutor(OptipyzerExecutor):
 
         if len(view_names) > 1:
             logging.warning("Greedy mode will use first view and ignore other views: " + str(view_names[1:]))
-        self.view_name = view_names[0]
 
+        self.view_name = view_names[0]
         self.mode = ExecutionMode.GREEDY
         self.max_permutations = max_permutations
-        self.orders_with_results = dict()
-        self.discarded_orders = set()
 
     def _determine_start_order(self) -> list:
         return sorted(
             self.dimensions,
             key=lambda dim: self.tm1.dimensions.hierarchies.elements.get_number_of_leaf_elements(dim, dim))
-
-    @staticmethod
-    def swap_random(order: list) -> list:
-        seq = order[:]
-        idx = range(len(seq))
-        i1, i2 = random.sample(idx, 2)
-        seq[i1], seq[i2] = seq[i2], seq[i1]
-        return seq
 
     def _determine_next_order(self, order) -> list:
         return self.swap_random(order)
@@ -325,10 +328,11 @@ class GreedyExecutor(OptipyzerExecutor):
         best_order = self._determine_start_order()
         best_result = self._evaluate_permutation(best_order)
         results = [best_result]
+        discarded_orders = set()
 
         for _ in range(self.max_permutations):
             current_order = self._determine_next_order(best_order)
-            if tuple(current_order) in self.discarded_orders:
+            if tuple(current_order) in discarded_orders:
                 continue
             current_permutation_result = self._evaluate_permutation(current_order)
 
@@ -337,9 +341,46 @@ class GreedyExecutor(OptipyzerExecutor):
                 best_order = current_order
                 best_result = current_permutation_result
             else:
-                self.discarded_orders.add(tuple(current_order))
+                discarded_orders.add(tuple(current_order))
 
         return results
+
+
+class SmartExecutor(OptipyzerExecutor):
+    def __init__(self, tm1: TM1Service, cube_name, view_names, dimensions, executions,
+                 measure_dimension_only_numeric):
+        super().__init__(tm1, cube_name, view_names, dimensions, executions,
+                         measure_dimension_only_numeric)
+
+        if len(view_names) > 1:
+            logging.warning("Smart mode will use first view and ignore other views: " + str(view_names[1:]))
+
+        self.view_name = view_names[0]
+        self.mode = ExecutionMode.SMART
+
+    def execute(self):
+        current_order = []
+        dimensions_left = self.dimensions[:]
+
+        for position in range(len(self.dimensions)):
+            results_per_dimension = list()
+
+            for original_position, dimension in enumerate(self.dimensions):
+                if dimension in current_order:
+                    continue
+
+                permutation = current_order + OptipyzerExecutor.swap(dimensions_left, position, original_position)[
+                                              position:]
+                results_per_dimension.append(self._evaluate_permutation(permutation))
+
+            best_dimension_for_position = sorted(
+                results_per_dimension,
+                key=lambda r: r.mean_query_time(self.view_name))[0].dimension_order[position]
+
+            current_order.append(best_dimension_for_position)
+            dimensions_left.remove(best_dimension_for_position)
+
+        return current_order
 
 
 def main(cube_name, view_names, measure_dimension_only_numeric, max_permutations, executions, mode):
@@ -367,6 +408,12 @@ def main(cube_name, view_names, measure_dimension_only_numeric, max_permutations
                     tm1, cube_name, view_names, displayed_dimension_order, executions,
                     measure_dimension_only_numeric, max_permutations)
                 permutation_results += greedy.execute()
+
+            if mode == ExecutionMode.ALL or mode == ExecutionMode.SMART:
+                smart = SmartExecutor(
+                    tm1, cube_name, view_names, displayed_dimension_order, executions,
+                    measure_dimension_only_numeric)
+                permutation_results += smart.execute()
 
             original_order = OriginalOrderExecutor(
                 tm1, cube_name, view_names, displayed_dimension_order, executions,
