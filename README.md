@@ -10,7 +10,7 @@ Install TM1py:
 pip install TM1py
 ```
 
-Clone or download the `tm-optipyzer` Repository from GitHub
+Clone or download the `optimus-py` Repository from GitHub
 
 
 ## Usage
