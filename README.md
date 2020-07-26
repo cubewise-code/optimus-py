@@ -1,7 +1,7 @@
 
 # TM1 Optipyzer
 
-Find the ideal dimension order for your cube
+Find the ideal dimension order for your TM1 cube
 
 ## Installing
 
@@ -18,7 +18,7 @@ Clone or download the `optimus-py` Repository from GitHub
 * Adjust config.ini to match your TM1 environments
 * Execute the `optipyzer.py` script: 
 ```
-C:\Projects\tm1-optipyzer\optipyzer.py -c="FIN General Ledger" -v="view1,view2" -e="10" -p="50" -m="All"
+C:\Projects\optimus-py\optimuspy.py -c="FIN General Ledger" -v="view1,view2" -e="10" -p="50" -m="All"
 ```
 
 ## Considerations
@@ -26,11 +26,8 @@ C:\Projects\tm1-optipyzer\optipyzer.py -c="FIN General Ledger" -v="view1,view2" 
 - Use big views 
 - Choose a sensible number of permutations for BruteForce and greedy mode
 - OneShot mode requires DefaultMembers to be configured
+- According to our tests, the `best` mode is the most auspicious
 
-
-## Running the tests
-
-No tests yet
 
 ## Built With
 

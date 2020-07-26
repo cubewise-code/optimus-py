@@ -134,7 +134,7 @@ if __name__ == "__main__":
     parser.add_argument('-v', '--views',
                         action="store",
                         dest="view_names",
-                        help="comma separated list cube views",
+                        help="comma separated list of cube views",
                         default=None)
     parser.add_argument('-n', '--numeric',
                         action="store",

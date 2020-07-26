@@ -22,8 +22,8 @@ def swap_random(order: list) -> List[str]:
 
 
 class OptipyzerExecutor:
-    def __init__(self, tm1: TM1Service, cube_name: str, view_names: list, displayed_dimension_order, executions,
-                 measure_dimension_only_numeric):
+    def __init__(self, tm1: TM1Service, cube_name: str, view_names: list, displayed_dimension_order: List[str],
+                 executions: int, measure_dimension_only_numeric: bool):
         self.tm1 = tm1
         self.cube_name = cube_name
         self.view_names = view_names
@@ -79,10 +79,9 @@ class OptipyzerExecutor:
 
 
 class OriginalOrderExecutor(OptipyzerExecutor):
-    def __init__(self, tm1: TM1Service, cube_name, view_names, dimensions, executions,
-                 measure_dimension_only_numeric, original_dimension_order):
-        super().__init__(tm1, cube_name, view_names, dimensions, executions,
-                         measure_dimension_only_numeric)
+    def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], dimensions: List[str], executions: int,
+                 measure_dimension_only_numeric: bool, original_dimension_order: List[str]):
+        super().__init__(tm1, cube_name, view_names, dimensions, executions, measure_dimension_only_numeric)
         self.mode = ExecutionMode.ORIGINAL_ORDER
         self.original_dimension_order = original_dimension_order
 
@@ -92,8 +91,8 @@ class OriginalOrderExecutor(OptipyzerExecutor):
 
 
 class BruteForceExecutor(OptipyzerExecutor):
-    def __init__(self, tm1: TM1Service, cube_name, view_names, dimensions, executions,
-                 measure_dimension_only_numeric, max_permutations):
+    def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], dimensions: List[str], executions: int,
+                 measure_dimension_only_numeric: bool, max_permutations: int):
         super().__init__(tm1, cube_name, view_names, dimensions, executions,
                          measure_dimension_only_numeric)
         self.mode = ExecutionMode.BRUTE_FORCE
@@ -129,10 +128,9 @@ class BruteForceExecutor(OptipyzerExecutor):
 
 
 class OneShotExecutor(OptipyzerExecutor):
-    def __init__(self, tm1: TM1Service, cube_name, view_names, dimensions, executions,
-                 measure_dimension_only_numeric):
-        super().__init__(tm1, cube_name, view_names, dimensions, executions,
-                         measure_dimension_only_numeric)
+    def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], dimensions: List[str], executions: int,
+                 measure_dimension_only_numeric: bool):
+        super().__init__(tm1, cube_name, view_names, dimensions, executions, measure_dimension_only_numeric)
         self.mode = ExecutionMode.ONE_SHOT
 
     def _determine_one_shot_order(self) -> List[str]:
@@ -152,7 +150,7 @@ class OneShotExecutor(OptipyzerExecutor):
 
         return one_shot_order
 
-    def _calculate_sparsity_ratio(self, dimension, other_dimensions, cube_name) -> float:
+    def _calculate_sparsity_ratio(self, dimension: str, other_dimensions: List[str], cube_name: str) -> float:
         number_of_leaves = self.tm1.dimensions.hierarchies.elements.get_number_of_leaf_elements(
             dimension_name=dimension,
             hierarchy_name=dimension)
@@ -174,8 +172,8 @@ class OneShotExecutor(OptipyzerExecutor):
 
 
 class GreedyExecutor(OptipyzerExecutor):
-    def __init__(self, tm1: TM1Service, cube_name, view_names, dimensions, executions,
-                 measure_dimension_only_numeric, max_permutations):
+    def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], dimensions: List[str], executions: int,
+                 measure_dimension_only_numeric: bool, max_permutations: int):
         super().__init__(tm1, cube_name, view_names, dimensions, executions,
                          measure_dimension_only_numeric)
 
@@ -214,8 +212,8 @@ class GreedyExecutor(OptipyzerExecutor):
 
 
 class BestExecutor(OptipyzerExecutor):
-    def __init__(self, tm1: TM1Service, cube_name, view_names, dimensions, executions,
-                 measure_dimension_only_numeric):
+    def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], dimensions: List[str], executions: int,
+                 measure_dimension_only_numeric: bool):
         super().__init__(tm1, cube_name, view_names, dimensions, executions,
                          measure_dimension_only_numeric)
 
