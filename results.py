@@ -1,7 +1,7 @@
 import itertools
 import os
 import statistics
-from typing import List, Dict
+from typing import List
 
 from matplotlib import pyplot as plt
 
@@ -12,7 +12,9 @@ class PermutationResult:
 
     def __init__(self, mode: str, cube_name: str, view_names: list, dimension_order: list,
                  query_times_by_view: dict, ram_usage: float = None, ram_percentage_change: float = None):
-        self.mode = mode
+        from optimuspy import ExecutionMode
+
+        self.mode = ExecutionMode(mode)
         self.cube_name = cube_name
         self.view_names = view_names
         self.dimension_order = dimension_order
@@ -44,10 +46,12 @@ class PermutationResult:
             ["ID", "Mode", "Mean Query Time", "RAM", "RAM Change in %"] +
             ["Dimension" + str(d) for d in range(1, len(self.dimension_order) + 1)]) + "\n"
 
-    def to_csv_row(self, view_name: str, label_map: Dict[str, str]) -> str:
+    def to_csv_row(self, view_name: str) -> str:
+        from optimuspy import LABEL_MAP
+
         return ",".join(
             [str(self.permutation_id)] +
-            [label_map.get(self.mode)] +
+            [LABEL_MAP[self.mode]] +
             ["{0:.8f}".format(self.mean_query_time(view_name))] +
             ["{0:.0f}".format(self.ram_usage)] +
             ["{0:.2f} %".format(self.ram_percentage_change)] +
@@ -55,17 +59,14 @@ class PermutationResult:
 
 
 class OptimusResult:
-    def __init__(self, cube_name: str, permutation_results: List[PermutationResult], label_map: Dict[str, str],
-                 color_map: Dict[str, str]):
+    def __init__(self, cube_name: str, permutation_results: List[PermutationResult]):
         self.cube_name = cube_name
         self.permutation_results = permutation_results
-        self.label_map = label_map
-        self.color_map = color_map
 
     def to_csv(self, view_name: str, file_name: str):
         lines = itertools.chain(
             [self.permutation_results[0].build_csv_header()],
-            [result.to_csv_row(view_name, label_map=self.label_map) for result in self.permutation_results])
+            [result.to_csv_row(view_name) for result in self.permutation_results])
 
         os.makedirs(os.path.dirname(file_name), exist_ok=True)
         with open(file_name, "w") as file:
@@ -73,12 +74,14 @@ class OptimusResult:
 
     # create scatter plot ram vs. performance
     def to_png(self, view_name: str, file_name: str):
+        from optimuspy import LABEL_MAP, COLOR_MAP
+
         for result in self.permutation_results:
             query_time_ratio = float(result.mean_query_time(view_name)) / float(
                 self.original_order_result.mean_query_time(view_name))
             ram_in_gb = float(result.ram_usage) / (1024 ** 3)
-            plt.scatter(query_time_ratio, ram_in_gb, color=self.color_map.get(result.mode),
-                        label=self.label_map.get(result.mode))
+            plt.scatter(query_time_ratio, ram_in_gb, color=COLOR_MAP.get(result.mode),
+                        label=LABEL_MAP.get(result.mode))
             plt.text(query_time_ratio, ram_in_gb, result.permutation_id, fontsize=7)
 
         mean_query_time = statistics.mean(
@@ -89,7 +92,7 @@ class OptimusResult:
             [result.ram_usage
              for result
              in self.permutation_results]) / (1024 ** 3)
-        plt.scatter(mean_query_time, mean_ram, color=self.color_map.get("Mean"), label=self.label_map.get("Mean"))
+        plt.scatter(mean_query_time, mean_ram, color=COLOR_MAP.get("Mean"), label=LABEL_MAP.get("Mean"))
         plt.text(mean_query_time, mean_ram, "", fontsize=7)
 
         # prettify axes

@@ -100,7 +100,7 @@ def main(instance_name: str, cube_name: str, view_names: List[str], measure_dime
                     measure_dimension_only_numeric)
                 permutation_results += best.execute()
 
-            optimus_result = OptimusResult(cube_name, permutation_results, LABEL_MAP, COLOR_MAP)
+            optimus_result = OptimusResult(cube_name, permutation_results)
 
             logging.info("Analysis Completed")
             logging.info("More details in csv and png files in results folder")

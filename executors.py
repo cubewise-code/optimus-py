@@ -216,6 +216,7 @@ class BestExecutor(OptipyzerExecutor):
                  measure_dimension_only_numeric: bool):
         super().__init__(tm1, cube_name, view_names, dimensions, executions,
                          measure_dimension_only_numeric)
+        self.mode = ExecutionMode.BEST
 
         if len(view_names) > 1:
             logging.warning("BestExecutor mode will use first view and ignore other views: " + str(view_names[1:]))
@@ -243,12 +244,12 @@ class BestExecutor(OptipyzerExecutor):
             if position > switch:
                 best_order = sorted(
                     results_per_dimension,
-                    key=lambda r: r.mean_query_time(self.view_name))[0]
+                    key=lambda r: r.ram_usage)[0]
 
             else:
                 best_order = sorted(
                     results_per_dimension,
-                    key=lambda r: r.ram_usage)[0]
+                    key=lambda r: r.mean_query_time(self.view_name))[0]
 
             resulting_order = list(best_order.dimension_order)
 
