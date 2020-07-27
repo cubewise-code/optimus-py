@@ -1,5 +1,5 @@
 
-# TM1 Optipyzer
+# TM1 Optimus-py
 
 Find the ideal dimension order for your TM1 cube
 
@@ -16,9 +16,13 @@ Clone or download the `optimus-py` Repository from GitHub
 ## Usage
 
 * Adjust config.ini to match your TM1 environments
-* Execute the `optipyzer.py` script: 
+* Execute the `optimuspy.py` script: 
 ```
 C:\Projects\optimus-py\optimuspy.py -c="FIN General Ledger" -v="view1,view2" -e="10" -p="50" -m="All"
+```
+
+```
+C:\Projects\optimus-py\optimuspy.py -c="FIN General Ledger" -v="view1" -e="15" -p="50" -m="Best"
 ```
 
 ## Considerations
