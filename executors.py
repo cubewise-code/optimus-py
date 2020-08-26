@@ -65,7 +65,7 @@ class OptipyzerExecutor:
             FROM [}}StatsByCube]
             WHERE ([}}TimeIntervals].[LATEST)
             """.format(self.cube_name)
-            value = self.tm1.cubes.cells.execute_mdx_values(mdx=mdx)[0]
+            value = list(self.tm1.cubes.cells.execute_mdx_values(mdx=mdx))[0]
             if value:
                 break
 
@@ -252,7 +252,7 @@ class BestExecutor(OptipyzerExecutor):
                     key=lambda r: r.mean_query_time(self.view_name))[0]
 
             resulting_order = list(best_order.dimension_order)
-            
+
             dimension_pool = list(resulting_order)[:position]
 
         return permutation_results
