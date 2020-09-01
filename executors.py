@@ -63,7 +63,7 @@ class OptipyzerExecutor:
             {{ [}}PerfCubes].[{}] }} ON ROWS,
             {{ [}}StatsStatsByCube].[Total Memory Used] }} ON COLUMNS
             FROM [}}StatsByCube]
-            WHERE ([}}TimeIntervals].[LATEST)
+            WHERE ([}}TimeIntervals].[LATEST])
             """.format(self.cube_name)
             value = list(self.tm1.cubes.cells.execute_mdx_values(mdx=mdx))[0]
             if value:
