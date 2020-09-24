@@ -1,7 +1,7 @@
 
 # TM1 Optimus-py
 
-Find the ideal dimension order for your TM1 cube
+Find the ideal dimension order for your TM1 cubes
 
 ## Installing
 
@@ -15,21 +15,23 @@ Clone or download the `optimus-py` Repository from GitHub
 
 ## Usage
 
-* Adjust config.ini to match your TM1 environments
+* Adjust config.ini to match your TM1 environment
+* Create uniquely named views in the relevant cubes
 * Execute the `optimuspy.py` script: 
+
 ```
-C:\Projects\optimus-py\optimuspy.py -c="FIN General Ledger" -v="view1,view2" -e="10" -p="50" -m="All"
+C:\Projects\optimus-py\optimuspy.py -c="FIN General Ledger" -v="Optimus" -e="10"
 ```
 
 ```
-C:\Projects\optimus-py\optimuspy.py -c="FIN General Ledger" -v="view1" -e="15" -p="50" -m="Best"
+C:\Projects\optimus-py\optimuspy.py --cube="FIN General Ledger" --view="Optimus" --executions="15"
 ```
 
 ## Output
 
-Optimus produces a csv report and a scatter plot from the results of the execution.
+Optimus determines the ideal dimension order for every cube, based on RAM and query speed.
+For traceability and further analysis, Optimus visualizes the results in a csv report and a scatter plot for every cube.
 
-This allows to choose a dimension order on the basis of a quantitative analysis
 
 |ID |Mode          |Mean Query Time|RAM   |RAM Change in %|Dimension1   |Dimension2  |Dimension3  |Dimension4  |Dimension5   |Dimension6  |Dimension7|Dimension8|Dimension9   |
 |---|--------------|---------------|------|---------------|-------------|------------|------------|------------|-------------|------------|----------|----------|-------------|
@@ -41,17 +43,12 @@ This allows to choose a dimension order on the basis of a quantitative analysis
 |6  |Best          |0.00479290     |259072|-50.20 %       |Business Unit|Customer    |Executive   |Industry    |SalesMeasure |State       |Time      |Version   |Product      |
 |7  |Best          |0.00548539     |259072|0.00 %         |Business Unit|Customer    |Executive   |Industry    |Product      |SalesMeasure|Time      |Version   |State        |
 
-![](https://github.com/cubewise-code/optimus-py/blob/master/images/scatter_brute_force.png)
-
 ![](https://github.com/cubewise-code/optimus-py/blob/master/images/scatter_best_mode.png)
-
 
 ## Considerations
 - Run on the same machine
 - Use big views 
-- Choose a sensible number of permutations for BruteForce and greedy mode
-- OneShot mode requires DefaultMembers to be configured
-- According to our tests, the `best` mode is the most auspicious
+- Choose a sensible number of `executions`
 
 
 ## Built With

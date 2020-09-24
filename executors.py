@@ -1,11 +1,11 @@
 import logging
 import random
 import time
+from enum import Enum
 from typing import List, Dict
 
 from TM1py import TM1Service
 
-from optimuspy import ExecutionMode
 from results import PermutationResult
 
 
@@ -19,6 +19,23 @@ def swap_random(order: list) -> List[str]:
     idx = range(len(order))
     i1, i2 = random.sample(idx, 2)
     return swap(order, i1, i2)
+
+
+class ExecutionMode(Enum):
+    ALL = 0
+    BRUTE_FORCE = 1
+    ONE_SHOT = 2
+    GREEDY = 3
+    BEST = 4
+    ORIGINAL_ORDER = 5
+
+    @classmethod
+    def _missing_(cls, value):
+        for member in cls:
+            if member.name.lower() == value.lower():
+                return member
+        # default
+        return cls.ALL
 
 
 class OptipyzerExecutor:
@@ -224,6 +241,7 @@ class BestExecutor(OptipyzerExecutor):
         self.view_name = view_names[0]
 
     def execute(self) -> List[PermutationResult]:
+        dimensions = self.dimensions[:]
         resulting_order = self.dimensions[:]
         permutation_results = []
         dimension_pool = self.dimensions[:]
@@ -231,7 +249,11 @@ class BestExecutor(OptipyzerExecutor):
         # position at which to switch from looking at memory change to looking at performance
         switch = int(len(dimension_pool) / 2)
 
-        for position in reversed(range(len(self.dimensions))):
+        if not self.measure_dimension_only_numeric:
+            dimension_pool.remove(self.dimensions[-1])
+            dimensions.remove(self.dimensions[-1])
+
+        for position in reversed(range(len(dimensions))):
             results_per_dimension = list()
 
             for original_position, dimension in enumerate(dimension_pool):
@@ -241,7 +263,7 @@ class BestExecutor(OptipyzerExecutor):
                 permutation_results.append(permutation_result)
                 results_per_dimension.append(permutation_result)
 
-            if position > switch:
+            if position >= switch:
                 best_order = sorted(
                     results_per_dimension,
                     key=lambda r: r.ram_usage)[0]
