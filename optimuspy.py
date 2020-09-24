@@ -93,8 +93,8 @@ def main(instance_name: str, view_name: str, executions: int):
             displayed_dimension_order = tm1.cubes.get_dimension_names(cube_name=cube_name)
             measure_dimension_only_numeric = is_dimension_only_numeric(tm1, original_dimension_order[-1])
 
+            permutation_results = list()
             try:
-                permutation_results = list()
 
                 original_order = OriginalOrderExecutor(
                     tm1, cube_name, [view_name], displayed_dimension_order, executions,
@@ -108,16 +108,18 @@ def main(instance_name: str, view_name: str, executions: int):
 
                 logging.info(f"Completed analysis for cube '{cube_name}'")
 
-                optimus_result = OptimusResult(cube_name, permutation_results)
-                optimus_result.to_csv(view_name, RESULT_CSV.format(cube_name, view_name, TIME_STAMP))
-                optimus_result.to_png(view_name, RESULT_PNG.format(cube_name, view_name, TIME_STAMP))
-
             except:
                 logging.error("Fatal error", exc_info=True)
                 return False
+
             finally:
                 with suppress(Exception):
                     write_vmm_vmt(tm1, cube_name, original_vmm, original_vmt)
+
+                if len(permutation_results) > 0:
+                    optimus_result = OptimusResult(cube_name, permutation_results)
+                    optimus_result.to_csv(view_name, RESULT_CSV.format(cube_name, view_name, TIME_STAMP))
+                    optimus_result.to_png(view_name, RESULT_PNG.format(cube_name, view_name, TIME_STAMP))
 
 
 if __name__ == "__main__":
