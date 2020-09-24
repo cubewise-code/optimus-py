@@ -2,11 +2,11 @@ import argparse
 import configparser
 import logging
 import time
-from enum import Enum
-from typing import List
 
 from TM1py import TM1Service
 
+from executors import ExecutionMode
+from executors import OriginalOrderExecutor, BestExecutor
 from results import OptimusResult
 
 APP_NAME = "optimuspy"
@@ -23,24 +23,6 @@ logging.basicConfig(
 
 config = configparser.ConfigParser()
 config.read(r'config.ini')
-
-
-class ExecutionMode(Enum):
-    ALL = 0
-    BRUTE_FORCE = 1
-    ONE_SHOT = 2
-    GREEDY = 3
-    BEST = 4
-    ORIGINAL_ORDER = 5
-
-    @classmethod
-    def _missing_(cls, value):
-        for member in cls:
-            if member.name.lower() == value.lower():
-                return member
-        # default
-        return cls.ALL
-
 
 COLOR_MAP = {
     ExecutionMode.BRUTE_FORCE: "#1f77b4",
@@ -59,63 +41,55 @@ LABEL_MAP = {
     "Mean": "Mean"}
 
 
-def main(instance_name: str, cube_name: str, view_names: List[str], measure_dimension_only_numeric: bool,
-         max_permutations: int, executions: int, mode: ExecutionMode):
-    from executors import OriginalOrderExecutor, OneShotExecutor, GreedyExecutor, BruteForceExecutor, BestExecutor
+def is_dimension_only_numeric(tm1: TM1Service, dimension_name: str):
+    if tm1.hierarchies.exists(dimension_name=dimension_name, hierarchy_name="Leaves"):
+        hierarchy_name = "Leaves"
+    else:
+        hierarchy_name = dimension_name
 
+    elements = tm1.elements.get_element_types(
+        dimension_name=dimension_name,
+        hierarchy_name=hierarchy_name,
+        skip_consolidations=True)
+
+    return all(e == "Numeric" for e in elements.values())
+
+
+def main(instance_name: str, view_name: str, executions: int):
     with TM1Service(**config[instance_name], session_context=APP_NAME) as tm1:
-        original_dimension_order = tm1.cubes.get_storage_dimension_order(cube_name=cube_name)
-        displayed_dimension_order = tm1.cubes.get_dimension_names(cube_name=cube_name)
+        model_cubes = filter(lambda c: not c.startswith("}"), tm1.cubes.get_all_names())
+        for cube_name in model_cubes:
+            if not tm1.views.exists(cube_name, view_name, private=False):
+                logging.info(f"Skipping cube '{cube_name}' since view '{view_name}' does not exist")
+                continue
 
-        try:
-            permutation_results = list()
+            logging.info(f"Starting analysis for cube '{cube_name}'")
+            original_dimension_order = tm1.cubes.get_storage_dimension_order(cube_name=cube_name)
+            displayed_dimension_order = tm1.cubes.get_dimension_names(cube_name=cube_name)
+            measure_dimension_only_numeric = is_dimension_only_numeric(tm1, original_dimension_order[-1])
 
-            original_order = OriginalOrderExecutor(
-                tm1, cube_name, view_names, displayed_dimension_order, executions,
-                measure_dimension_only_numeric, original_dimension_order)
-            permutation_results += original_order.execute()
+            try:
+                permutation_results = list()
 
-            # One Shot goes first, as it may blow up the overall RAM for the cube
-            if mode == ExecutionMode.ALL or mode == ExecutionMode.ONE_SHOT:
-                one_shot = OneShotExecutor(
-                    tm1, cube_name, view_names, displayed_dimension_order, executions,
-                    measure_dimension_only_numeric)
-                permutation_results += one_shot.execute()
+                original_order = OriginalOrderExecutor(
+                    tm1, cube_name, [view_name], displayed_dimension_order, executions,
+                    measure_dimension_only_numeric, original_dimension_order)
+                permutation_results += original_order.execute()
 
-            if mode == ExecutionMode.ALL or mode == ExecutionMode.BRUTE_FORCE:
-                brute_force = BruteForceExecutor(
-                    tm1, cube_name, view_names, displayed_dimension_order, executions,
-                    measure_dimension_only_numeric, max_permutations)
-                permutation_results += brute_force.execute()
-
-            if mode == ExecutionMode.ALL or mode == ExecutionMode.GREEDY:
-                greedy = GreedyExecutor(
-                    tm1, cube_name, view_names, displayed_dimension_order, executions,
-                    measure_dimension_only_numeric, max_permutations)
-                permutation_results += greedy.execute()
-
-            if mode == ExecutionMode.ALL or mode == ExecutionMode.BEST:
                 best = BestExecutor(
-                    tm1, cube_name, view_names, displayed_dimension_order, executions,
+                    tm1, cube_name, [view_name], displayed_dimension_order, executions,
                     measure_dimension_only_numeric)
                 permutation_results += best.execute()
 
-            optimus_result = OptimusResult(cube_name, permutation_results)
+                logging.info(f"Completed analysis for cube '{cube_name}'")
 
-            logging.info("Analysis Completed")
-            logging.info("More details in csv and png files in results folder")
-            for view_name in view_names:
+                optimus_result = OptimusResult(cube_name, permutation_results)
                 optimus_result.to_csv(view_name, RESULT_CSV.format(cube_name, view_name, TIME_STAMP))
                 optimus_result.to_png(view_name, RESULT_PNG.format(cube_name, view_name, TIME_STAMP))
-            return True
 
-        except:
-            logging.error("Fatal error", exc_info=True)
-            return False
-
-        finally:
-            logging.info("Reestablishing original dimension order")
-            tm1.cubes.update_storage_dimension_order(cube_name, original_dimension_order)
+            except:
+                logging.error("Fatal error", exc_info=True)
+                return False
 
 
 if __name__ == "__main__":
@@ -126,47 +100,23 @@ if __name__ == "__main__":
                         dest="instance_name",
                         help="name of the TM1 instance",
                         default=None)
-    parser.add_argument('-c', '--cube',
+    parser.add_argument('-v', '--view',
                         action="store",
-                        dest="cube_name",
-                        help="name of the cube",
+                        dest="view_name",
+                        help="the name of the cube view to exist in all cubes",
                         default=None)
-    parser.add_argument('-v', '--views',
-                        action="store",
-                        dest="view_names",
-                        help="comma separated list of cube views",
-                        default=None)
-    parser.add_argument('-n', '--numeric',
-                        action="store",
-                        dest="measure_dimension_only_numeric",
-                        help="all measures are numeric elements (True=1, False=0)",
-                        default=1)
-    parser.add_argument('-p', '--permutations',
-                        action="store",
-                        dest="max_permutations",
-                        help="maximum number of permutations to evaluate (required for BRUTE_FORCE or GREEDY mode)",
-                        default=100)
     parser.add_argument('-e', '--executions',
                         action="store",
                         dest="executions",
                         help="number of executions per view",
                         default=15)
-    parser.add_argument('-m', '--mode',
-                        action="store",
-                        dest="mode",
-                        help="All, Brute_Force or One_Shot",
-                        default="All")
 
     cmd_args = parser.parse_args()
     logging.info("Starting. Arguments retrieved from cmd: " + str(cmd_args))
     success = main(
         instance_name=cmd_args.instance_name,
-        cube_name=cmd_args.cube_name,
-        view_names=cmd_args.view_names.split(","),
-        measure_dimension_only_numeric=bool(int(cmd_args.measure_dimension_only_numeric)),
-        max_permutations=int(cmd_args.max_permutations),
-        executions=int(cmd_args.executions),
-        mode=ExecutionMode(cmd_args.mode))
+        view_name=cmd_args.view_name,
+        executions=int(cmd_args.executions))
 
     if success:
         logging.info("Finished successfully")
