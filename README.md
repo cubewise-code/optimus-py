@@ -20,11 +20,11 @@ Clone or download the `optimus-py` Repository from GitHub
 * Execute the `optimuspy.py` script: 
 
 ```
-C:\Projects\optimus-py\optimuspy.py -c="FIN General Ledger" -v="Optimus" -e="10"
+C:\Projects\optimus-py\optimuspy.py -i="tm1srv01" -v="Optimus" -e="10"
 ```
 
 ```
-C:\Projects\optimus-py\optimuspy.py --cube="FIN General Ledger" --view="Optimus" --executions="15"
+C:\Projects\optimus-py\optimuspy.py --instance="tm1srv01" --view="Optimus" --executions="15"
 ```
 
 ## Output
