@@ -28,19 +28,13 @@ config = configparser.ConfigParser()
 config.read(r'config.ini')
 
 COLOR_MAP = {
-    ExecutionMode.BRUTE_FORCE: "green",
     ExecutionMode.ORIGINAL_ORDER: "silver",
-    ExecutionMode.ONE_SHOT: "darkred",
-    ExecutionMode.GREEDY: "#7000a0",
     ExecutionMode.BEST: "#1f77b4",
     "Mean": "orange"}
 
 LABEL_MAP = {
-    ExecutionMode.BRUTE_FORCE: "Brute Force",
     ExecutionMode.ORIGINAL_ORDER: "Original Order",
-    ExecutionMode.ONE_SHOT: "One Shot",
-    ExecutionMode.GREEDY: "Greedy",
-    ExecutionMode.BEST: "Best",
+    ExecutionMode.BEST: "Iterations",
     "Mean": "Mean"}
 
 

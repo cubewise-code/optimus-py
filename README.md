@@ -45,7 +45,7 @@ For traceability and further analysis, Optimus visualizes the results in a csv r
 |6  |Best          |0.00479290     |259072|-50.20 %       |Business Unit|Customer    |Executive   |Industry    |SalesMeasure |State       |Time      |Version   |Product      |
 |7  |Best          |0.00548539     |259072|0.00 %         |Business Unit|Customer    |Executive   |Industry    |Product      |SalesMeasure|Time      |Version   |State        |
 
-![](https://github.com/cubewise-code/optimus-py/blob/master/images/scatter.png)
+![](https://github.com/cubewise-code/optimus-py/blob/master/images/scatter_plot.png)
 
 ## Considerations
 - Run on the same machine

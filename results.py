@@ -110,7 +110,7 @@ class OptimusResult:
         plt.legend(by_label.values(), by_label.keys())
 
         plt.grid(True)
-        plt.savefig(file_name)
+        plt.savefig(file_name, dpi=400)
         plt.clf()
 
     def sorted_by_query_time(self, view_name: str) -> List[PermutationResult]:
