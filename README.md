@@ -1,7 +1,7 @@
 
 ![](https://github.com/cubewise-code/optimus-py/blob/master/images/logo.png)
 
-# TM1 Optimus-py
+# TM1 OptimusPy
 
 Find the ideal dimension order for your TM1 cubes
 
@@ -19,7 +19,7 @@ Clone or download the `optimus-py` Repository from GitHub
 
 * Adjust config.ini to match your TM1 environment
 * Create uniquely named views in the relevant cubes
-* Execute the `optimuspy.py` script: 
+* Execute the `optimuspy.py`
 
 ```
 C:\Projects\optimus-py\optimuspy.py -i="tm1srv01" -v="Optimus" -e="10"
@@ -31,7 +31,7 @@ C:\Projects\optimus-py\optimuspy.py --instance="tm1srv01" --view="Optimus" --exe
 
 ## Output
 
-Optimus determines the ideal dimension order for every cube, based on RAM and query speed.
+OptimusPy determines the ideal dimension order for every cube, based on RAM and query speed.
 For traceability and further analysis, Optimus visualizes the results in a csv report and a scatter plot for every cube.
 
 
@@ -55,8 +55,8 @@ For traceability and further analysis, Optimus visualizes the results in a csv r
 
 ## Built With
 
-* [requests](http://docs.python-requests.org/en/master/) - Python HTTP Requests for Humans
 * [TM1py](https://github.com/cubewise-code/TM1py) - A python wrapper for the TM1 REST API
+* [matplotlib](https://github.com/matplotlib/matplotlib) - A comprehensive library for crating visualizations in Python.
 
 
 ## License

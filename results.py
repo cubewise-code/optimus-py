@@ -11,7 +11,8 @@ class PermutationResult:
     current_ram = None
 
     def __init__(self, mode: str, cube_name: str, view_names: list, dimension_order: list,
-                 query_times_by_view: dict, ram_usage: float = None, ram_percentage_change: float = None):
+                 query_times_by_view: dict, ram_usage: float = None, ram_percentage_change: float = None,
+                 reset_counter: bool = False):
         from optimuspy import ExecutionMode
 
         self.mode = ExecutionMode(mode)
@@ -34,6 +35,9 @@ class PermutationResult:
 
         PermutationResult.current_ram = self.ram_usage
         self.ram_percentage_change = ram_percentage_change or 0
+
+        if reset_counter:
+            PermutationResult.counter = 1
 
         self.permutation_id = PermutationResult.counter
         PermutationResult.counter += 1

@@ -61,7 +61,8 @@ class OptipyzerExecutor:
             query_times_by_view[view_name] = query_times
         return query_times_by_view
 
-    def _evaluate_permutation(self, permutation: List[str], retrieve_ram: bool = False) -> PermutationResult:
+    def _evaluate_permutation(self, permutation: List[str], retrieve_ram: bool = False,
+                              reset_counter: bool = False) -> PermutationResult:
         ram_percentage_change = self.tm1.cubes.update_storage_dimension_order(self.cube_name, permutation)
         query_times_by_view = self._determine_query_permutation_result()
 
@@ -70,7 +71,7 @@ class OptipyzerExecutor:
             ram_usage = self._retrieve_ram_usage()
 
         return PermutationResult(self.mode, self.cube_name, self.view_names, permutation, query_times_by_view,
-                                 ram_usage, ram_percentage_change)
+                                 ram_usage, ram_percentage_change, reset_counter)
 
     def _retrieve_ram_usage(self):
         value = None
@@ -102,9 +103,12 @@ class OriginalOrderExecutor(OptipyzerExecutor):
         self.mode = ExecutionMode.ORIGINAL_ORDER
         self.original_dimension_order = original_dimension_order
 
-    def execute(self):
+    def execute(self, reset_counter=True):
         # at initial execution ram must be retrieved
-        return [self._evaluate_permutation(self.original_dimension_order, retrieve_ram=True)]
+        return [self._evaluate_permutation(
+            self.original_dimension_order,
+            retrieve_ram=True,
+            reset_counter=reset_counter)]
 
 
 class BruteForceExecutor(OptipyzerExecutor):

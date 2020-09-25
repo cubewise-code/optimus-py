@@ -61,9 +61,10 @@ def is_dimension_only_numeric(tm1: TM1Service, dimension_name: str) -> bool:
 def build_vmm_vmt_mdx(cube_name: str):
     return MdxBuilder.from_cube("}CubeProperties") \
         .add_member_tuple_to_rows(Member.of("}Cubes", cube_name)) \
-        .add_hierarchy_set_to_column_axis(MdxHierarchySet.members([
-        Member.of("}CubeProperties", "VMM"),
-        Member.of("}CubeProperties", "VMT")])) \
+        .add_hierarchy_set_to_column_axis(
+        MdxHierarchySet.members([
+            Member.of("}CubeProperties", "VMM"),
+            Member.of("}CubeProperties", "VMT")])) \
         .to_mdx()
 
 
@@ -99,14 +100,15 @@ def main(instance_name: str, view_name: str, executions: int):
                 original_order = OriginalOrderExecutor(
                     tm1, cube_name, [view_name], displayed_dimension_order, executions,
                     measure_dimension_only_numeric, original_dimension_order)
-                permutation_results += original_order.execute()
+                permutation_results += original_order.execute(reset_counter=True)
 
                 best = BestExecutor(
                     tm1, cube_name, [view_name], displayed_dimension_order, executions,
                     measure_dimension_only_numeric)
                 permutation_results += best.execute()
 
-                logging.info(f"Completed analysis for cube '{cube_name}'")
+                best_order = permutation_results[-1].dimension_order
+                logging.info(f"Completed analysis for cube '{cube_name}'. Best order: {best_order}")
 
             except:
                 logging.error("Fatal error", exc_info=True)
