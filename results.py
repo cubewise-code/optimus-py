@@ -42,12 +42,12 @@ class PermutationResult:
         self.permutation_id = PermutationResult.counter
         PermutationResult.counter += 1
 
-    def mean_query_time(self, view_name: str) -> float:
-        return statistics.mean(self.query_times_by_view[view_name])
+    def mean_query_time(self, view_name: str = None) -> float:
+        return statistics.mean(self.query_times_by_view[view_name or self.view_names[0]])
 
     def build_csv_header(self) -> str:
         return ",".join(
-            ["ID", "Mode", "Mean Query Time", "RAM", "RAM Change in %"] +
+            ["ID", "Mode", "Mean Query Time", "RAM"] +
             ["Dimension" + str(d) for d in range(1, len(self.dimension_order) + 1)]) + "\n"
 
     def to_csv_row(self, view_name: str) -> str:
@@ -58,7 +58,6 @@ class PermutationResult:
             [LABEL_MAP[self.mode]] +
             ["{0:.8f}".format(self.mean_query_time(view_name))] +
             ["{0:.0f}".format(self.ram_usage)] +
-            ["{0:.2f} %".format(self.ram_percentage_change)] +
             list(self.dimension_order)) + "\n"
 
 
@@ -125,3 +124,25 @@ class OptimusResult:
         for result in self.permutation_results:
             if result.mode == ExecutionMode.ORIGINAL_ORDER:
                 return result
+
+    @property
+    def best_result(self):
+        ram_range = [result.ram_usage for result in self.permutation_results]
+        min_ram, max_ram = min(ram_range), max(ram_range)
+
+        query_speed_range = [result.mean_query_time() for result in self.permutation_results]
+        min_query_speed, max_query_speed = min(query_speed_range), max(query_speed_range)
+
+        # find a good balance between speed and ram
+        for value in (0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35):
+            ram_threshold = min_ram + value * (max_ram - min_ram)
+            query_speed_threshold = min_query_speed + value * (max_query_speed - min_query_speed)
+            for permutation_result in self.permutation_results:
+                if permutation_result.ram_usage <= ram_threshold and permutation_result.mean_query_time() <= query_speed_threshold:
+                    return permutation_result
+
+        raise NotImplementedError("No fallback for best dimension order implemented")
+
+        # if max ram > 10 GB focus on ram
+
+        # else focus on speed

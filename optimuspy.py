@@ -3,13 +3,12 @@ import configparser
 import logging
 import time
 from contextlib import suppress
-from typing import Iterable
+from typing import Iterable, Union
 
 from TM1py import TM1Service
 from mdxpy import MdxBuilder, Member, MdxHierarchySet
 
-from executors import ExecutionMode
-from executors import OriginalOrderExecutor, BestExecutor
+from executors import ExecutionMode, OriginalOrderExecutor, MainExecutor
 from results import OptimusResult
 
 APP_NAME = "optimuspy"
@@ -36,6 +35,18 @@ LABEL_MAP = {
     ExecutionMode.ORIGINAL_ORDER: "Original Order",
     ExecutionMode.BEST: "Iterations",
     "Mean": "Mean"}
+
+
+def convert_arg_to_bool(argument: Union[str, bool]):
+    if isinstance(argument, bool):
+        return argument
+
+    else:
+        if argument.lower() in ["true", "t"]:
+            return True
+        if argument.lower() in ["false", "f"]:
+            return False
+        raise ValueError("'{argument}' must be boolean or recognizable string")
 
 
 def is_dimension_only_numeric(tm1: TM1Service, dimension_name: str) -> bool:
@@ -72,7 +83,7 @@ def write_vmm_vmt(tm1: TM1Service, cube_name: str, vmm: str, vmt: str):
     tm1.cells.write_values_through_cellset(mdx, [vmm, vmt])
 
 
-def main(instance_name: str, view_name: str, executions: int):
+def main(instance_name: str, view_name: str, executions: int, fast: bool):
     with TM1Service(**config[instance_name], session_context=APP_NAME) as tm1:
         model_cubes = filter(lambda c: not c.startswith("}"), tm1.cubes.get_all_names())
         for cube_name in model_cubes:
@@ -96,13 +107,18 @@ def main(instance_name: str, view_name: str, executions: int):
                     measure_dimension_only_numeric, original_dimension_order)
                 permutation_results += original_order.execute(reset_counter=True)
 
-                best = BestExecutor(
+                best = MainExecutor(
                     tm1, cube_name, [view_name], displayed_dimension_order, executions,
-                    measure_dimension_only_numeric)
+                    measure_dimension_only_numeric, fast)
                 permutation_results += best.execute()
 
-                best_order = permutation_results[-1].dimension_order
-                logging.info(f"Completed analysis for cube '{cube_name}'. Best order: {best_order}")
+                optimus_result = OptimusResult(cube_name, permutation_results)
+
+                best_order = optimus_result.best_result.dimension_order
+                logging.info(f"Completed analysis for cube '{cube_name}'")
+
+                tm1.cubes.update_storage_dimension_order(cube_name, best_order)
+                logging.info(f"Updated dimension order: {best_order}")
 
             except:
                 logging.error("Fatal error", exc_info=True)
@@ -136,13 +152,19 @@ if __name__ == "__main__":
                         dest="executions",
                         help="number of executions per view",
                         default=15)
+    parser.add_argument('-f', '--fast',
+                        action="store",
+                        dest="fast",
+                        help="fast mode",
+                        default=False)
 
     cmd_args = parser.parse_args()
     logging.info("Starting. Arguments retrieved from cmd: " + str(cmd_args))
     success = main(
         instance_name=cmd_args.instance_name,
         view_name=cmd_args.view_name,
-        executions=int(cmd_args.executions))
+        executions=int(cmd_args.executions),
+        fast=cmd_args.fast)
 
     if success:
         logging.info("Finished successfully")
