@@ -1,10 +1,9 @@
 import logging
-import math
 import random
 import time
 from enum import Enum
-from typing import List, Dict
 from itertools import chain
+from typing import List, Dict
 
 from TM1py import TM1Service
 
@@ -115,7 +114,7 @@ class OriginalOrderExecutor(OptipyzerExecutor):
 
 class MainExecutor(OptipyzerExecutor):
     def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], dimensions: List[str], executions: int,
-                 measure_dimension_only_numeric: bool, fast: bool=False):
+                 measure_dimension_only_numeric: bool, fast: bool = False):
         super().__init__(tm1, cube_name, view_names, dimensions, executions,
                          measure_dimension_only_numeric)
         self.mode = ExecutionMode.BEST
@@ -132,13 +131,13 @@ class MainExecutor(OptipyzerExecutor):
         permutation_results = []
         dimension_pool = self.dimensions[:]
 
-        # position at which to switch from looking at memory change to looking at performance
-        mid = math.ceil(len(dimension_pool) / 2)
+        mid = int(len(dimension_pool) / 2)
 
         if not self.measure_dimension_only_numeric:
             dimension_pool.remove(self.dimensions[-1])
             dimensions.remove(self.dimensions[-1])
 
+        # iteration through positions like: n, 0, n-1, 1, n-2, 2, ...
         for iteration, position in enumerate(chain(*zip(reversed(range(len(dimensions))), range(len(dimensions))))):
             if self.fast and iteration == 2:
                 break

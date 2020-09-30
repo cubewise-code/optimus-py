@@ -1,6 +1,7 @@
 import argparse
 import configparser
 import logging
+import sys
 import time
 from contextlib import suppress
 from typing import Iterable, Union
@@ -22,6 +23,8 @@ logging.basicConfig(
     format="%(asctime)s - " + APP_NAME + " - %(levelname)s - %(message)s",
     level=logging.INFO,
 )
+# also log to stdout
+logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
 config = configparser.ConfigParser()
 config.read(r'config.ini')
@@ -107,10 +110,10 @@ def main(instance_name: str, view_name: str, executions: int, fast: bool):
                     measure_dimension_only_numeric, original_dimension_order)
                 permutation_results += original_order.execute(reset_counter=True)
 
-                best = MainExecutor(
+                main_executor = MainExecutor(
                     tm1, cube_name, [view_name], displayed_dimension_order, executions,
                     measure_dimension_only_numeric, fast)
-                permutation_results += best.execute()
+                permutation_results += main_executor.execute()
 
                 optimus_result = OptimusResult(cube_name, permutation_results)
 
@@ -118,7 +121,7 @@ def main(instance_name: str, view_name: str, executions: int, fast: bool):
                 logging.info(f"Completed analysis for cube '{cube_name}'")
 
                 tm1.cubes.update_storage_dimension_order(cube_name, best_order)
-                logging.info(f"Updated dimension order: {best_order}")
+                logging.info(f"Updated dimension order for cube '{cube_name}': {best_order}")
 
             except:
                 logging.error("Fatal error", exc_info=True)
@@ -132,6 +135,7 @@ def main(instance_name: str, view_name: str, executions: int, fast: bool):
                     optimus_result = OptimusResult(cube_name, permutation_results)
                     optimus_result.to_csv(view_name, RESULT_CSV.format(cube_name, view_name, TIME_STAMP))
                     optimus_result.to_png(view_name, RESULT_PNG.format(cube_name, view_name, TIME_STAMP))
+    return True
 
 
 if __name__ == "__main__":
@@ -164,7 +168,7 @@ if __name__ == "__main__":
         instance_name=cmd_args.instance_name,
         view_name=cmd_args.view_name,
         executions=int(cmd_args.executions),
-        fast=cmd_args.fast)
+        fast=convert_arg_to_bool(cmd_args.fast))
 
     if success:
         logging.info("Finished successfully")
