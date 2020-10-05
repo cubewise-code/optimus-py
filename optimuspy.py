@@ -90,7 +90,7 @@ def main(instance_name: str, view_name: str, executions: int, fast: bool):
     with TM1Service(**config[instance_name], session_context=APP_NAME) as tm1:
         model_cubes = filter(lambda c: not c.startswith("}"), tm1.cubes.get_all_names())
         for cube_name in model_cubes:
-            if not tm1.views.exists(cube_name, view_name, private=False):
+            if not tm1.cubes.views.exists(cube_name, view_name, private=False):
                 logging.info(f"Skipping cube '{cube_name}' since view '{view_name}' does not exist")
                 continue
 
