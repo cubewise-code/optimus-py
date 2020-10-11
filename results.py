@@ -1,8 +1,9 @@
 import itertools
 import os
 import statistics
-from typing import List
+from typing import List, Union
 
+import matplotlib.lines as mlines
 from matplotlib import pyplot as plt
 
 
@@ -20,6 +21,7 @@ class PermutationResult:
         self.view_names = view_names
         self.dimension_order = dimension_order
         self.query_times_by_view = query_times_by_view
+        self.is_best = False
 
         # from original dimension order
         if ram_usage:
@@ -42,12 +44,16 @@ class PermutationResult:
         self.permutation_id = PermutationResult.counter
         PermutationResult.counter += 1
 
-    def mean_query_time(self, view_name: str = None) -> float:
-        return statistics.mean(self.query_times_by_view[view_name or self.view_names[0]])
+    def median_query_time(self, view_name: str = None) -> float:
+        median = statistics.median(self.query_times_by_view[view_name or self.view_names[0]])
+        if not median:
+            raise RuntimeError(f"view '{view_name}' in cube '{self.cube_name}' is too small")
+
+        return median
 
     def build_csv_header(self) -> str:
         return ",".join(
-            ["ID", "Mode", "Mean Query Time", "RAM"] +
+            ["ID", "Mode", "Is Best", "Mean Query Time", "RAM"] +
             ["Dimension" + str(d) for d in range(1, len(self.dimension_order) + 1)]) + "\n"
 
     def to_csv_row(self, view_name: str) -> str:
@@ -56,15 +62,25 @@ class PermutationResult:
         return ",".join(
             [str(self.permutation_id)] +
             [LABEL_MAP[self.mode]] +
-            ["{0:.8f}".format(self.mean_query_time(view_name))] +
+            [str(self.is_best)] +
+            ["{0:.8f}".format(self.median_query_time(view_name))] +
             ["{0:.0f}".format(self.ram_usage)] +
             list(self.dimension_order)) + "\n"
 
 
 class OptimusResult:
+    TEXT_FONT_SIZE = 5
+
     def __init__(self, cube_name: str, permutation_results: List[PermutationResult]):
+
         self.cube_name = cube_name
         self.permutation_results = permutation_results
+
+        self.best_result = self.determine_best_result()
+        if self.best_result:
+            for permutation_result in permutation_results:
+                if permutation_result.permutation_id == self.best_result.permutation_id:
+                    permutation_result.is_best = True
 
     def to_csv(self, view_name: str, file_name: str):
         lines = itertools.chain(
@@ -80,23 +96,27 @@ class OptimusResult:
         from optimuspy import LABEL_MAP, COLOR_MAP
 
         for result in self.permutation_results:
-            query_time_ratio = float(result.mean_query_time(view_name)) / float(
-                self.original_order_result.mean_query_time(view_name))
+            query_time_ratio = float(result.median_query_time(view_name)) / float(
+                self.original_order_result.median_query_time(view_name)) - 1
             ram_in_gb = float(result.ram_usage) / (1024 ** 3)
-            plt.scatter(query_time_ratio, ram_in_gb, color=COLOR_MAP.get(result.mode),
-                        label=LABEL_MAP.get(result.mode))
-            plt.text(query_time_ratio, ram_in_gb, result.permutation_id, fontsize=7)
+            plt.scatter(
+                query_time_ratio,
+                ram_in_gb,
+                color=COLOR_MAP.get(result.mode),
+                label=LABEL_MAP.get(result.mode),
+                marker="x" if result.is_best else ".")
+            plt.text(query_time_ratio, ram_in_gb, result.permutation_id, fontsize=self.TEXT_FONT_SIZE)
 
         mean_query_time = statistics.mean(
-            [result.mean_query_time(view_name)
+            [result.median_query_time(view_name)
              for result
-             in self.permutation_results]) / float(self.original_order_result.mean_query_time(view_name))
+             in self.permutation_results]) / float(self.original_order_result.median_query_time(view_name)) - 1
         mean_ram = statistics.mean(
             [result.ram_usage
              for result
              in self.permutation_results]) / (1024 ** 3)
-        plt.scatter(mean_query_time, mean_ram, color=COLOR_MAP.get("Mean"), label=LABEL_MAP.get("Mean"))
-        plt.text(mean_query_time, mean_ram, "", fontsize=7)
+        plt.scatter(mean_query_time, mean_ram, color=COLOR_MAP.get("Mean"), label=LABEL_MAP.get("Mean"), marker=".")
+        plt.text(mean_query_time, mean_ram, "", fontsize=self.TEXT_FONT_SIZE)
 
         # prettify axes
         plt.xlabel('Query Time Compared to Original Order')
@@ -106,16 +126,14 @@ class OptimusResult:
         # plot legend
         handles, labels = plt.gca().get_legend_handles_labels()
         by_label = dict(zip(labels, handles))
+        # add custom best order marker: x
+        by_label["Best"] = mlines.Line2D([], [], color=COLOR_MAP.get("Iterations"), marker='x', linestyle='None',
+                                         label='Best Order')
         plt.legend(by_label.values(), by_label.keys())
 
         plt.grid(True)
         plt.savefig(file_name, dpi=400)
         plt.clf()
-
-    def sorted_by_query_time(self, view_name: str) -> List[PermutationResult]:
-        return sorted(
-            self.permutation_results,
-            key=lambda r: r.mean_query_time(view_name))
 
     @property
     def original_order_result(self) -> PermutationResult:
@@ -125,24 +143,21 @@ class OptimusResult:
             if result.mode == ExecutionMode.ORIGINAL_ORDER:
                 return result
 
-    @property
-    def best_result(self):
+    def determine_best_result(self) -> Union[PermutationResult, None]:
         ram_range = [result.ram_usage for result in self.permutation_results]
         min_ram, max_ram = min(ram_range), max(ram_range)
 
-        query_speed_range = [result.mean_query_time() for result in self.permutation_results]
+        query_speed_range = [result.median_query_time() for result in self.permutation_results]
         min_query_speed, max_query_speed = min(query_speed_range), max(query_speed_range)
 
         # find a good balance between speed and ram
-        for value in (0.01, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35):
+        for value in (0.01, 0.025, 0.05, 0.075, 0.1, 0.0125, 0.15, 0.2, 0.25):
             ram_threshold = min_ram + value * (max_ram - min_ram)
             query_speed_threshold = min_query_speed + value * (max_query_speed - min_query_speed)
             for permutation_result in self.permutation_results:
-                if permutation_result.ram_usage <= ram_threshold and permutation_result.mean_query_time() <= query_speed_threshold:
+                if all([permutation_result.ram_usage <= ram_threshold,
+                        permutation_result.median_query_time() <= query_speed_threshold]):
                     return permutation_result
 
-        raise NotImplementedError("No fallback for best dimension order implemented")
-
-        # if max ram > 10 GB focus on ram
-
-        # else focus on speed
+        # no dimension order falls in sweet spot
+        return None

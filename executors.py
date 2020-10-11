@@ -23,12 +23,9 @@ def swap_random(order: list) -> List[str]:
 
 
 class ExecutionMode(Enum):
-    ALL = 0
-    BRUTE_FORCE = 1
-    ONE_SHOT = 2
-    GREEDY = 3
-    BEST = 4
-    ORIGINAL_ORDER = 5
+    ORIGINAL_ORDER = 0
+    ITERATIONS = 1
+    RESULT = 2
 
     @classmethod
     def _missing_(cls, value):
@@ -117,7 +114,7 @@ class MainExecutor(OptipyzerExecutor):
                  measure_dimension_only_numeric: bool, fast: bool = False):
         super().__init__(tm1, cube_name, view_names, dimensions, executions,
                          measure_dimension_only_numeric)
-        self.mode = ExecutionMode.BEST
+        self.mode = ExecutionMode.ITERATIONS
         self.fast = fast
 
         if len(view_names) > 1:
@@ -163,7 +160,7 @@ class MainExecutor(OptipyzerExecutor):
             else:
                 best_order = sorted(
                     results_per_dimension,
-                    key=lambda r: r.mean_query_time(self.view_name))[0]
+                    key=lambda r: r.median_query_time(self.view_name))[0]
 
             resulting_order = list(best_order.dimension_order)
             dimension_pool.remove(resulting_order[position])

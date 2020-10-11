@@ -18,26 +18,33 @@ LOGFILE = APP_NAME + ".log"
 RESULT_CSV = "results\\{}_{}_{}.csv"
 RESULT_PNG = "results\\{}_{}_{}.png"
 
-logging.basicConfig(
-    filename=LOGFILE,
-    format="%(asctime)s - " + APP_NAME + " - %(levelname)s - %(message)s",
-    level=logging.INFO,
-)
-# also log to stdout
-logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
-
-config = configparser.ConfigParser()
-config.read(r'config.ini')
-
 COLOR_MAP = {
     ExecutionMode.ORIGINAL_ORDER: "silver",
-    ExecutionMode.BEST: "#1f77b4",
+    ExecutionMode.ITERATIONS: "#1f77b4",
+    ExecutionMode.RESULT: "green",
     "Mean": "orange"}
 
 LABEL_MAP = {
     ExecutionMode.ORIGINAL_ORDER: "Original Order",
-    ExecutionMode.BEST: "Iterations",
+    ExecutionMode.ITERATIONS: "Iterations",
+    ExecutionMode.RESULT: "Result",
     "Mean": "Mean"}
+
+
+def configure_logging():
+    logging.basicConfig(
+        filename=LOGFILE,
+        format="%(asctime)s - " + APP_NAME + " - %(levelname)s - %(message)s",
+        level=logging.INFO,
+    )
+    # also log to stdout
+    logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+
+
+def get_tm1_config():
+    config = configparser.ConfigParser()
+    config.read(r'config.ini')
+    return config
 
 
 def convert_arg_to_bool(argument: Union[str, bool]):
@@ -87,6 +94,7 @@ def write_vmm_vmt(tm1: TM1Service, cube_name: str, vmm: str, vmt: str):
 
 
 def main(instance_name: str, view_name: str, executions: int, fast: bool):
+    config = get_tm1_config()
     with TM1Service(**config[instance_name], session_context=APP_NAME) as tm1:
         model_cubes = filter(lambda c: not c.startswith("}"), tm1.cubes.get_all_names())
         for cube_name in model_cubes:
@@ -117,9 +125,15 @@ def main(instance_name: str, view_name: str, executions: int, fast: bool):
 
                 optimus_result = OptimusResult(cube_name, permutation_results)
 
-                best_order = optimus_result.best_result.dimension_order
+                best_permutation = optimus_result.best_result
                 logging.info(f"Completed analysis for cube '{cube_name}'")
+                if not best_permutation:
+                    logging.info(
+                        f"No ideal dimension order found for cube '{cube_name}'."
+                        f"Please pick manually based on csv and png results.")
+                    return True
 
+                best_order = best_permutation.dimension_order
                 tm1.cubes.update_storage_dimension_order(cube_name, best_order)
                 logging.info(f"Updated dimension order for cube '{cube_name}': {best_order}")
 
@@ -139,6 +153,8 @@ def main(instance_name: str, view_name: str, executions: int, fast: bool):
 
 
 if __name__ == "__main__":
+    configure_logging()
+
     # take arguments from cmd
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--instance',
