@@ -50,7 +50,6 @@ def get_tm1_config():
 def convert_arg_to_bool(argument: Union[str, bool]):
     if isinstance(argument, bool):
         return argument
-
     else:
         if argument.lower() in ["true", "t"]:
             return True
