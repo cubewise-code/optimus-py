@@ -53,8 +53,7 @@ class OptipyzerExecutor:
             query_times = []
             for _ in range(self.executions):
                 before = time.time()
-                self.tm1.cubes.cells.create_cellset_from_view(
-                    cube_name=self.cube_name, view_name=view_name, private=False)
+                self.tm1.cells.create_cellset_from_view(cube_name=self.cube_name, view_name=view_name, private=False)
                 query_times.append(time.time() - before)
             query_times_by_view[view_name] = query_times
         return query_times_by_view
@@ -72,8 +71,8 @@ class OptipyzerExecutor:
                                  ram_usage, ram_percentage_change, reset_counter)
 
     def _retrieve_ram_usage(self):
-        value = None
-        for _ in range(4):
+        number_of_iterations = 4
+        for i in range(number_of_iterations):
             mdx = """
             SELECT  
             {{ [}}PerfCubes].[{}] }} ON ROWS,
@@ -81,17 +80,15 @@ class OptipyzerExecutor:
             FROM [}}StatsByCube]
             WHERE ([}}TimeIntervals].[LATEST])
             """.format(self.cube_name)
-            value = list(self.tm1.cubes.cells.execute_mdx_values(mdx=mdx))[0]
+            value = list(self.tm1.cells.execute_mdx_values(mdx=mdx))[0]
             if value:
-                break
+                return value
 
             logging.info("Failed to retrieve RAM consumption. Waiting 15s before retry")
-            time.sleep(15)
+            if i < number_of_iterations-1:
+                time.sleep(15)
 
-        if not value:
-            raise RuntimeError("Performance Monitor must be activated")
-
-        return value
+        raise RuntimeError("Performance Monitor must be activated")
 
 
 class OriginalOrderExecutor(OptipyzerExecutor):
