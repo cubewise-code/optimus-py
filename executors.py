@@ -67,8 +67,13 @@ class OptipyzerExecutor:
         if retrieve_ram:
             ram_usage = self._retrieve_ram_usage()
 
-        return PermutationResult(self.mode, self.cube_name, self.view_names, permutation, query_times_by_view,
-                                 ram_usage, ram_percentage_change, reset_counter)
+        permutation_result = PermutationResult(self.mode, self.cube_name, self.view_names, permutation,
+                                               query_times_by_view, ram_usage, ram_percentage_change, reset_counter)
+        logging.info(f"Evaluated order: {permutation} "
+                      f"- RAM [GB]: {permutation_result.ram_usage / 1024 ** 3:.2f} "
+                      f"- Query time [s]: {permutation_result.median_query_time():.5f}")
+
+        return permutation_result
 
     def _retrieve_ram_usage(self):
         number_of_iterations = 4
@@ -85,7 +90,7 @@ class OptipyzerExecutor:
                 return value
 
             logging.info("Failed to retrieve RAM consumption. Waiting 15s before retry")
-            if i < number_of_iterations-1:
+            if i < number_of_iterations - 1:
                 time.sleep(15)
 
         raise RuntimeError("Performance Monitor must be activated")
