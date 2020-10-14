@@ -45,7 +45,8 @@ class PermutationResult:
         PermutationResult.counter += 1
 
     def median_query_time(self, view_name: str = None) -> float:
-        median = statistics.median(self.query_times_by_view[view_name or self.view_names[0]])
+        view_name = view_name or self.view_names[0]
+        median = statistics.median(self.query_times_by_view[view_name])
         if not median:
             raise RuntimeError(f"view '{view_name}' in cube '{self.cube_name}' is too small")
 

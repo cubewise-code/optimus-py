@@ -5,7 +5,7 @@ from enum import Enum
 from itertools import chain
 from typing import List, Dict
 
-from TM1py import TM1Service
+from TM1py import TM1Service, Process
 
 from results import PermutationResult
 
@@ -52,6 +52,8 @@ class OptipyzerExecutor:
         for view_name in self.view_names:
             query_times = []
             for _ in range(self.executions):
+                self.clear_cube_cache()
+
                 before = time.time()
                 self.tm1.cells.create_cellset_from_view(cube_name=self.cube_name, view_name=view_name, private=False)
                 query_times.append(time.time() - before)
@@ -70,8 +72,8 @@ class OptipyzerExecutor:
         permutation_result = PermutationResult(self.mode, self.cube_name, self.view_names, permutation,
                                                query_times_by_view, ram_usage, ram_percentage_change, reset_counter)
         logging.info(f"Evaluated order: {permutation} "
-                      f"- RAM [GB]: {permutation_result.ram_usage / 1024 ** 3:.2f} "
-                      f"- Query time [s]: {permutation_result.median_query_time():.5f}")
+                     f"- RAM [GB]: {permutation_result.ram_usage / 1024 ** 3:.2f} "
+                     f"- Query time [s]: {permutation_result.median_query_time():.5f}")
 
         return permutation_result
 
@@ -94,6 +96,13 @@ class OptipyzerExecutor:
                 time.sleep(15)
 
         raise RuntimeError("Performance Monitor must be activated")
+
+    def clear_cube_cache(self):
+        process = Process(name="", prolog_procedure=f"DebugUtility(125 ,0 ,0 ,'{self.cube_name}' ,'' ,'');")
+        success, status, error_log_file = self.tm1.processes.execute_process_with_return(process)
+
+        if not success:
+            raise RuntimeError(f"Failed to clear cache for cube '{self.cube_name}'. Status: '{status}'")
 
 
 class OriginalOrderExecutor(OptipyzerExecutor):

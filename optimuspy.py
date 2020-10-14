@@ -106,7 +106,7 @@ def main(instance_name: str, view_name: str, executions: int, fast: bool):
 
             logging.info(f"Starting analysis for cube '{cube_name}'")
             original_dimension_order = tm1.cubes.get_storage_dimension_order(cube_name=cube_name)
-            logging.info(f"Original dimension order for cube '{cube_name}' is '{original_dimension_order}'")
+            logging.info(f"Original dimension order for cube '{cube_name}' is: '{original_dimension_order}'")
             displayed_dimension_order = tm1.cubes.get_dimension_names(cube_name=cube_name)
             measure_dimension_only_numeric = is_dimension_only_numeric(tm1, original_dimension_order[-1])
 
