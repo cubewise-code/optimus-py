@@ -131,11 +131,11 @@ def main(instance_name: str, view_name: str, executions: int, fast: bool):
                     logging.info(
                         f"No ideal dimension order found for cube '{cube_name}'."
                         f"Please pick manually based on csv and png results.")
-                    return True
 
-                best_order = best_permutation.dimension_order
-                tm1.cubes.update_storage_dimension_order(cube_name, best_order)
-                logging.info(f"Updated dimension order for cube '{cube_name}' to {best_order}")
+                else:
+                    best_order = best_permutation.dimension_order
+                    tm1.cubes.update_storage_dimension_order(cube_name, best_order)
+                    logging.info(f"Updated dimension order for cube '{cube_name}' to {best_order}")
 
             except:
                 logging.error("Fatal error", exc_info=True)
