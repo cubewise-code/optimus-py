@@ -152,7 +152,7 @@ class OptimusResult:
         min_query_speed, max_query_speed = min(query_speed_range), max(query_speed_range)
 
         # find a good balance between speed and ram
-        for value in (0.01, 0.025, 0.05, 0.075, 0.1, 0.0125, 0.15, 0.2, 0.25):
+        for value in (0.01, 0.025, 0.05, 0.075, 0.1, 0.125, 0.15, 0.2, 0.25):
             ram_threshold = min_ram + value * (max_ram - min_ram)
             query_speed_threshold = min_query_speed + value * (max_query_speed - min_query_speed)
             for permutation_result in self.permutation_results:
