@@ -5,6 +5,7 @@ import sys
 import time
 from contextlib import suppress
 from typing import Iterable, Union
+from pathlib import Path
 
 from TM1py import TM1Service
 from mdxpy import MdxBuilder, Member, MdxHierarchySet
@@ -15,8 +16,9 @@ from results import OptimusResult
 APP_NAME = "optimuspy"
 TIME_STAMP = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
 LOGFILE = APP_NAME + ".log"
-RESULT_CSV = "results\\{}_{}_{}.csv"
-RESULT_PNG = "results\\{}_{}_{}.png"
+RESULT_PATH = Path("results/")
+RESULT_CSV = "{}_{}_{}.csv"
+RESULT_PNG = "{}_{}_{}.png"
 
 COLOR_MAP = {
     ExecutionMode.ORIGINAL_ORDER: "silver",
@@ -147,8 +149,8 @@ def main(instance_name: str, view_name: str, executions: int, fast: bool):
 
                 if len(permutation_results) > 0:
                     optimus_result = OptimusResult(cube_name, permutation_results)
-                    optimus_result.to_csv(view_name, RESULT_CSV.format(cube_name, view_name, TIME_STAMP))
-                    optimus_result.to_png(view_name, RESULT_PNG.format(cube_name, view_name, TIME_STAMP))
+                    optimus_result.to_csv(view_name, RESULT_PATH / RESULT_CSV.format(cube_name, view_name, TIME_STAMP))
+                    optimus_result.to_png(view_name, RESULT_PATH / RESULT_PNG.format(cube_name, view_name, TIME_STAMP))
     return True
 
 
