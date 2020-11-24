@@ -1,10 +1,14 @@
 import itertools
+import logging
 import os
 import statistics
+from pathlib import WindowsPath
 from typing import List, Union
 
 import matplotlib.lines as mlines
 from matplotlib import pyplot as plt
+
+SEPARATOR = ","
 
 
 class PermutationResult:
@@ -53,20 +57,21 @@ class PermutationResult:
         return median
 
     def build_csv_header(self) -> str:
-        return ",".join(
+        return SEPARATOR.join(
             ["ID", "Mode", "Is Best", "Mean Query Time", "RAM"] +
             ["Dimension" + str(d) for d in range(1, len(self.dimension_order) + 1)]) + "\n"
 
-    def to_csv_row(self, view_name: str) -> str:
+    def to_row(self, view_name: str) -> List[str]:
         from optimuspy import LABEL_MAP
 
-        return ",".join(
-            [str(self.permutation_id)] +
-            [LABEL_MAP[self.mode]] +
-            [str(self.is_best)] +
-            ["{0:.8f}".format(self.median_query_time(view_name))] +
-            ["{0:.0f}".format(self.ram_usage)] +
-            list(self.dimension_order)) + "\n"
+        return [str(self.permutation_id),
+                LABEL_MAP[self.mode],
+                str(self.is_best),
+                "{0:.8f}".format(self.median_query_time(view_name)),
+                "{0:.0f}".format(self.ram_usage)] + list(self.dimension_order)
+
+    def to_csv_row(self, view_name: str) -> str:
+        return SEPARATOR.join(self.to_row(view_name)) + "\n"
 
 
 class OptimusResult:
@@ -83,14 +88,39 @@ class OptimusResult:
                 if permutation_result.permutation_id == self.best_result.permutation_id:
                     permutation_result.is_best = True
 
-    def to_csv(self, view_name: str, file_name: str):
+    def to_lines(self, view_name) -> List[str]:
         lines = itertools.chain(
             [self.permutation_results[0].build_csv_header()],
             [result.to_csv_row(view_name) for result in self.permutation_results])
 
-        os.makedirs(os.path.dirname(file_name), exist_ok=True)
-        with open(file_name, "w") as file:
+        return list(lines)
+
+    def to_csv(self, view_name: str, file_name: 'WindowsPath'):
+        lines = self.to_lines(view_name)
+
+        os.makedirs(os.path.dirname(str(file_name)), exist_ok=True)
+        with open(str(file_name), "w") as file:
             file.writelines(lines)
+
+    def to_xlsx(self, view_name: str, file_name: 'WindowsPath'):
+        try:
+            import xlsxwriter
+
+            # Create a workbook and add a worksheet.
+            workbook = xlsxwriter.Workbook(file_name)
+            worksheet = workbook.add_worksheet()
+
+            # Iterate over the data and write it out row by row.
+            for row, line in enumerate(self.to_lines(view_name)):
+                for col, item in enumerate(line.split(SEPARATOR)):
+                    worksheet.write(row, col, item)
+
+            workbook.close()
+
+        except ImportError:
+            logging.warning("Failed to import xlsxwriter. Writing to csv instead")
+            file_name = file_name.with_suffix(".csv")
+            return self.to_csv(view_name, file_name)
 
     # create scatter plot ram vs. performance
     def to_png(self, view_name: str, file_name: str):
