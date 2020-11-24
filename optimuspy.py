@@ -1,11 +1,12 @@
 import argparse
 import configparser
 import logging
+import os
 import sys
 import time
 from contextlib import suppress
-from typing import Iterable, Union
 from pathlib import Path
+from typing import Iterable, Union
 
 from TM1py import TM1Service
 from mdxpy import MdxBuilder, Member, MdxHierarchySet
@@ -18,6 +19,7 @@ TIME_STAMP = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
 LOGFILE = APP_NAME + ".log"
 RESULT_PATH = Path("results/")
 RESULT_CSV = "{}_{}_{}.csv"
+RESULT_XLSX = "{}_{}_{}.xlsx"
 RESULT_PNG = "{}_{}_{}.png"
 
 COLOR_MAP = {
@@ -31,6 +33,19 @@ LABEL_MAP = {
     ExecutionMode.ITERATIONS: "Iterations",
     ExecutionMode.RESULT: "Result",
     "Mean": "Mean"}
+
+
+def set_current_directory():
+    # determine if application is a script file or frozen exe
+    if getattr(sys, 'frozen', False):
+        application_path = os.path.abspath(sys.executable)
+    else:
+        application_path = os.path.abspath(__file__)
+
+    directory = os.path.dirname(application_path)
+    # set current directory
+    os.chdir(directory)
+    return directory
 
 
 def configure_logging():
@@ -94,7 +109,7 @@ def write_vmm_vmt(tm1: TM1Service, cube_name: str, vmm: str, vmt: str):
     tm1.cells.write_values_through_cellset(mdx, [vmm, vmt])
 
 
-def main(instance_name: str, view_name: str, executions: int, fast: bool):
+def main(instance_name: str, view_name: str, executions: int, fast: bool, output: str):
     config = get_tm1_config()
     with TM1Service(**config[instance_name], session_context=APP_NAME) as tm1:
         model_cubes = filter(lambda c: not c.startswith("}"), tm1.cubes.get_all_names())
@@ -149,13 +164,28 @@ def main(instance_name: str, view_name: str, executions: int, fast: bool):
 
                 if len(permutation_results) > 0:
                     optimus_result = OptimusResult(cube_name, permutation_results)
-                    optimus_result.to_csv(view_name, RESULT_PATH / RESULT_CSV.format(cube_name, view_name, TIME_STAMP))
-                    optimus_result.to_png(view_name, RESULT_PATH / RESULT_PNG.format(cube_name, view_name, TIME_STAMP))
+                    optimus_result.to_png(
+                        view_name,
+                        RESULT_PATH / RESULT_PNG.format(cube_name, view_name, TIME_STAMP))
+
+                    if output.upper() == "XLSX":
+                        optimus_result.to_xlsx(
+                            view_name,
+                            RESULT_PATH / RESULT_XLSX.format(cube_name, view_name, TIME_STAMP))
+
+                    else:
+                        if not output.upper() == "CSV":
+                            logging.warning("Value for -o / --output must be 'CSV' or 'XLSX'. Default is CSV")
+                        optimus_result.to_csv(
+                            view_name,
+                            RESULT_PATH / RESULT_CSV.format(cube_name, view_name, TIME_STAMP))
+
     return True
 
 
 if __name__ == "__main__":
     configure_logging()
+    set_current_directory()
 
     # take arguments from cmd
     parser = argparse.ArgumentParser()
@@ -179,6 +209,11 @@ if __name__ == "__main__":
                         dest="fast",
                         help="fast mode",
                         default=False)
+    parser.add_argument('-o', '--output',
+                        action="store",
+                        dest="output",
+                        help="csv or xlsx",
+                        default="csv")
 
     cmd_args = parser.parse_args()
     logging.info("Starting. Arguments retrieved from cmd: " + str(cmd_args))
@@ -186,7 +221,8 @@ if __name__ == "__main__":
         instance_name=cmd_args.instance_name,
         view_name=cmd_args.view_name,
         executions=int(cmd_args.executions),
-        fast=convert_arg_to_bool(cmd_args.fast))
+        fast=convert_arg_to_bool(cmd_args.fast),
+        output=cmd_args.output)
 
     if success:
         logging.info("Finished successfully")
