@@ -109,9 +109,31 @@ def write_vmm_vmt(tm1: TM1Service, cube_name: str, vmm: str, vmt: str):
     tm1.cells.write_values_through_cellset(mdx, [vmm, vmt])
 
 
+def retrieve_performance_monitor_state(tm1: TM1Service):
+    config = tm1.server.get_active_configuration()
+    return config["Administration"]["PerformanceMonitorOn"]
+
+
+def activate_performance_monitor(tm1: TM1Service):
+    config = {
+        "Administration": {"PerformanceMonitorOn": True}
+    }
+    tm1.server.update_static_configuration(config)
+
+
+def deactivate_performance_monitor(tm1: TM1Service):
+    config = {
+        "Administration": {"PerformanceMonitorOn": False}
+    }
+    tm1.server.update_static_configuration(config)
+
+
 def main(instance_name: str, view_name: str, executions: int, fast: bool, output: str):
     config = get_tm1_config()
     with TM1Service(**config[instance_name], session_context=APP_NAME) as tm1:
+        original_performance_monitor_state = retrieve_performance_monitor_state(tm1)
+        activate_performance_monitor(tm1)
+
         model_cubes = filter(lambda c: not c.startswith("}"), tm1.cubes.get_all_names())
         for cube_name in model_cubes:
             if not tm1.cubes.views.exists(cube_name, view_name, private=False):
@@ -161,6 +183,12 @@ def main(instance_name: str, view_name: str, executions: int, fast: bool, output
             finally:
                 with suppress(Exception):
                     write_vmm_vmt(tm1, cube_name, original_vmm, original_vmt)
+
+                with suppress(Exception):
+                    if original_performance_monitor_state:
+                        activate_performance_monitor(tm1)
+                    else:
+                        deactivate_performance_monitor(tm1)
 
                 if len(permutation_results) > 0:
                     optimus_result = OptimusResult(cube_name, permutation_results)
