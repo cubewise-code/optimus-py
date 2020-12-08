@@ -128,7 +128,7 @@ def deactivate_performance_monitor(tm1: TM1Service):
     tm1.server.update_static_configuration(config)
 
 
-def main(instance_name: str, view_name: str, executions: int, fast: bool, output: str):
+def main(instance_name: str, view_name: str, executions: int, fast: bool, output: str, update: bool):
     config = get_tm1_config()
     with TM1Service(**config[instance_name], session_context=APP_NAME) as tm1:
         original_performance_monitor_state = retrieve_performance_monitor_state(tm1)
@@ -173,8 +173,13 @@ def main(instance_name: str, view_name: str, executions: int, fast: bool, output
 
                 else:
                     best_order = best_permutation.dimension_order
-                    tm1.cubes.update_storage_dimension_order(cube_name, best_order)
-                    logging.info(f"Updated dimension order for cube '{cube_name}' to {best_order}")
+                    if update:
+                        tm1.cubes.update_storage_dimension_order(cube_name, best_order)
+                        logging.info(f"Updated dimension order for cube '{cube_name}' to {best_order}")
+                    else:
+                        logging.info(f"Best order for cube '{cube_name}' {best_order}")
+                        tm1.cubes.update_storage_dimension_order(cube_name, original_dimension_order)
+                        logging.info(f"Restored original dimension order for cube '{cube_name}' to {original_dimension_order}")
 
             except:
                 logging.error("Fatal error", exc_info=True)
@@ -242,6 +247,11 @@ if __name__ == "__main__":
                         dest="output",
                         help="csv or xlsx",
                         default="csv")
+    parser.add_argument('-u', '--update',
+                        action="store",
+                        dest="update",
+                        help="update dimension order",
+                        default=False)
 
     cmd_args = parser.parse_args()
     logging.info("Starting. Arguments retrieved from cmd: " + str(cmd_args))
@@ -250,7 +260,8 @@ if __name__ == "__main__":
         view_name=cmd_args.view_name,
         executions=int(cmd_args.executions),
         fast=convert_arg_to_bool(cmd_args.fast),
-        output=cmd_args.output)
+        output=cmd_args.output,
+        update=convert_arg_to_bool(cmd_args.update))
 
     if success:
         logging.info("Finished successfully")
