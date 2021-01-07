@@ -20,14 +20,20 @@ Clone or download the `optimus-py` Repository from GitHub
 * Adjust config.ini to match your TM1 environment
 * Create uniquely named views in the relevant cubes
 * Execute the `optimuspy.py` 
-* provide 4 arguments: -i _(name of the instance)_ -v _(name of the cube view)_ -e _(number of execution)_ -f _(fast mode)_
+* provide 6 arguments: 
+    -i _(name of the instance)_ 
+    -v _(name of the cube view)_ 
+    -e _(number of execution)_ 
+    -f _(fast mode: True or False)_
+    -o _(output: csv or xlsx)_ 
+    -u _(update original order: True or False)_
 
 ```
-C:\Projects\optimus-py\optimuspy.py -i="tm1srv01" -v="Optimus" -e="10" -f="False"
+C:\Projects\optimus-py\optimuspy.py -i="tm1srv01" -v="Optimus" -e="10" -f="False" -o="csv" -u=True
 ```
 
 ```
-C:\Projects\optimus-py\optimuspy.py --instance="tm1srv01" --view="Optimus" --executions="15" --fast="False"
+C:\Projects\optimus-py\optimuspy.py --instance="tm1srv01" --view="Optimus" --executions="15" --fast="False" --output="csv" --update=True
 ```
 
 ## Output
