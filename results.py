@@ -163,6 +163,8 @@ class OptimusResult:
         plt.legend(by_label.values(), by_label.keys())
 
         plt.grid(True)
+
+        os.makedirs(os.path.dirname(str(file_name)), exist_ok=True)
         plt.savefig(file_name, dpi=400)
         plt.clf()
 
