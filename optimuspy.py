@@ -128,9 +128,15 @@ def deactivate_performance_monitor(tm1: TM1Service):
     tm1.server.update_static_configuration(config)
 
 
-def main(instance_name: str, view_name: str, executions: int, fast: bool, output: str, update: bool):
+def main(instance_name: str, view_name: str, executions: int, fast: bool, output: str, update: bool, password: str):
     config = get_tm1_config()
-    with TM1Service(**config[instance_name], session_context=APP_NAME) as tm1:
+    tm1_args = dict(config[instance_name])
+    tm1_args['session_context'] = APP_NAME
+    if password:
+        tm1_args['password'] = password
+        tm1_args['decode_b64'] = False
+
+    with TM1Service(**tm1_args) as tm1:
         original_performance_monitor_state = retrieve_performance_monitor_state(tm1)
         activate_performance_monitor(tm1)
 
@@ -179,7 +185,8 @@ def main(instance_name: str, view_name: str, executions: int, fast: bool, output
                     else:
                         logging.info(f"Best order for cube '{cube_name}' {best_order}")
                         tm1.cubes.update_storage_dimension_order(cube_name, original_dimension_order)
-                        logging.info(f"Restored original dimension order for cube '{cube_name}' to {original_dimension_order}")
+                        logging.info(
+                            f"Restored original dimension order for cube '{cube_name}' to {original_dimension_order}")
 
             except:
                 logging.error("Fatal error", exc_info=True)
@@ -252,16 +259,27 @@ if __name__ == "__main__":
                         dest="update",
                         help="update dimension order",
                         default=False)
+    parser.add_argument('-p', '--password',
+                        action="store",
+                        dest="password",
+                        help="TM1 password",
+                        default=None)
 
     cmd_args = parser.parse_args()
-    logging.info("Starting. Arguments retrieved from cmd: " + str(cmd_args))
+    password = cmd_args.password
+    if password:
+        # password must not be logged
+        cmd_args.password = "*****"
+
+    logging.info(f"Starting. Arguments retrieved from cmd: {cmd_args}")
     success = main(
         instance_name=cmd_args.instance_name,
         view_name=cmd_args.view_name,
         executions=int(cmd_args.executions),
         fast=convert_arg_to_bool(cmd_args.fast),
         output=cmd_args.output,
-        update=convert_arg_to_bool(cmd_args.update))
+        update=convert_arg_to_bool(cmd_args.update),
+        password=password)
 
     if success:
         logging.info("Finished successfully")
