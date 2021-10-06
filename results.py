@@ -15,17 +15,23 @@ class PermutationResult:
     counter = 1
     current_ram = None
 
-    def __init__(self, mode: str, cube_name: str, view_names: list, dimension_order: list,
-                 query_times_by_view: dict, ram_usage: float = None, ram_percentage_change: float = None,
+    def __init__(self, mode: str, cube_name: str, view_names: list, process_name: str, dimension_order: list,
+                 query_times_by_view: dict, process_times_by_process: dict, ram_usage: float = None, ram_percentage_change: float = None,
                  reset_counter: bool = False):
         from optimuspy import ExecutionMode
 
         self.mode = ExecutionMode(mode)
         self.cube_name = cube_name
         self.view_names = view_names
+        self.process_name = process_name
         self.dimension_order = dimension_order
         self.query_times_by_view = query_times_by_view
+        self.process_times_by_process = process_times_by_process
         self.is_best = False
+        if self.process_name == "No Process":
+            self.no_process = True
+        else:
+            self.no_process = False
 
         # from original dimension order
         if ram_usage:
@@ -56,22 +62,28 @@ class PermutationResult:
 
         return median
 
+    def median_process_time(self, process_name: str = None) -> float:
+        process_name = process_name or self.process_name
+        median = statistics.median(self.process_times_by_process[process_name])
+        return median
+
     def build_csv_header(self) -> str:
         return SEPARATOR.join(
-            ["ID", "Mode", "Is Best", "Mean Query Time", "RAM"] +
+            ["ID", "Mode", "Is Best", "Mean Query Time", "Mean Process Time", "RAM"] +
             ["Dimension" + str(d) for d in range(1, len(self.dimension_order) + 1)]) + "\n"
 
-    def to_row(self, view_name: str) -> List[str]:
+    def to_row(self, view_name: str, process_name: str) -> List[str]:
         from optimuspy import LABEL_MAP
 
         return [str(self.permutation_id),
                 LABEL_MAP[self.mode],
                 str(self.is_best),
                 "{0:.8f}".format(self.median_query_time(view_name)),
+                "{0:.8f}".format(self.median_process_time(process_name)),
                 "{0:.0f}".format(self.ram_usage)] + list(self.dimension_order)
 
-    def to_csv_row(self, view_name: str) -> str:
-        return SEPARATOR.join(self.to_row(view_name)) + "\n"
+    def to_csv_row(self, view_name: str, process_name: str) -> str:
+        return SEPARATOR.join(self.to_row(view_name, process_name)) + "\n"
 
 
 class OptimusResult:
@@ -88,21 +100,21 @@ class OptimusResult:
                 if permutation_result.permutation_id == self.best_result.permutation_id:
                     permutation_result.is_best = True
 
-    def to_lines(self, view_name) -> List[str]:
+    def to_lines(self, view_name, process_name) -> List[str]:
         lines = itertools.chain(
             [self.permutation_results[0].build_csv_header()],
-            [result.to_csv_row(view_name) for result in self.permutation_results])
+            [result.to_csv_row(view_name, process_name) for result in self.permutation_results])
 
         return list(lines)
 
-    def to_csv(self, view_name: str, file_name: 'WindowsPath'):
-        lines = self.to_lines(view_name)
+    def to_csv(self, view_name: str, process_name: str,file_name: 'WindowsPath'):
+        lines = self.to_lines(view_name, process_name)
 
         os.makedirs(os.path.dirname(str(file_name)), exist_ok=True)
         with open(str(file_name), "w") as file:
             file.writelines(lines)
 
-    def to_xlsx(self, view_name: str, file_name: 'WindowsPath'):
+    def to_xlsx(self, view_name: str, process_name: str, file_name: 'WindowsPath'):
         try:
             import xlsxwriter
 
@@ -111,7 +123,7 @@ class OptimusResult:
             worksheet = workbook.add_worksheet()
 
             # Iterate over the data and write it out row by row.
-            for row, line in enumerate(self.to_lines(view_name)):
+            for row, line in enumerate(self.to_lines(view_name, process_name)):
                 for col, item in enumerate(line.split(SEPARATOR)):
                     worksheet.write(row, col, item)
 
@@ -123,20 +135,29 @@ class OptimusResult:
             return self.to_csv(view_name, file_name)
 
     # create scatter plot ram vs. performance
-    def to_png(self, view_name: str, file_name: str):
+    def to_png(self, view_name: str, process_name: str, file_name: str):
         from optimuspy import LABEL_MAP, COLOR_MAP
 
+        fig, ax = plt.subplots()
+
         for result in self.permutation_results:
-            query_time_ratio = float(result.median_query_time(view_name)) / float(
-                self.original_order_result.median_query_time(view_name)) - 1
-            ram_in_gb = float(result.ram_usage) / (1024 ** 3)
-            plt.scatter(
+            query_time_ratio=(float(result.median_query_time(view_name)) / float(
+                self.original_order_result.median_query_time(view_name)) - 1)
+            ram_in_gb = (float(result.ram_usage) / (1024 ** 3))
+
+            process_time_result_ms=(float(result.median_process_time(process_name))*1000)
+
+            ax.scatter(
                 query_time_ratio,
                 ram_in_gb,
+                s=process_time_result_ms if result.no_process else 800,
                 color=COLOR_MAP.get(result.mode),
                 label=LABEL_MAP.get(result.mode),
-                marker="x" if result.is_best else ".")
-            plt.text(query_time_ratio, ram_in_gb, result.permutation_id, fontsize=self.TEXT_FONT_SIZE)
+                marker="x" if result.is_best else "o"
+            )
+            ax.text(query_time_ratio, ram_in_gb, result.permutation_id, fontsize=self.TEXT_FONT_SIZE)
+
+        ax.grid(True)
 
         mean_query_time = statistics.mean(
             [result.median_query_time(view_name)
@@ -146,27 +167,47 @@ class OptimusResult:
             [result.ram_usage
              for result
              in self.permutation_results]) / (1024 ** 3)
-        plt.scatter(mean_query_time, mean_ram, color=COLOR_MAP.get("Mean"), label=LABEL_MAP.get("Mean"), marker=".")
-        plt.text(mean_query_time, mean_ram, "", fontsize=self.TEXT_FONT_SIZE)
+        mean_process_time_ms = statistics.mean(
+            [result.median_process_time(process_name)
+             for result
+             in self.permutation_results])*1000
+
+
+        ax.scatter(mean_query_time,
+                   mean_ram,
+                   s=mean_process_time_ms,
+                   color=COLOR_MAP.get("Mean"),
+                   label=LABEL_MAP.get("Mean"),
+                   marker="o")
+
+        ax.text(mean_query_time, mean_ram, "Mean", fontsize=self.TEXT_FONT_SIZE)
 
         # prettify axes
-        plt.xlabel('Query Time Compared to Original Order')
-        plt.ylabel('RAM in GB')
-        plt.gca().set_xticklabels(['{:.0f}%'.format(x * 100) for x in plt.gca().get_xticks()])
+        ax.set_xlabel('Query Time Compared to Original Order')
+        ax.set_ylabel('RAM in GB')
+
 
         # plot legend
-        handles, labels = plt.gca().get_legend_handles_labels()
+
+        handles, labels = ax.get_legend_handles_labels()
         by_label = dict(zip(labels, handles))
         # add custom best order marker: x
         by_label["Best"] = mlines.Line2D([], [], color=COLOR_MAP.get("Iterations"), marker='x', linestyle='None',
                                          label='Best Order')
-        plt.legend(by_label.values(), by_label.keys())
 
-        plt.grid(True)
+        lgnd = ax.legend(by_label.values(), by_label.keys(), loc="upper right")
+
+        lgnd.legendHandles[0]._sizes = [50]
+        lgnd.legendHandles[1]._sizes = [50]
+        lgnd.legendHandles[2]._sizes = [50]
+        lgnd.legendHandles[3]._sizes = [50]
+
+        #check Plot
+        plt.show()
 
         os.makedirs(os.path.dirname(str(file_name)), exist_ok=True)
-        plt.savefig(file_name, dpi=400)
-        plt.clf()
+        fig.savefig(file_name, dpi=400)
+        fig.clf()
 
     @property
     def original_order_result(self) -> PermutationResult:
