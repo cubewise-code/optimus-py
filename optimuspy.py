@@ -128,7 +128,7 @@ def deactivate_performance_monitor(tm1: TM1Service):
     tm1.server.update_static_configuration(config)
 
 
-def main(instance_name: str, view_name: str, executions: int, fast: bool, output: str, update: bool, password: str):
+def main(instance_name: str, view_name: str, process_name: str, executions: int, fast: bool, output: str, update: bool, password: str):
     config = get_tm1_config()
     tm1_args = dict(config[instance_name])
     tm1_args['session_context'] = APP_NAME
@@ -159,12 +159,12 @@ def main(instance_name: str, view_name: str, executions: int, fast: bool, output
             try:
 
                 original_order = OriginalOrderExecutor(
-                    tm1, cube_name, [view_name], displayed_dimension_order, executions,
+                    tm1, cube_name, [view_name], process_name, displayed_dimension_order, executions,
                     measure_dimension_only_numeric, original_dimension_order)
                 permutation_results += original_order.execute(reset_counter=True)
 
                 main_executor = MainExecutor(
-                    tm1, cube_name, [view_name], displayed_dimension_order, executions,
+                    tm1, cube_name, [view_name], process_name, displayed_dimension_order, executions,
                     measure_dimension_only_numeric, fast)
                 permutation_results += main_executor.execute()
 
@@ -205,20 +205,20 @@ def main(instance_name: str, view_name: str, executions: int, fast: bool, output
                 if len(permutation_results) > 0:
                     optimus_result = OptimusResult(cube_name, permutation_results)
                     optimus_result.to_png(
-                        view_name,
-                        RESULT_PATH / RESULT_PNG.format(cube_name, view_name, TIME_STAMP))
+                        view_name, process_name,
+                        RESULT_PATH / RESULT_PNG.format(cube_name, view_name, process_name, TIME_STAMP))
 
                     if output.upper() == "XLSX":
                         optimus_result.to_xlsx(
-                            view_name,
-                            RESULT_PATH / RESULT_XLSX.format(cube_name, view_name, TIME_STAMP))
+                            view_name, process_name,
+                            RESULT_PATH / RESULT_XLSX.format(cube_name, view_name, process_name, TIME_STAMP))
 
                     else:
                         if not output.upper() == "CSV":
                             logging.warning("Value for -o / --output must be 'CSV' or 'XLSX'. Default is CSV")
                         optimus_result.to_csv(
-                            view_name,
-                            RESULT_PATH / RESULT_CSV.format(cube_name, view_name, TIME_STAMP))
+                            view_name, process_name,
+                            RESULT_PATH / RESULT_CSV.format(cube_name, view_name, process_name, TIME_STAMP))
 
     return True
 
@@ -264,6 +264,11 @@ if __name__ == "__main__":
                         dest="password",
                         help="TM1 password",
                         default=None)
+    parser.add_argument('-t', '--process',
+                        action="store",
+                        dest="process_name",
+                        help="TI Process Name",
+                        default="No Process")
 
     cmd_args = parser.parse_args()
     password = cmd_args.password
@@ -272,6 +277,7 @@ if __name__ == "__main__":
         cmd_args.password = "*****"
 
     logging.info(f"Starting. Arguments retrieved from cmd: {cmd_args}")
+
     success = main(
         instance_name=cmd_args.instance_name,
         view_name=cmd_args.view_name,
@@ -279,7 +285,8 @@ if __name__ == "__main__":
         fast=convert_arg_to_bool(cmd_args.fast),
         output=cmd_args.output,
         update=convert_arg_to_bool(cmd_args.update),
-        password=password)
+        password=password,
+        process_name=cmd_args.process_name)
 
     if success:
         logging.info("Finished successfully")
