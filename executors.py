@@ -47,6 +47,10 @@ class OptipyzerExecutor:
         self.executions = executions
         self.measure_dimension_only_numeric = measure_dimension_only_numeric
         self.mode = None
+        if process_name is None:
+            self.include_process = False
+        else:
+            self.include_process = True
 
     def _determine_query_permutation_result(self) -> Dict[str, List[float]]:
         query_times_by_view = {}
@@ -64,27 +68,25 @@ class OptipyzerExecutor:
     def _determine_process_permutation_result(self) -> Dict[str, List[float]]:
         process_times_by_process = {}
         process_times = []
-        if self.process_name != "No Process":
-            for _ in range(self.executions):
-                self.clear_cube_cache()
-                before = time.time()
-                try:
-                    success, status, error_log_file = self.tm1.processes.execute_with_return(process_name=self.process_name)
-                except Exception as e:
-                    raise e
-                process_times.append(time.time() - before)
-                process_times_by_process[self.process_name] = process_times
-        else:
-            process_times_by_process["No Process"] = [0]
+        for _ in range(self.executions):
+            self.clear_cube_cache()
+            before = time.time()
+            try:
+                success, status, error_log_file = self.tm1.processes.execute_with_return(process_name=self.process_name)
+            except Exception as e:
+                raise e
+            process_times.append(time.time() - before)
+            process_times_by_process[self.process_name] = process_times
         return process_times_by_process
 
     def _evaluate_permutation(self, permutation: List[str], retrieve_ram: bool = False,
                               reset_counter: bool = False) -> PermutationResult:
         ram_percentage_change = self.tm1.cubes.update_storage_dimension_order(self.cube_name, permutation)
         query_times_by_view = self._determine_query_permutation_result()
-        process_times_by_process = self._determine_process_permutation_result()
 
-
+        process_times_by_process = None
+        if self.include_process:
+            process_times_by_process = self._determine_process_permutation_result()
 
         ram_usage = None
         if retrieve_ram:
@@ -92,10 +94,15 @@ class OptipyzerExecutor:
 
         permutation_result = PermutationResult(self.mode, self.cube_name, self.view_names, self.process_name, permutation,
                                                query_times_by_view, process_times_by_process, ram_usage, ram_percentage_change, reset_counter)
+
+        process_log = "- No process included in test"
+        if self.include_process:
+            process_log = f"- Process time [s]: {permutation_result.median_process_time():.5f}"
+
         logging.info(f"Evaluated order: {permutation} "
                      f"- RAM [GB]: {permutation_result.ram_usage / 1024 ** 3:.2f} "
                      f"- Query time [s]: {permutation_result.median_query_time():.5f}"
-                     f"- Process time [s]: {permutation_result.median_process_time():.5f}")
+                     + process_log)
 
         return permutation_result
 

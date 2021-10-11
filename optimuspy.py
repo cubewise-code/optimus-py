@@ -268,7 +268,7 @@ if __name__ == "__main__":
                         action="store",
                         dest="process_name",
                         help="TI Process Name",
-                        default="No Process")
+                        default=None)
 
     cmd_args = parser.parse_args()
     password = cmd_args.password
