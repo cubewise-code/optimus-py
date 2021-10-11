@@ -28,10 +28,11 @@ class PermutationResult:
         self.query_times_by_view = query_times_by_view
         self.process_times_by_process = process_times_by_process
         self.is_best = False
-        if self.process_name == "No Process":
-            self.no_process = True
+        if process_name is None:
+            self.include_process = False
         else:
-            self.no_process = False
+            self.include_process = True
+
 
         # from original dimension order
         if ram_usage:
@@ -75,12 +76,19 @@ class PermutationResult:
     def to_row(self, view_name: str, process_name: str) -> List[str]:
         from optimuspy import LABEL_MAP
 
-        return [str(self.permutation_id),
-                LABEL_MAP[self.mode],
-                str(self.is_best),
-                "{0:.8f}".format(self.median_query_time(view_name)),
-                "{0:.8f}".format(self.median_process_time(process_name)),
-                "{0:.0f}".format(self.ram_usage)] + list(self.dimension_order)
+        if process_name is None:
+            return [str(self.permutation_id),
+                    LABEL_MAP[self.mode],
+                    str(self.is_best),
+                    "{0:.8f}".format(self.median_query_time(view_name)),
+                    "{0:.0f}".format(self.ram_usage)] + list(self.dimension_order)
+        else:
+            return [str(self.permutation_id),
+                    LABEL_MAP[self.mode],
+                    str(self.is_best),
+                    "{0:.8f}".format(self.median_query_time(view_name)),
+                    "{0:.8f}".format(self.median_process_time(process_name)),
+                    "{0:.0f}".format(self.ram_usage)] + list(self.dimension_order)
 
     def to_csv_row(self, view_name: str, process_name: str) -> str:
         return SEPARATOR.join(self.to_row(view_name, process_name)) + "\n"
@@ -145,12 +153,13 @@ class OptimusResult:
                 self.original_order_result.median_query_time(view_name)) - 1)
             ram_in_gb = (float(result.ram_usage) / (1024 ** 3))
 
-            process_time_result_ms=(float(result.median_process_time(process_name))*1000)
+            if result.include_process:
+                process_time_result_ms=(float(result.median_process_time(process_name))*1000)
 
             ax.scatter(
                 query_time_ratio,
                 ram_in_gb,
-                s=process_time_result_ms if result.no_process else 800,
+                s=process_time_result_ms if result.include_process else 50,
                 color=COLOR_MAP.get(result.mode),
                 label=LABEL_MAP.get(result.mode),
                 marker="x" if result.is_best else "o"
@@ -167,15 +176,16 @@ class OptimusResult:
             [result.ram_usage
              for result
              in self.permutation_results]) / (1024 ** 3)
-        mean_process_time_ms = statistics.mean(
-            [result.median_process_time(process_name)
-             for result
-             in self.permutation_results])*1000
 
+        if result.include_process:
+            mean_process_time_ms = statistics.mean(
+                [result.median_process_time(process_name)
+                 for result
+                 in self.permutation_results])*1000
 
         ax.scatter(mean_query_time,
                    mean_ram,
-                   s=mean_process_time_ms,
+                   s=mean_process_time_ms if result.include_process else 50,
                    color=COLOR_MAP.get("Mean"),
                    label=LABEL_MAP.get("Mean"),
                    marker="o")
