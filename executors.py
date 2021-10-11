@@ -75,6 +75,8 @@ class OptipyzerExecutor:
                 success, status, error_log_file = self.tm1.processes.execute_with_return(process_name=self.process_name)
             except Exception as e:
                 raise e
+            if not success:
+                raise RuntimeError(f"Process: {self.process_name} not successful; Status: {status}")
             process_times.append(time.time() - before)
             process_times_by_process[self.process_name] = process_times
         return process_times_by_process
