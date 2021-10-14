@@ -5,10 +5,12 @@ import statistics
 from pathlib import WindowsPath
 from typing import List, Union
 
-import matplotlib.lines as mlines
-from matplotlib import pyplot as plt
+import seaborn as sns; sns.set_theme()
+import matplotlib.pyplot as plt
+import pandas as pd
 
 SEPARATOR = ","
+HEADER = ["ID", "Mode", "Is Best", "Mean Query Time", "Mean Process Time", "RAM"]
 
 
 class PermutationResult:
@@ -68,27 +70,35 @@ class PermutationResult:
         median = statistics.median(self.process_times_by_process[process_name])
         return median
 
+    def build_header(self) -> list:
+        dimensions = []
+        for d in range(1, len(self.dimension_order) + 1):
+            dimensions.append("Dimension" + str(d))
+        header = HEADER + dimensions
+        return header
+
     def build_csv_header(self) -> str:
-        return SEPARATOR.join(
-            ["ID", "Mode", "Is Best", "Mean Query Time", "Mean Process Time", "RAM"] +
-            ["Dimension" + str(d) for d in range(1, len(self.dimension_order) + 1)]) + "\n"
+        return SEPARATOR.join(self.build_header()) + "\n"
+
 
     def to_row(self, view_name: str, process_name: str) -> List[str]:
         from optimuspy import LABEL_MAP
 
         if process_name is None:
-            return [str(self.permutation_id),
+            row = [str(self.permutation_id),
                     LABEL_MAP[self.mode],
                     str(self.is_best),
                     "{0:.8f}".format(self.median_query_time(view_name)),
+                    "0.00000000",
                     "{0:.0f}".format(self.ram_usage)] + list(self.dimension_order)
         else:
-            return [str(self.permutation_id),
+            row = [str(self.permutation_id),
                     LABEL_MAP[self.mode],
                     str(self.is_best),
                     "{0:.8f}".format(self.median_query_time(view_name)),
                     "{0:.8f}".format(self.median_process_time(process_name)),
                     "{0:.0f}".format(self.ram_usage)] + list(self.dimension_order)
+        return row
 
     def to_csv_row(self, view_name: str, process_name: str) -> str:
         return SEPARATOR.join(self.to_row(view_name, process_name)) + "\n"
@@ -107,6 +117,14 @@ class OptimusResult:
             for permutation_result in permutation_results:
                 if permutation_result.permutation_id == self.best_result.permutation_id:
                     permutation_result.is_best = True
+
+    def to_dataframe(self, view_name, process_name) -> pd.DataFrame:
+        header=self.permutation_results[0].build_header()
+        rows = []
+        for result in self.permutation_results:
+            rows.append(result.to_row(view_name, process_name))
+        return pd.DataFrame(rows, columns=header)
+
 
     def to_lines(self, view_name, process_name) -> List[str]:
         lines = itertools.chain(
@@ -144,80 +162,41 @@ class OptimusResult:
 
     # create scatter plot ram vs. performance
     def to_png(self, view_name: str, process_name: str, file_name: str):
-        from optimuspy import LABEL_MAP, COLOR_MAP
+        from optimuspy import COLOR_MAP
+        df = self.to_dataframe(view_name, process_name)
+        df = df[["ID", "Mean Query Time", "Mean Process Time", "RAM", "Mode"]]
+        df.astype({'Mean Query Time': 'float',"Mean Process Time":"float", "RAM":"float"}).dtypes
 
-        fig, ax = plt.subplots()
+        #TODO fix the casting problem with DF as strings,
+        # rename the csv and png files,
+        # figure out ny the lables are not showing up on the Y axis,
+        # add ratio calculation to RAM and Query Time
+        # figure out how to plot the MEAN
 
-        for result in self.permutation_results:
-            query_time_ratio=(float(result.median_query_time(view_name)) / float(
-                self.original_order_result.median_query_time(view_name)) - 1)
-            ram_in_gb = (float(result.ram_usage) / (1024 ** 3))
+        f, ax = plt.subplots(figsize=(8, 8))
+        plt.rcParams['figure.figsize'] = [8, 8]
+        sns.set_style("darkgrid")
+        sns.scatterplot(data=df,
+                        x="RAM",
+                        y="Mean Query Time",
+                        size="Mean Process Time" if process_name is not None else None,
+                        hue="Mode",
+                        palette="viridis",
+                        edgecolors="black",
+                        legend=True,
+                        alpha=0.4,
+                        sizes=(20, 400))
 
-            if result.include_process:
-                process_time_result_ms=(float(result.median_process_time(process_name))*1000)
-
-            ax.scatter(
-                query_time_ratio,
-                ram_in_gb,
-                s=process_time_result_ms if result.include_process else 50,
-                color=COLOR_MAP.get(result.mode),
-                label=LABEL_MAP.get(result.mode),
-                marker="x" if result.is_best else "o"
-            )
-            ax.text(query_time_ratio, ram_in_gb, result.permutation_id, fontsize=self.TEXT_FONT_SIZE)
-
-        ax.grid(True)
-
-        mean_query_time = statistics.mean(
-            [result.median_query_time(view_name)
-             for result
-             in self.permutation_results]) / float(self.original_order_result.median_query_time(view_name)) - 1
-        mean_ram = statistics.mean(
-            [result.ram_usage
-             for result
-             in self.permutation_results]) / (1024 ** 3)
-
-        if result.include_process:
-            mean_process_time_ms = statistics.mean(
-                [result.median_process_time(process_name)
-                 for result
-                 in self.permutation_results])*1000
-
-        ax.scatter(mean_query_time,
-                   mean_ram,
-                   s=mean_process_time_ms if result.include_process else 50,
-                   color=COLOR_MAP.get("Mean"),
-                   label=LABEL_MAP.get("Mean"),
-                   marker="o")
-
-        ax.text(mean_query_time, mean_ram, "Mean", fontsize=self.TEXT_FONT_SIZE)
-
-        # prettify axes
-        ax.set_xlabel('Query Time Compared to Original Order')
-        ax.set_ylabel('RAM in GB')
-
-
-        # plot legend
-
-        handles, labels = ax.get_legend_handles_labels()
-        by_label = dict(zip(labels, handles))
-        # add custom best order marker: x
-        by_label["Best"] = mlines.Line2D([], [], color=COLOR_MAP.get("Iterations"), marker='x', linestyle='None',
-                                         label='Best Order')
-
-        lgnd = ax.legend(by_label.values(), by_label.keys(), loc="upper right")
-
-        lgnd.legendHandles[0]._sizes = [50]
-        lgnd.legendHandles[1]._sizes = [50]
-        lgnd.legendHandles[2]._sizes = [50]
-        lgnd.legendHandles[3]._sizes = [50]
-
-        #check Plot
+        plt.xlabel("RAM (GB)")
+        plt.ylabel("Mean Query TIme (s)")
         plt.show()
 
         os.makedirs(os.path.dirname(str(file_name)), exist_ok=True)
-        fig.savefig(file_name, dpi=400)
-        fig.clf()
+        f.savefig(file_name, dpi=400)
+        f.clf()
+
+
+        pass
 
     @property
     def original_order_result(self) -> PermutationResult:
