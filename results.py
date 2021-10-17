@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import pandas as pd
 
 SEPARATOR = ","
-HEADER = ["ID", "Mode", "Is Best", "Mean Query Time", "Mean Process Time", "RAM"]
+HEADER = ["ID", "Mode", "Is Best", "Mean Query Time", "Query Ratio", "Mean Process Time", "Process Ratio", "RAM", "RAM in GB"]
 
 
 class PermutationResult:
@@ -81,23 +81,41 @@ class PermutationResult:
         return SEPARATOR.join(self.build_header()) + "\n"
 
 
-    def to_row(self, view_name: str, process_name: str) -> List[str]:
+    def to_row(self, view_name: str, process_name: str, original_order_result: object) -> List[str]:
         from optimuspy import LABEL_MAP
 
+        median_query_time = float(self.median_query_time(view_name))
+        median_process_time = float(self.median_process_time(process_name))
+        original_median_query_time = float(original_order_result.median_query_time(view_name))
+        original_median_process_time = float(original_order_result.median_process_time(process_name))
+        ram_in_gb = float(self.ram_usage) / (1024 ** 3)
+
+        query_time_ratio = median_query_time / (original_median_query_time - 1)
+        process_time_ratio = median_process_time / (original_median_process_time - 1)
+
         if process_name is None:
-            row = [str(self.permutation_id),
+            row = row = [str(self.permutation_id),
                     LABEL_MAP[self.mode],
                     str(self.is_best),
-                    "{0:.8f}".format(self.median_query_time(view_name)),
-                    "0.00000000",
-                    "{0:.0f}".format(self.ram_usage)] + list(self.dimension_order)
+                    median_query_time,
+                    query_time_ratio,
+                    0,
+                    0,
+                    self.ram_usage,
+                    ram_in_gb] \
+                  + list(self.dimension_order)
+
         else:
             row = [str(self.permutation_id),
                     LABEL_MAP[self.mode],
                     str(self.is_best),
-                    "{0:.8f}".format(self.median_query_time(view_name)),
-                    "{0:.8f}".format(self.median_process_time(process_name)),
-                    "{0:.0f}".format(self.ram_usage)] + list(self.dimension_order)
+                    median_query_time,
+                    query_time_ratio,
+                    median_process_time,
+                    process_time_ratio,
+                    self.ram_usage,
+                    ram_in_gb] \
+                  + list(self.dimension_order)
         return row
 
     def to_csv_row(self, view_name: str, process_name: str) -> str:
@@ -119,11 +137,12 @@ class OptimusResult:
                     permutation_result.is_best = True
 
     def to_dataframe(self, view_name, process_name) -> pd.DataFrame:
-        header=self.permutation_results[0].build_header()
+        header = self.permutation_results[0].build_header()
         rows = []
         for result in self.permutation_results:
-            rows.append(result.to_row(view_name, process_name))
-        return pd.DataFrame(rows, columns=header)
+            rows.append(result.to_row(view_name, process_name, self.original_order_result))
+        df = pd.DataFrame(rows, columns=header)
+        return df
 
 
     def to_lines(self, view_name, process_name) -> List[str]:
@@ -164,19 +183,21 @@ class OptimusResult:
     def to_png(self, view_name: str, process_name: str, file_name: str):
         from optimuspy import COLOR_MAP
         df = self.to_dataframe(view_name, process_name)
-        df = df[["ID", "Mean Query Time", "Mean Process Time", "RAM", "Mode"]]
-        df.astype({'Mean Query Time': 'float',"Mean Process Time":"float", "RAM":"float"}).dtypes
+        df_to_plot = df[["ID", "Mean Query Time", "Mean Process Time", "RAM in GB", "Mode"]]
+        # Round to clean up the plotting
+        # RAM is in GB keep decimals, others are in seconds, keep 1 decimal
+
 
         #TODO fix the casting problem with DF as strings,
         # rename the csv and png files,
-        # figure out ny the lables are not showing up on the Y axis,
-        # add ratio calculation to RAM and Query Time
+        # Plot Ratios
+        # Check in RAM in GB is real
         # figure out how to plot the MEAN
 
-        f, ax = plt.subplots(figsize=(8, 8))
-        plt.rcParams['figure.figsize'] = [8, 8]
-        sns.set_style("darkgrid")
-        sns.scatterplot(data=df,
+
+        plt.figure(figsize=(8, 8))
+        sns.set_style("ticks")
+        p = sns.scatterplot(data=df,
                         x="RAM",
                         y="Mean Query Time",
                         size="Mean Process Time" if process_name is not None else None,
@@ -185,15 +206,20 @@ class OptimusResult:
                         edgecolors="black",
                         legend=True,
                         alpha=0.4,
-                        sizes=(20, 400))
+                        sizes=(20, 400) if process_name is not None else None)
+        sns.despine(trim=True, offset=2)
+        p.set_xlabel("RAM (GB)")
+        p.set_ylabel("Mean Query Time (s)")
+        p.legend(title='Legend', loc='best')
 
-        plt.xlabel("RAM (GB)")
-        plt.ylabel("Mean Query TIme (s)")
+        plt.grid()
+        plt.tight_layout()
         plt.show()
 
         os.makedirs(os.path.dirname(str(file_name)), exist_ok=True)
-        f.savefig(file_name, dpi=400)
-        f.clf()
+
+        plt.savefig(file_name, dpi=400)
+        plt.clf()
 
 
         pass
