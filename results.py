@@ -85,13 +85,15 @@ class PermutationResult:
         from optimuspy import LABEL_MAP
 
         median_query_time = float(self.median_query_time(view_name))
-        median_process_time = float(self.median_process_time(process_name))
         original_median_query_time = float(original_order_result.median_query_time(view_name))
-        original_median_process_time = float(original_order_result.median_process_time(process_name))
-        ram_in_gb = float(self.ram_usage) / (1024 ** 3)
+        query_time_ratio = median_query_time / original_median_query_time - 1
 
-        query_time_ratio = median_query_time / (original_median_query_time - 1)
-        process_time_ratio = median_process_time / (original_median_process_time - 1)
+        if process_name is not None:
+            median_process_time = float(self.median_process_time(process_name))
+            original_median_process_time = float(original_order_result.median_process_time(process_name))
+            process_time_ratio = median_process_time / original_median_process_time - 1
+
+        ram_in_gb = float(self.ram_usage) / (1024 ** 3)
 
         if process_name is None:
             row = row = [str(self.permutation_id),
@@ -118,8 +120,9 @@ class PermutationResult:
                   + list(self.dimension_order)
         return row
 
-    def to_csv_row(self, view_name: str, process_name: str) -> str:
-        return SEPARATOR.join(self.to_row(view_name, process_name)) + "\n"
+    def to_csv_row(self, view_name: str, process_name: str, original_order_result: object) -> str:
+        row = [str(i) for i in self.to_row(view_name, process_name, original_order_result)]
+        return SEPARATOR.join(row) + "\n"
 
 
 class OptimusResult:
@@ -148,7 +151,7 @@ class OptimusResult:
     def to_lines(self, view_name, process_name) -> List[str]:
         lines = itertools.chain(
             [self.permutation_results[0].build_csv_header()],
-            [result.to_csv_row(view_name, process_name) for result in self.permutation_results])
+            [result.to_csv_row(view_name, process_name, self.original_order_result) for result in self.permutation_results])
 
         return list(lines)
 
@@ -183,46 +186,35 @@ class OptimusResult:
     def to_png(self, view_name: str, process_name: str, file_name: str):
         from optimuspy import COLOR_MAP
         df = self.to_dataframe(view_name, process_name)
-        df_to_plot = df[["ID", "Mean Query Time", "Mean Process Time", "RAM in GB", "Mode"]]
-        # Round to clean up the plotting
-        # RAM is in GB keep decimals, others are in seconds, keep 1 decimal
-
-
-        #TODO fix the casting problem with DF as strings,
-        # rename the csv and png files,
-        # Plot Ratios
-        # Check in RAM in GB is real
-        # figure out how to plot the MEAN
-
+        df_to_plot = df[["ID", "Query Ratio", "Mean Process Time", "RAM in GB", "Mode"]]
 
         plt.figure(figsize=(8, 8))
         sns.set_style("ticks")
+
         p = sns.scatterplot(data=df,
-                        x="RAM",
-                        y="Mean Query Time",
+                        x="RAM in GB",
+                        y="Query Ratio",
                         size="Mean Process Time" if process_name is not None else None,
                         hue="Mode",
                         palette="viridis",
                         edgecolors="black",
                         legend=True,
                         alpha=0.4,
-                        sizes=(20, 400) if process_name is not None else None)
+                        sizes=(20, 500) if process_name is not None else None)
+
         sns.despine(trim=True, offset=2)
         p.set_xlabel("RAM (GB)")
-        p.set_ylabel("Mean Query Time (s)")
+        p.set_ylabel("Query Time Compared to Original Order")
         p.legend(title='Legend', loc='best')
 
         plt.grid()
         plt.tight_layout()
-        plt.show()
+        #plt.show()
 
         os.makedirs(os.path.dirname(str(file_name)), exist_ok=True)
 
         plt.savefig(file_name, dpi=400)
         plt.clf()
-
-
-        pass
 
     @property
     def original_order_result(self) -> PermutationResult:
