@@ -202,6 +202,12 @@ class OptimusResult:
                         alpha=0.4,
                         sizes=(20, 500) if process_name is not None else None)
 
+        for index, row in df.iterrows():
+            p.text(row["RAM in GB"],
+                   row["Query Ratio"],
+                   row["ID"],
+                   color='black')
+
         sns.despine(trim=True, offset=2)
         p.set_xlabel("RAM (GB)")
         p.set_ylabel("Query Time Compared to Original Order")
