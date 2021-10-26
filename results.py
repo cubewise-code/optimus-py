@@ -223,15 +223,22 @@ class OptimusResult:
         min_ram, max_ram = min(ram_range), max(ram_range)
 
         query_speed_range = [result.median_query_time() for result in self.permutation_results]
-        min_query_speed, max_query_speed = min(query_speed_range), max(query_speed_range)
+        process_speed_range = [result.median_process_time(result.process_name) for result in self.permutation_results]
 
-        # find a good balance between speed and ram
-        for value in (0.01, 0.025, 0.05, 0.075, 0.1, 0.125, 0.15, 0.2, 0.25):
+        min_query_speed, max_query_speed = min(query_speed_range), max(query_speed_range)
+        min_process_execution, max_process_execution = min(process_speed_range), max(process_speed_range)
+
+        # find a good balance between speed and ram and process speed
+        for value in (0.01, 0.025, 0.05):
             ram_threshold = min_ram + value * (max_ram - min_ram)
             query_speed_threshold = min_query_speed + value * (max_query_speed - min_query_speed)
+            process_speed_threshold = min_process_execution + value * (max_process_execution - min_process_execution)
+
             for permutation_result in self.permutation_results:
                 if all([permutation_result.ram_usage <= ram_threshold,
-                        permutation_result.median_query_time() <= query_speed_threshold]):
+                        permutation_result.median_query_time() <= query_speed_threshold,
+                        permutation_result.median_process_time() <= process_speed_threshold]):
+
                     return permutation_result
 
         # no dimension order falls in sweet spot

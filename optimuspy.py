@@ -178,7 +178,7 @@ def main(instance_name: str, view_name: str, process_name: str, executions: int,
                         tm1.cubes.update_storage_dimension_order(cube_name, best_order)
                         logging.info(f"Updated dimension order for cube '{cube_name}' to {best_order}")
                     else:
-                        logging.info(f"Best order for cube '{cube_name}' {best_order}")
+                        logging.info(f"Best order for cube '{cube_name}': {best_order}")
                         tm1.cubes.update_storage_dimension_order(cube_name, original_dimension_order)
                         logging.info(
                             f"Restored original dimension order for cube '{cube_name}' to {original_dimension_order}")
