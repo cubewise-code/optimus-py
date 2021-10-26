@@ -22,12 +22,6 @@ RESULT_CSV = "{}_{}_{}_{}.csv"
 RESULT_XLSX = "{}_{}_{}_{}.xlsx"
 RESULT_PNG = "{}_{}_{}_{}.png"
 
-COLOR_MAP = {
-    ExecutionMode.ORIGINAL_ORDER: "silver",
-    ExecutionMode.ITERATIONS: "#1f77b4",
-    ExecutionMode.RESULT: "green",
-    "Mean": "orange"}
-
 LABEL_MAP = {
     ExecutionMode.ORIGINAL_ORDER: "Original Order",
     ExecutionMode.ITERATIONS: "Iterations",
@@ -128,7 +122,8 @@ def deactivate_performance_monitor(tm1: TM1Service):
     tm1.server.update_static_configuration(config)
 
 
-def main(instance_name: str, view_name: str, process_name: str, executions: int, fast: bool, output: str, update: bool, password: str):
+def main(instance_name: str, view_name: str, process_name: str, executions: int, fast: bool, output: str, update: bool,
+         password: str = None):
     config = get_tm1_config()
     tm1_args = dict(config[instance_name])
     tm1_args['session_context'] = APP_NAME
