@@ -37,7 +37,8 @@ class ExecutionMode(Enum):
 
 
 class OptipyzerExecutor:
-    def __init__(self, tm1: TM1Service, cube_name: str, view_names: list, process_name: str, displayed_dimension_order: List[str],
+    def __init__(self, tm1: TM1Service, cube_name: str, view_names: list, process_name: str,
+                 displayed_dimension_order: List[str],
                  executions: int, measure_dimension_only_numeric: bool):
         self.tm1 = tm1
         self.cube_name = cube_name
@@ -47,10 +48,7 @@ class OptipyzerExecutor:
         self.executions = executions
         self.measure_dimension_only_numeric = measure_dimension_only_numeric
         self.mode = None
-        if process_name is None:
-            self.include_process = False
-        else:
-            self.include_process = True
+        self.include_process = bool(process_name)
 
     def _determine_query_permutation_result(self) -> Dict[str, List[float]]:
         query_times_by_view = {}
@@ -66,20 +64,19 @@ class OptipyzerExecutor:
         return query_times_by_view
 
     def _determine_process_permutation_result(self) -> Dict[str, List[float]]:
-        process_times_by_process = {}
-        process_times = []
+        execution_times = []
         for _ in range(self.executions):
             self.clear_cube_cache()
             before = time.time()
             try:
-                success, status, error_log_file = self.tm1.processes.execute_with_return(process_name=self.process_name)
+                success, status, _ = self.tm1.processes.execute_with_return(process_name=self.process_name)
             except Exception as e:
                 raise e
             if not success:
-                raise RuntimeError(f"Process: {self.process_name} not successful; Status: {status}")
-            process_times.append(time.time() - before)
-            process_times_by_process[self.process_name] = process_times
-        return process_times_by_process
+                raise RuntimeError(f"Process: '{self.process_name}' not successful; Status: '{status}'")
+            execution_times.append(time.time() - before)
+
+        return {self.process_name: execution_times}
 
     def _evaluate_permutation(self, permutation: List[str], retrieve_ram: bool = False,
                               reset_counter: bool = False) -> PermutationResult:
@@ -94,12 +91,14 @@ class OptipyzerExecutor:
         if retrieve_ram:
             ram_usage = self._retrieve_ram_usage()
 
-        permutation_result = PermutationResult(self.mode, self.cube_name, self.view_names, self.process_name, permutation,
-                                               query_times_by_view, process_times_by_process, ram_usage, ram_percentage_change, reset_counter)
+        permutation_result = PermutationResult(self.mode, self.cube_name, self.view_names, self.process_name,
+                                               permutation,
+                                               query_times_by_view, process_times_by_process, ram_usage,
+                                               ram_percentage_change, reset_counter)
 
-        process_log = "- No process included in test"
+        process_log = " - No process included in test"
         if self.include_process:
-            process_log = f"- Process time [s]: {permutation_result.median_process_time():.5f}"
+            process_log = f" - Process time [s]: {permutation_result.median_process_time():.5f}"
 
         logging.info(f"Evaluated order: {permutation} "
                      f"- RAM [GB]: {permutation_result.ram_usage / 1024 ** 3:.2f} "
@@ -137,9 +136,11 @@ class OptipyzerExecutor:
 
 
 class OriginalOrderExecutor(OptipyzerExecutor):
-    def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], process_name: str, dimensions: List[str], executions: int,
+    def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], process_name: str, dimensions: List[str],
+                 executions: int,
                  measure_dimension_only_numeric: bool, original_dimension_order: List[str]):
-        super().__init__(tm1, cube_name, view_names, process_name, dimensions, executions, measure_dimension_only_numeric)
+        super().__init__(tm1, cube_name, view_names, process_name, dimensions, executions,
+                         measure_dimension_only_numeric)
         self.mode = ExecutionMode.ORIGINAL_ORDER
         self.original_dimension_order = original_dimension_order
 
@@ -152,8 +153,8 @@ class OriginalOrderExecutor(OptipyzerExecutor):
 
 
 class MainExecutor(OptipyzerExecutor):
-    def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], process_name: str,dimensions: List[str], executions: int,
-                 measure_dimension_only_numeric: bool, fast: bool = False):
+    def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], process_name: str, dimensions: List[str],
+                 executions: int, measure_dimension_only_numeric: bool, fast: bool = False):
         super().__init__(tm1, cube_name, view_names, process_name, dimensions, executions,
                          measure_dimension_only_numeric)
         self.mode = ExecutionMode.ITERATIONS

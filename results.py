@@ -5,12 +5,15 @@ import statistics
 from pathlib import WindowsPath
 from typing import List, Union
 
-import seaborn as sns; sns.set_theme()
+import seaborn as sns;
+
+sns.set_theme()
 import matplotlib.pyplot as plt
 import pandas as pd
 
 SEPARATOR = ","
-HEADER = ["ID", "Mode", "Is Best", "Mean Query Time", "Query Ratio", "Mean Process Time", "Process Ratio", "RAM", "RAM in GB"]
+HEADER = ["ID", "Mode", "Is Best", "Mean Query Time", "Query Ratio", "Mean Process Time", "Process Ratio", "RAM",
+          "RAM in GB"]
 
 
 class PermutationResult:
@@ -18,7 +21,8 @@ class PermutationResult:
     current_ram = None
 
     def __init__(self, mode: str, cube_name: str, view_names: list, process_name: str, dimension_order: list,
-                 query_times_by_view: dict, process_times_by_process: dict, ram_usage: float = None, ram_percentage_change: float = None,
+                 query_times_by_view: dict, process_times_by_process: dict, ram_usage: float = None,
+                 ram_percentage_change: float = None,
                  reset_counter: bool = False):
         from optimuspy import ExecutionMode
 
@@ -34,7 +38,6 @@ class PermutationResult:
             self.include_process = False
         else:
             self.include_process = True
-
 
         # from original dimension order
         if ram_usage:
@@ -80,47 +83,34 @@ class PermutationResult:
     def build_csv_header(self) -> str:
         return SEPARATOR.join(self.build_header()) + "\n"
 
-
-    def to_row(self, view_name: str, process_name: str, original_order_result: object) -> List[str]:
+    def to_row(self, view_name: str, process_name: str, original_order_result: 'PermutationResult') -> List[str]:
         from optimuspy import LABEL_MAP
 
         median_query_time = float(self.median_query_time(view_name))
         original_median_query_time = float(original_order_result.median_query_time(view_name))
         query_time_ratio = median_query_time / original_median_query_time - 1
+        row = [
+            str(self.permutation_id),
+            LABEL_MAP[self.mode],
+            str(self.is_best),
+            median_query_time,
+            query_time_ratio]
 
         if process_name is not None:
             median_process_time = float(self.median_process_time(process_name))
             original_median_process_time = float(original_order_result.median_process_time(process_name))
             process_time_ratio = median_process_time / original_median_process_time - 1
-
-        ram_in_gb = float(self.ram_usage) / (1024 ** 3)
-
-        if process_name is None:
-            row = row = [str(self.permutation_id),
-                    LABEL_MAP[self.mode],
-                    str(self.is_best),
-                    median_query_time,
-                    query_time_ratio,
-                    0,
-                    0,
-                    self.ram_usage,
-                    ram_in_gb] \
-                  + list(self.dimension_order)
+            row += [median_process_time, process_time_ratio]
 
         else:
-            row = [str(self.permutation_id),
-                    LABEL_MAP[self.mode],
-                    str(self.is_best),
-                    median_query_time,
-                    query_time_ratio,
-                    median_process_time,
-                    process_time_ratio,
-                    self.ram_usage,
-                    ram_in_gb] \
-                  + list(self.dimension_order)
+            row += [0, 0]
+
+        ram_in_gb = float(self.ram_usage) / (1024 ** 3)
+        row += [self.ram_usage, ram_in_gb] + list(self.dimension_order)
+
         return row
 
-    def to_csv_row(self, view_name: str, process_name: str, original_order_result: object) -> str:
+    def to_csv_row(self, view_name: str, process_name: str, original_order_result: 'PermutationResult') -> str:
         row = [str(i) for i in self.to_row(view_name, process_name, original_order_result)]
         return SEPARATOR.join(row) + "\n"
 
@@ -139,23 +129,23 @@ class OptimusResult:
                 if permutation_result.permutation_id == self.best_result.permutation_id:
                     permutation_result.is_best = True
 
-    def to_dataframe(self, view_name, process_name) -> pd.DataFrame:
+    def to_dataframe(self, view_name: str, process_name: str) -> pd.DataFrame:
         header = self.permutation_results[0].build_header()
         rows = []
         for result in self.permutation_results:
             rows.append(result.to_row(view_name, process_name, self.original_order_result))
-        df = pd.DataFrame(rows, columns=header)
-        return df
 
+        return pd.DataFrame(rows, columns=header)
 
-    def to_lines(self, view_name, process_name) -> List[str]:
+    def to_lines(self, view_name: str, process_name: str) -> List[str]:
         lines = itertools.chain(
             [self.permutation_results[0].build_csv_header()],
-            [result.to_csv_row(view_name, process_name, self.original_order_result) for result in self.permutation_results])
+            [result.to_csv_row(view_name, process_name, self.original_order_result) for result in
+             self.permutation_results])
 
         return list(lines)
 
-    def to_csv(self, view_name: str, process_name: str,file_name: 'WindowsPath'):
+    def to_csv(self, view_name: str, process_name: str, file_name: 'WindowsPath'):
         lines = self.to_lines(view_name, process_name)
 
         os.makedirs(os.path.dirname(str(file_name)), exist_ok=True)
@@ -180,27 +170,26 @@ class OptimusResult:
         except ImportError:
             logging.warning("Failed to import xlsxwriter. Writing to csv instead")
             file_name = file_name.with_suffix(".csv")
-            return self.to_csv(view_name, file_name)
+            return self.to_csv(view_name, process_name, file_name)
 
     # create scatter plot ram vs. performance
     def to_png(self, view_name: str, process_name: str, file_name: str):
-        from optimuspy import COLOR_MAP
         df = self.to_dataframe(view_name, process_name)
-        df_to_plot = df[["ID", "Query Ratio", "Mean Process Time", "RAM in GB", "Mode"]]
 
         plt.figure(figsize=(8, 8))
         sns.set_style("ticks")
 
-        p = sns.scatterplot(data=df,
-                        x="RAM in GB",
-                        y="Query Ratio",
-                        size="Mean Process Time" if process_name is not None else None,
-                        hue="Mode",
-                        palette="viridis",
-                        edgecolors="black",
-                        legend=True,
-                        alpha=0.4,
-                        sizes=(20, 500) if process_name is not None else None)
+        p = sns.scatterplot(
+            data=df,
+            x="RAM in GB",
+            y="Query Ratio",
+            size="Mean Process Time" if process_name is not None else None,
+            hue="Mode",
+            palette="viridis",
+            edgecolors="black",
+            legend=True,
+            alpha=0.4,
+            sizes=(20, 500) if process_name is not None else None)
 
         for index, row in df.iterrows():
             p.text(row["RAM in GB"],
@@ -215,7 +204,6 @@ class OptimusResult:
 
         plt.grid()
         plt.tight_layout()
-        #plt.show()
 
         os.makedirs(os.path.dirname(str(file_name)), exist_ok=True)
 
