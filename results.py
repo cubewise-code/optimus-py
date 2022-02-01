@@ -5,7 +5,7 @@ import statistics
 from pathlib import WindowsPath
 from typing import List, Union
 
-import seaborn as sns;
+import seaborn as sns
 
 sns.set_theme()
 import matplotlib.pyplot as plt
@@ -122,6 +122,9 @@ class OptimusResult:
 
         self.cube_name = cube_name
         self.permutation_results = permutation_results
+        if len(permutation_results) == 0:
+            raise RuntimeError("Number of permutation results can not be 0")
+        self.include_process = permutation_results[0].include_process
 
         self.best_result = self.determine_best_result()
         if self.best_result:
@@ -223,23 +226,35 @@ class OptimusResult:
         min_ram, max_ram = min(ram_range), max(ram_range)
 
         query_speed_range = [result.median_query_time() for result in self.permutation_results]
-        process_speed_range = [result.median_process_time(result.process_name) for result in self.permutation_results]
-
         min_query_speed, max_query_speed = min(query_speed_range), max(query_speed_range)
-        min_process_execution, max_process_execution = min(process_speed_range), max(process_speed_range)
 
-        # find a good balance between speed and ram and process speed
+        if self.include_process:
+            process_speed_range = [result.median_process_time(result.process_name)
+                                   for result
+                                   in self.permutation_results]
+            min_process_execution, max_process_execution = min(process_speed_range), max(process_speed_range)
+        else:
+            min_process_execution = max_process_execution = 1
+
+            # find a good balance between speed and ram and process speed
         for value in (0.01, 0.025, 0.05):
             ram_threshold = min_ram + value * (max_ram - min_ram)
             query_speed_threshold = min_query_speed + value * (max_query_speed - min_query_speed)
-            process_speed_threshold = min_process_execution + value * (max_process_execution - min_process_execution)
 
-            for permutation_result in self.permutation_results:
-                if all([permutation_result.ram_usage <= ram_threshold,
-                        permutation_result.median_query_time() <= query_speed_threshold,
-                        permutation_result.median_process_time() <= process_speed_threshold]):
+            if self.include_process:
+                process_speed_threshold = min_process_execution + value * (
+                        max_process_execution - min_process_execution)
+                for permutation_result in self.permutation_results:
+                    if all([permutation_result.ram_usage <= ram_threshold,
+                            permutation_result.median_query_time() <= query_speed_threshold,
+                            permutation_result.median_process_time() <= process_speed_threshold]):
+                        return permutation_result
 
-                    return permutation_result
+            else:
+                for permutation_result in self.permutation_results:
+                    if all([permutation_result.ram_usage <= ram_threshold,
+                            permutation_result.median_query_time() <= query_speed_threshold]):
+                        return permutation_result
 
         # no dimension order falls in sweet spot
         return None

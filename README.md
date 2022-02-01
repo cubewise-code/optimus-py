@@ -27,13 +27,14 @@ Clone or download the `optimus-py` Repository from GitHub
     -f _(fast mode: True or False)_
     -o _(output: csv or xlsx)_ 
     -u _(update original order: True or False)_
+    -t _(name of a ti process to measure runtime)_
 
 ```
-C:\Projects\optimus-py\optimuspy.py -i="tm1srv01" -v="Optimus" -e="10" -f="False" -o="csv" -u=True
+C:\Projects\optimus-py\optimuspy.py -i="tm1srv01" -v="Optimus" -e="10" -f="False" -o="csv" -u=True -t="load.csv.file"
 ```
 
 ```
-C:\Projects\optimus-py\optimuspy.py --instance="tm1srv01" --view="Optimus" --executions="15" --fast="False" --output="csv" --update=True
+C:\Projects\optimus-py\optimuspy.py --instance="tm1srv01" --view="Optimus" --executions="15" --fast="False" --output="csv" --update=True --process="load.csv.file"
 ```
 
 ## Output
