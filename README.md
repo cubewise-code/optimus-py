@@ -10,6 +10,7 @@ Find the ideal dimension order for your TM1 cubes
 Install TM1py:
 ```
 pip install TM1py
+pip install seaborn
 ```
 
 Clone or download the `optimus-py` Repository from GitHub
