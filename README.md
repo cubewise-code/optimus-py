@@ -7,7 +7,7 @@ Find the ideal dimension order for your TM1 cubes
 
 ## Installing
 
-Install TM1py:
+Install required python packages:
 ```
 pip install TM1py
 pip install seaborn
@@ -31,11 +31,11 @@ Clone or download the `optimus-py` Repository from GitHub
     -t _(name of a ti process to measure runtime)_
 
 ```
-C:\Projects\optimus-py\optimuspy.py -i="tm1srv01" -v="Optimus" -e="10" -f="False" -o="csv" -u=True -t="load.csv.file"
+C:\Projects\optimus-py\optimuspy.py -i="tm1srv01" -v="Optimus" -e="10" -f="True" -o="csv" -u=True -t="load.csv.file"
 ```
 
 ```
-C:\Projects\optimus-py\optimuspy.py --instance="tm1srv01" --view="Optimus" --executions="15" --fast="False" --output="csv" --update=True --process="load.csv.file"
+C:\Projects\optimus-py\optimuspy.py --instance="tm1srv01" --view="Optimus" --executions="15" --fast="True" --output="csv" --update=True --process="load.csv.file"
 ```
 
 ## Output
