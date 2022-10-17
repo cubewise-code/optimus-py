@@ -4,6 +4,7 @@ import os
 import statistics
 from pathlib import WindowsPath
 from typing import List, Union
+import executors
 
 import seaborn as sns
 
@@ -15,6 +16,11 @@ SEPARATOR = ","
 HEADER = ["ID", "Mode", "Is Best", "Mean Query Time", "Query Ratio", "Mean Process Time", "Process Ratio", "RAM",
           "RAM in GB"]
 
+PALETTE = {
+    'Original Order': 'tab:blue',
+    'Result': 'tab:green',
+    'Iterations': 'tab:grey'
+}
 
 class PermutationResult:
     counter = 1
@@ -131,6 +137,7 @@ class OptimusResult:
             for permutation_result in permutation_results:
                 if permutation_result.permutation_id == self.best_result.permutation_id:
                     permutation_result.is_best = True
+                    permutation_result.mode = executors.ExecutionMode.RESULT
 
     def to_dataframe(self, view_name: str, process_name: str) -> pd.DataFrame:
         header = self.permutation_results[0].build_header()
@@ -188,10 +195,10 @@ class OptimusResult:
             y="Query Ratio",
             size="Mean Process Time" if process_name is not None else None,
             hue="Mode",
-            palette="viridis",
+            palette=PALETTE,
             edgecolors="black",
             legend=True,
-            alpha=0.4,
+            alpha=0.8,
             sizes=(20, 500) if process_name is not None else None)
 
         for index, row in df.iterrows():
@@ -201,6 +208,7 @@ class OptimusResult:
                    color='black')
 
         sns.despine(trim=True, offset=2)
+        p.set(title=f"Dimension Reorder Results for {self.cube_name}")
         p.set_xlabel("RAM (GB)")
         p.set_ylabel("Query Time Compared to Original Order")
         p.legend(title='Legend', loc='best')
