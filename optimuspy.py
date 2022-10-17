@@ -122,7 +122,7 @@ def deactivate_performance_monitor(tm1: TM1Service):
     tm1.server.update_static_configuration(config)
 
 
-def main(instance_name: str, view_name: str, process_name: str, executions: int, fast: bool, output: str, update: bool,
+def main(instance_name: str, cube_name: str, view_name: str, process_name: str, executions: int, fast: bool, output: str, update: bool,
          password: str = None):
     config = get_tm1_config()
     tm1_args = dict(config[instance_name])
@@ -134,8 +134,17 @@ def main(instance_name: str, view_name: str, process_name: str, executions: int,
     with TM1Service(**tm1_args) as tm1:
         original_performance_monitor_state = retrieve_performance_monitor_state(tm1)
         activate_performance_monitor(tm1)
+        all_tm1_cubes = filter(lambda c: not c.startswith("}"), tm1.cubes.get_all_names())
 
-        model_cubes = filter(lambda c: not c.startswith("}"), tm1.cubes.get_all_names())
+        if cube_name is not None:
+            if cube_name in all_tm1_cubes:
+                model_cubes = [cube_name]
+            else:
+                logging.error(f"Provided cube '{cube_name}' does not exist")
+                exit(1)
+        else:
+            model_cubes = all_tm1_cubes
+
         for cube_name in model_cubes:
             if not tm1.cubes.views.exists(cube_name, view_name, private=False):
                 logging.info(f"Skipping cube '{cube_name}' since view '{view_name}' does not exist")
@@ -229,6 +238,11 @@ if __name__ == "__main__":
                         dest="instance_name",
                         help="name of the TM1 instance",
                         default=None)
+    parser.add_argument('-c', '--cube',
+                        action="store",
+                        dest="cube_name",
+                        help="TM1 cube name, if left blank OpmitusPy iterates over all cubes",
+                        default=None)
     parser.add_argument('-v', '--view',
                         action="store",
                         dest="view_name",
@@ -275,6 +289,7 @@ if __name__ == "__main__":
 
     success = main(
         instance_name=cmd_args.instance_name,
+        cube_name=cmd_args.cube_name,
         view_name=cmd_args.view_name,
         executions=int(cmd_args.executions),
         fast=convert_arg_to_bool(cmd_args.fast),
