@@ -36,7 +36,7 @@ C:\Projects\optimus-py\optimuspy.py -i="tm1srv01" -v="Optimus" -e="10" -f="True"
 ```
 
 ```
-C:\Projects\optimus-py\optimuspy.py --instance="tm1srv01" --view="Cube Name" --view="Optimus" --executions="15" --fast="True" --output="csv" --update=True --process="load.csv.file"
+C:\Projects\optimus-py\optimuspy.py --instance="tm1srv01" --cube="Cube Name" --view="Optimus" --executions="15" --fast="True" --output="csv" --update=True --process="load.csv.file"
 ```
 
 ## Output
