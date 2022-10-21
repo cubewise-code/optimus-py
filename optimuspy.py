@@ -122,6 +122,24 @@ def deactivate_performance_monitor(tm1: TM1Service):
     tm1.server.update_static_configuration(config)
 
 
+def get_cubes_to_optimize(tm1: TM1Service, cube_name: str) -> []:
+    model_cubes = []
+    try:
+        all_tm1_cubes = filter(lambda c: not c.startswith("}"), tm1.cubes.get_all_names())
+
+        if cube_name is not None:
+            if tm1.cubes.exists(cube_name = cube_name):
+                model_cubes = [cube_name]
+            else:
+                raise ValueError(f"Provided cube '{cube_name}' does not exist, nothing to optimize")
+        else:
+            model_cubes = all_tm1_cubes
+    except ValueError as e:
+        print(e)
+        
+    return model_cubes
+        
+
 def main(instance_name: str, cube_name: str, view_name: str, process_name: str, executions: int, fast: bool, output: str, update: bool,
          password: str = None):
     config = get_tm1_config()
@@ -134,16 +152,8 @@ def main(instance_name: str, cube_name: str, view_name: str, process_name: str, 
     with TM1Service(**tm1_args) as tm1:
         original_performance_monitor_state = retrieve_performance_monitor_state(tm1)
         activate_performance_monitor(tm1)
-        all_tm1_cubes = filter(lambda c: not c.startswith("}"), tm1.cubes.get_all_names())
-
-        if cube_name is not None:
-            if cube_name in all_tm1_cubes:
-                model_cubes = [cube_name]
-            else:
-                logging.error(f"Provided cube '{cube_name}' does not exist")
-                exit(1)
-        else:
-            model_cubes = all_tm1_cubes
+        
+        model_cubes = get_cubes_to_optimize(tm1, cube_name)
 
         for cube_name in model_cubes:
             if not tm1.cubes.views.exists(cube_name, view_name, private=False):
