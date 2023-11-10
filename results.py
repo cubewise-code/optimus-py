@@ -135,7 +135,7 @@ class OptimusResult:
         self.best_result = self.determine_best_result()
         if self.best_result:
             for permutation_result in permutation_results:
-                if permutation_result.permutation_id == self.best_result.permutation_id:
+                if permutation_result.permutation_id == self.best_result.permutation_id and permutation_result.mode != executors.ExecutionMode.ORIGINAL_ORDER:
                     permutation_result.is_best = True
                     permutation_result.mode = executors.ExecutionMode.RESULT
 
