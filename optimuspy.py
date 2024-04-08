@@ -187,6 +187,7 @@ def main(instance_name: str, cube_name: str, view_name: str, process_name: str, 
                 best_permutation = optimus_result.best_result
                 logging.info(f"Completed analysis for cube '{cube_name}'")
                 if not best_permutation:
+                    tm1.cubes.update_storage_dimension_order(cube_name, original_dimension_order)
                     logging.info(
                         f"No ideal dimension order found for cube '{cube_name}'."
                         f"Please pick manually based on csv and png results.")
