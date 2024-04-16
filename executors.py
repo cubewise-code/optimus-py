@@ -1,10 +1,10 @@
 import logging
 import random
 import time
-from enum import Enum
 from itertools import chain
 from typing import List, Dict
 
+from executionMode import ExecutionMode
 from TM1py import TM1Service, Process
 
 from results import PermutationResult
@@ -22,20 +22,6 @@ def swap_random(order: list) -> List[str]:
     return swap(order, i1, i2)
 
 
-class ExecutionMode(Enum):
-    ORIGINAL_ORDER = 0
-    ITERATIONS = 1
-    RESULT = 2
-
-    @classmethod
-    def _missing_(cls, value):
-        for member in cls:
-            if member.name.lower() == value.lower():
-                return member
-        # default
-        return cls.ALL
-
-
 class OptipyzerExecutor:
     def __init__(self, tm1: TM1Service, cube_name: str, view_names: list, process_name: str,
                  displayed_dimension_order: List[str],
@@ -49,6 +35,7 @@ class OptipyzerExecutor:
         self.measure_dimension_only_numeric = measure_dimension_only_numeric
         self.mode = None
         self.include_process = bool(process_name)
+        self.cube_dim_number = len(self.dimensions)
 
     def _determine_query_permutation_result(self) -> Dict[str, List[float]]:
         query_times_by_view = {}
@@ -154,22 +141,52 @@ class OriginalOrderExecutor(OptipyzerExecutor):
 
 class MainExecutor(OptipyzerExecutor):
     def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], process_name: str, dimensions: List[str],
-                 executions: int, measure_dimension_only_numeric: bool, fast: bool = False):
+                 executions: int, measure_dimension_only_numeric: bool, fast: bool = False, dimensions_to_exclude: List[str] = None):
         super().__init__(tm1, cube_name, view_names, process_name, dimensions, executions,
                          measure_dimension_only_numeric)
         self.mode = ExecutionMode.ITERATIONS
         self.fast = fast
+        self.dimensions_to_exclude = (
+            [] if dimensions_to_exclude is None else dimensions_to_exclude
+        )
 
         if len(view_names) > 1:
             logging.warning("BestExecutor mode will use first view and ignore other views: " + str(view_names[1:]))
 
         self.view_name = view_names[0]
 
+    def _check_swap_dim_with_str_to_last_position(
+            self, dimension_name: str, target_position: int
+    ) -> bool:
+        # if a dimension has strings and target dimension is the last dimension in the cube - do not swap.
+        # rest API allows to swap a dim with string to the last position, but not out of the last position
+        if self.tm1.hierarchies.exists(
+                dimension_name=dimension_name, hierarchy_name="Leaves"
+        ):
+            hierarchy_name = "Leaves"
+        else:
+            hierarchy_name = dimension_name
+
+        elements = self.tm1.elements.get_element_types(
+            dimension_name=dimension_name,
+            hierarchy_name=hierarchy_name,
+            skip_consolidations=True,
+        )
+        string_elements = [element for element, element_type in elements.items() if element_type != "Numeric"]
+        if string_elements:
+            logging.info(f"Skip swapping dimension '{dimension_name}' into last position because it has string elements: {string_elements}")
+        last_target_position = target_position + 1 == self.cube_dim_number
+        return string_elements and last_target_position
+
+
     def execute(self) -> List[PermutationResult]:
         dimensions = self.dimensions[:]
         resulting_order = self.dimensions[:]
         permutation_results = []
-        dimension_pool = self.dimensions[:]
+        # dimensions that we're allowed to swap
+        dimension_pool = [
+            dim for dim in self.dimensions[:] if dim not in self.dimensions_to_exclude
+        ]
 
         mid = int(len(dimension_pool) / 2)
 
@@ -178,34 +195,42 @@ class MainExecutor(OptipyzerExecutor):
             dimensions.remove(self.dimensions[-1])
 
         # iteration through positions like: n, 0, n-1, 1, n-2, 2, ...
-        for iteration, position in enumerate(chain(*zip(reversed(range(len(dimensions))), range(len(dimensions))))):
+        for iteration, target_position in enumerate(chain(*zip(reversed(range(len(dimensions))), range(len(dimensions))))):
             if self.fast and iteration == 2:
                 break
 
-            if position == mid:
+            if target_position == mid:
                 break
 
             results_per_dimension = list()
 
+            # for the current position - swap all the allowed dimensions and append all possible orders to the result set
             for dimension in dimension_pool:
                 original_position = resulting_order.index(dimension)
+                dimension_target = resulting_order[target_position]
 
-                permutation = list(resulting_order)
-                permutation = swap(permutation, position, original_position)
-                permutation_result = self._evaluate_permutation(permutation)
-                permutation_results.append(permutation_result)
-                results_per_dimension.append(permutation_result)
+                if (not self._check_swap_dim_with_str_to_last_position(dimension, target_position)
+                    and dimension_target in dimension_pool):
+                    permutation = list(resulting_order)
+                    permutation = swap(permutation, target_position, original_position)
+                    permutation_result = self._evaluate_permutation(permutation)
+                    permutation_results.append(permutation_result)
+                    results_per_dimension.append(permutation_result)
 
-            if position > mid:
-                best_order = sorted(
-                    results_per_dimension,
-                    key=lambda r: r.ram_usage)[0]
-            else:
-                best_order = sorted(
-                    results_per_dimension,
-                    key=lambda r: r.median_query_time(self.view_name))[0]
+            # only check for best results if any valid dim swaps are returned
+            if len(results_per_dimension) > 0:
+                # for the current position - if position is higher than the mid-point - sort by ram use
+                if target_position > mid:
+                    best_order = sorted(
+                        results_per_dimension,
+                        key=lambda r: r.ram_usage)[0]
+                # for the current position - if position is lower than the mid-point - sort by view execution time
+                else:
+                    best_order = sorted(
+                        results_per_dimension,
+                        key=lambda r: r.median_query_time(self.view_name))[0]
 
-            resulting_order = list(best_order.dimension_order)
-            dimension_pool.remove(resulting_order[position])
+                resulting_order = list(best_order.dimension_order)
+                dimension_pool.remove(resulting_order[target_position])
 
         return permutation_results

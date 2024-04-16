@@ -4,7 +4,7 @@ import os
 import statistics
 from pathlib import WindowsPath
 from typing import List, Union
-import executors
+from executionMode import ExecutionMode
 
 import seaborn as sns
 
@@ -30,7 +30,6 @@ class PermutationResult:
                  query_times_by_view: dict, process_times_by_process: dict, ram_usage: float = None,
                  ram_percentage_change: float = None,
                  reset_counter: bool = False):
-        from optimuspy import ExecutionMode
 
         self.mode = ExecutionMode(mode)
         self.cube_name = cube_name
@@ -135,9 +134,9 @@ class OptimusResult:
         self.best_result = self.determine_best_result()
         if self.best_result:
             for permutation_result in permutation_results:
-                if permutation_result.permutation_id == self.best_result.permutation_id and permutation_result.mode != executors.ExecutionMode.ORIGINAL_ORDER:
+                if permutation_result.permutation_id == self.best_result.permutation_id and permutation_result.mode != ExecutionMode.ORIGINAL_ORDER:
                     permutation_result.is_best = True
-                    permutation_result.mode = executors.ExecutionMode.RESULT
+                    permutation_result.mode = ExecutionMode.RESULT
 
     def to_dataframe(self, view_name: str, process_name: str) -> pd.DataFrame:
         header = self.permutation_results[0].build_header()

@@ -6,7 +6,7 @@ import sys
 import time
 from contextlib import suppress
 from pathlib import Path
-from typing import Iterable, Union
+from typing import Iterable, List, Union
 
 from TM1py import TM1Service
 from mdxpy import MdxBuilder, Member, MdxHierarchySet
@@ -141,7 +141,7 @@ def get_cubes_to_optimize(tm1: TM1Service, cube_name: str) -> []:
         
 
 def main(instance_name: str, cube_name: str, view_name: str, process_name: str, executions: int, fast: bool, output: str, update: bool,
-         password: str = None):
+         dimensions_to_exclude: List[str] = None, password: str = None):
     config = get_tm1_config()
     tm1_args = dict(config[instance_name])
     tm1_args['session_context'] = APP_NAME
@@ -164,22 +164,22 @@ def main(instance_name: str, cube_name: str, view_name: str, process_name: str, 
             write_vmm_vmt(tm1, cube_name, "1000000", "1000000")
 
             logging.info(f"Starting analysis for cube '{cube_name}'")
-            original_dimension_order = tm1.cubes.get_storage_dimension_order(cube_name=cube_name)
-            logging.info(f"Original dimension order for cube '{cube_name}' is: '{original_dimension_order}'")
+            storage_dimension_order = tm1.cubes.get_storage_dimension_order(cube_name=cube_name)
+            logging.info(f"Original dimension order for cube '{cube_name}' is: '{storage_dimension_order}'")
             displayed_dimension_order = tm1.cubes.get_dimension_names(cube_name=cube_name)
-            measure_dimension_only_numeric = is_dimension_only_numeric(tm1, original_dimension_order[-1])
+            measure_dimension_only_numeric = is_dimension_only_numeric(tm1, storage_dimension_order[-1])
 
             permutation_results = list()
             try:
 
                 original_order = OriginalOrderExecutor(
                     tm1, cube_name, [view_name], process_name, displayed_dimension_order, executions,
-                    measure_dimension_only_numeric, original_dimension_order)
+                    measure_dimension_only_numeric, storage_dimension_order)
                 permutation_results += original_order.execute(reset_counter=True)
 
                 main_executor = MainExecutor(
                     tm1, cube_name, [view_name], process_name, displayed_dimension_order, executions,
-                    measure_dimension_only_numeric, fast)
+                    measure_dimension_only_numeric, fast, dimensions_to_exclude)
                 permutation_results += main_executor.execute()
 
                 optimus_result = OptimusResult(cube_name, permutation_results)
@@ -187,11 +187,10 @@ def main(instance_name: str, cube_name: str, view_name: str, process_name: str, 
                 best_permutation = optimus_result.best_result
                 logging.info(f"Completed analysis for cube '{cube_name}'")
                 if not best_permutation:
-                    tm1.cubes.update_storage_dimension_order(cube_name, original_dimension_order)
+                    tm1.cubes.update_storage_dimension_order(cube_name, storage_dimension_order)
                     logging.info(
                         f"No ideal dimension order found for cube '{cube_name}'."
                         f"Please pick manually based on csv and png results.")
-
                 else:
                     best_order = best_permutation.dimension_order
                     if update:
@@ -199,14 +198,12 @@ def main(instance_name: str, cube_name: str, view_name: str, process_name: str, 
                         logging.info(f"Updated dimension order for cube '{cube_name}' to {best_order}")
                     else:
                         logging.info(f"Best order for cube '{cube_name}': {best_order}")
-                        tm1.cubes.update_storage_dimension_order(cube_name, original_dimension_order)
+                        tm1.cubes.update_storage_dimension_order(cube_name, storage_dimension_order)
                         logging.info(
-                            f"Restored original dimension order for cube '{cube_name}' to {original_dimension_order}")
-
-            except:
-                logging.error("Fatal error", exc_info=True)
+                            f"Restored original dimension order for cube '{cube_name}' to {storage_dimension_order}")
+            except Exception as e:
+                logging.error(f"Fatal error: {e}", exc_info=True)
                 return False
-
             finally:
                 with suppress(Exception):
                     write_vmm_vmt(tm1, cube_name, original_vmm, original_vmt)
@@ -252,7 +249,7 @@ if __name__ == "__main__":
     parser.add_argument('-c', '--cube',
                         action="store",
                         dest="cube_name",
-                        help="TM1 cube name, if left blank OpmitusPy iterates over all cubes",
+                        help="TM1 cube name, if left blank OptimusPy iterates over all cubes",
                         default=None)
     parser.add_argument('-v', '--view',
                         action="store",
@@ -264,6 +261,11 @@ if __name__ == "__main__":
                         dest="executions",
                         help="number of executions per view",
                         default=15)
+    parser.add_argument("-d","--dimensions_to_exclude",
+                        action="store",
+                        dest="dimensions_to_exclude",
+                        help="List of dimensions to exclude",
+                        default="")
     parser.add_argument('-f', '--fast',
                         action="store",
                         dest="fast",
@@ -298,16 +300,10 @@ if __name__ == "__main__":
 
     logging.info(f"Starting. Arguments retrieved from cmd: {cmd_args}")
 
-    success = main(
-        instance_name=cmd_args.instance_name,
-        cube_name=cmd_args.cube_name,
-        view_name=cmd_args.view_name,
-        executions=int(cmd_args.executions),
-        fast=convert_arg_to_bool(cmd_args.fast),
-        output=cmd_args.output,
-        update=convert_arg_to_bool(cmd_args.update),
-        password=password,
-        process_name=cmd_args.process_name)
+    success = main(instance_name=cmd_args.instance_name, cube_name=cmd_args.cube_name, view_name=cmd_args.view_name,
+                   process_name=cmd_args.process_name, executions=int(cmd_args.executions), fast=convert_arg_to_bool(cmd_args.fast),
+                   output=cmd_args.output, update=convert_arg_to_bool(cmd_args.update),
+                   dimensions_to_exclude=str.split(cmd_args.dimensions_to_exclude, ","), password=password)
 
     if success:
         logging.info("Finished successfully")
