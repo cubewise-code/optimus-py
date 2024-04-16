@@ -300,10 +300,16 @@ if __name__ == "__main__":
 
     logging.info(f"Starting. Arguments retrieved from cmd: {cmd_args}")
 
-    success = main(instance_name=cmd_args.instance_name, cube_name=cmd_args.cube_name, view_name=cmd_args.view_name,
-                   process_name=cmd_args.process_name, executions=int(cmd_args.executions), fast=convert_arg_to_bool(cmd_args.fast),
-                   output=cmd_args.output, update=convert_arg_to_bool(cmd_args.update),
-                   dimensions_to_exclude=str.split(cmd_args.dimensions_to_exclude, ","), password=password)
+    success = main(instance_name=cmd_args.instance_name,
+                   cube_name=cmd_args.cube_name,
+                   view_name=cmd_args.view_name,
+                   process_name=cmd_args.process_name,
+                   executions=int(cmd_args.executions),
+                   fast=convert_arg_to_bool(cmd_args.fast),
+                   output=cmd_args.output,
+                   update=convert_arg_to_bool(cmd_args.update),
+                   dimensions_to_exclude=str.split(cmd_args.dimensions_to_exclude, ","),
+                   password=password)
 
     if success:
         logging.info("Finished successfully")
