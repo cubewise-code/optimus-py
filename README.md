@@ -21,7 +21,7 @@ Clone or download the `optimus-py` Repository from GitHub
 * Adjust config.ini to match your TM1 environment
 * Create uniquely named views in the relevant cubes
 * Execute the `optimuspy.py` 
-* provide 7 arguments: 
+* provide 8 arguments: 
     -i _(name of the instance)_ 
     -c _(name of the cube)_ 
     -v _(name of the cube view)_ 
@@ -30,6 +30,7 @@ Clone or download the `optimus-py` Repository from GitHub
     -o _(output: csv or xlsx)_ 
     -u _(update original order: True or False)_
     -t _(name of a ti process to measure runtime)_
+    -d _(optional: comma split list of dimensions to keep positions as per the storage order)_
 
 ```
 C:\Projects\optimus-py\optimuspy.py -i="tm1srv01" -c="Cube Name" -v="Optimus" -e="10" -f="True" -o="csv" -u=True -t="load.csv.file"
