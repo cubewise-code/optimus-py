@@ -164,17 +164,17 @@ def main(instance_name: str, cube_name: str, view_name: str, process_name: str, 
             write_vmm_vmt(tm1, cube_name, "1000000", "1000000")
 
             logging.info(f"Starting analysis for cube '{cube_name}'")
-            storage_dimension_order = tm1.cubes.get_storage_dimension_order(cube_name=cube_name)
-            logging.info(f"Original dimension order for cube '{cube_name}' is: '{storage_dimension_order}'")
+            initial_dimension_order = tm1.cubes.get_storage_dimension_order(cube_name=cube_name)
+            logging.info(f"Original dimension order for cube '{cube_name}' is: '{initial_dimension_order}'")
             displayed_dimension_order = tm1.cubes.get_dimension_names(cube_name=cube_name)
-            measure_dimension_only_numeric = is_dimension_only_numeric(tm1, storage_dimension_order[-1])
+            measure_dimension_only_numeric = is_dimension_only_numeric(tm1, initial_dimension_order[-1])
 
             permutation_results = list()
             try:
 
                 original_order = OriginalOrderExecutor(
                     tm1, cube_name, [view_name], process_name, displayed_dimension_order, executions,
-                    measure_dimension_only_numeric, storage_dimension_order)
+                    measure_dimension_only_numeric, initial_dimension_order)
                 permutation_results += original_order.execute(reset_counter=True)
 
                 main_executor = MainExecutor(
@@ -187,7 +187,7 @@ def main(instance_name: str, cube_name: str, view_name: str, process_name: str, 
                 best_permutation = optimus_result.best_result
                 logging.info(f"Completed analysis for cube '{cube_name}'")
                 if not best_permutation:
-                    tm1.cubes.update_storage_dimension_order(cube_name, storage_dimension_order)
+                    tm1.cubes.update_storage_dimension_order(cube_name, initial_dimension_order)
                     logging.info(
                         f"No ideal dimension order found for cube '{cube_name}'."
                         f"Please pick manually based on csv and png results.")
@@ -198,9 +198,9 @@ def main(instance_name: str, cube_name: str, view_name: str, process_name: str, 
                         logging.info(f"Updated dimension order for cube '{cube_name}' to {best_order}")
                     else:
                         logging.info(f"Best order for cube '{cube_name}': {best_order}")
-                        tm1.cubes.update_storage_dimension_order(cube_name, storage_dimension_order)
+                        tm1.cubes.update_storage_dimension_order(cube_name, initial_dimension_order)
                         logging.info(
-                            f"Restored original dimension order for cube '{cube_name}' to {storage_dimension_order}")
+                            f"Restored original dimension order for cube '{cube_name}' to {initial_dimension_order}")
             except Exception as e:
                 logging.error(f"Fatal error: {e}", exc_info=True)
                 return False
