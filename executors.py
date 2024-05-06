@@ -4,7 +4,7 @@ import time
 from itertools import chain
 from typing import List, Dict
 
-from executionMode import ExecutionMode
+from execution_mode import ExecutionMode
 from TM1py import TM1Service, Process
 
 from results import PermutationResult

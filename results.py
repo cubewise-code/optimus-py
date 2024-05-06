@@ -4,7 +4,7 @@ import os
 import statistics
 from pathlib import WindowsPath
 from typing import List, Union
-from executionMode import ExecutionMode
+from execution_mode import ExecutionMode
 
 import seaborn as sns
 
