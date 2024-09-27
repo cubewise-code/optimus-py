@@ -65,6 +65,15 @@ For traceability and custom analysis, Optimus visualizes the results in a csv re
 - Provide enough spare memory on TM1 server
 - Fast mode determines first and last position only
 
+## Need a .exe version of OptimusPy?
+
+The latest executable build is available as an artifact in the GitHub Actions workflow runs. To download it:
+
+1. Go to the [Actions tab](https://github.com/cubewise-code/optimus-py/actions) of the repository.
+2. Click on the most recent workflow run titled **Build Executable**.
+3. In the workflow summary, look for the **Artifacts** section.
+4. Download the **optimuspy-winOS** artifact.
+
 ## Built With
 
 * [TM1py](https://github.com/cubewise-code/TM1py) - A python wrapper for the TM1 REST API
