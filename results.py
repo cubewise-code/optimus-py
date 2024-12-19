@@ -14,7 +14,7 @@ import pandas as pd
 
 SEPARATOR = ","
 HEADER = ["ID", "Mode", "Is Best", "Mean Query Time", "Query Ratio", "Mean Process Time", "Process Ratio", "RAM",
-          "RAM in GB"]
+          "RAM in GB", "% Reduction"]
 
 PALETTE = {
     'Original Order': 'tab:blue',
@@ -25,6 +25,7 @@ PALETTE = {
 class PermutationResult:
     counter = 1
     current_ram = None
+    original_ram = None
 
     def __init__(self, mode: str, cube_name: str, view_names: list, process_name: str, dimension_order: list,
                  query_times_by_view: dict, process_times_by_process: dict, ram_usage: float = None,
@@ -47,6 +48,7 @@ class PermutationResult:
         # from original dimension order
         if ram_usage:
             self.ram_usage = ram_usage
+            PermutationResult.original_ram = ram_usage
 
         # from all other dimension orders
         elif ram_percentage_change is not None:
@@ -58,6 +60,8 @@ class PermutationResult:
 
         PermutationResult.current_ram = self.ram_usage
         self.ram_percentage_change = ram_percentage_change or 0
+
+        self.ram_reduction = 1 - PermutationResult.current_ram / PermutationResult.original_ram
 
         if reset_counter:
             PermutationResult.counter = 1
@@ -111,7 +115,7 @@ class PermutationResult:
             row += [0, 0]
 
         ram_in_gb = float(self.ram_usage) / (1024 ** 3)
-        row += [self.ram_usage, ram_in_gb] + list(self.dimension_order)
+        row += [self.ram_usage, ram_in_gb, f"{self.ram_reduction:.0%}"] + list(self.dimension_order)
 
         return row
 
