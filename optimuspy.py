@@ -218,19 +218,19 @@ def main(instance_name: str, cube_name: str, view_name: str, process_name: str, 
                     optimus_result = OptimusResult(cube_name, permutation_results)
                     optimus_result.to_png(
                         view_name, process_name,
-                        RESULT_PATH / RESULT_PNG.format(cube_name, view_name, process_name, TIME_STAMP))
+                        RESULT_PATH / RESULT_PNG.format(instance_name,cube_name, view_name, process_name, TIME_STAMP))
 
                     if output.upper() == "XLSX":
                         optimus_result.to_xlsx(
                             view_name, process_name,
-                            RESULT_PATH / RESULT_XLSX.format(cube_name, view_name, process_name, TIME_STAMP))
+                            RESULT_PATH / RESULT_XLSX.format(instance_name,cube_name, view_name, process_name, TIME_STAMP))
 
                     else:
                         if not output.upper() == "CSV":
                             logging.warning("Value for -o / --output must be 'CSV' or 'XLSX'. Default is CSV")
                         optimus_result.to_csv(
                             view_name, process_name,
-                            RESULT_PATH / RESULT_CSV.format(cube_name, view_name, process_name, TIME_STAMP))
+                            RESULT_PATH / RESULT_CSV.format(instance_name,cube_name, view_name, process_name, TIME_STAMP))
 
     return True
 
