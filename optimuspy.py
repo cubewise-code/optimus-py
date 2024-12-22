@@ -18,9 +18,9 @@ APP_NAME = "optimuspy"
 TIME_STAMP = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
 LOGFILE = APP_NAME + ".log"
 RESULT_PATH = Path("results/")
-RESULT_CSV = "{}_{}_{}_{}.csv"
-RESULT_XLSX = "{}_{}_{}_{}.xlsx"
-RESULT_PNG = "{}_{}_{}_{}.png"
+RESULT_CSV = "{}_{}_{}_{}_{}.csv"
+RESULT_XLSX = "{}_{}_{}_{}_{}.xlsx"
+RESULT_PNG = "{}_{}_{}_{}_{}.png"
 
 LABEL_MAP = {
     ExecutionMode.ORIGINAL_ORDER: "Original Order",
