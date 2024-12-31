@@ -173,10 +173,34 @@ class OptimusResult:
             workbook = xlsxwriter.Workbook(file_name)
             worksheet = workbook.add_worksheet()
 
+
+            line_data = []
+
+            # Set up some formats for the Header, Original order, Best result and Iterations
+            header_format    = workbook.add_format({'bold': True})
+            original_format  = workbook.add_format({'bg_color': '#DCE6F1'})  # Light blue = Original order
+            result_format    = workbook.add_format({'bg_color': '#B3FBC1'})  # Light green = Result or Best
+            iteration_format = workbook.add_format({'bg_color': '#FFFFFF'})  # White = Other Iteration
+
             # Iterate over the data and write it out row by row.
             for row, line in enumerate(self.to_lines(view_name, process_name)):
-                for col, item in enumerate(line.split(SEPARATOR)):
-                    worksheet.write(row, col, item)
+
+                line_data = line.split(SEPARATOR)
+                if "Original" in line_data[1]:
+                    row_format = original_format
+                elif "Result" in line_data[1]:
+                    row_format = result_format
+                elif row == 0:
+                    row_format = header_format
+                else:
+                    row_format = iteration_format
+
+                for col, item in enumerate(line_data):
+                    worksheet.write(row, col, item, row_format)
+
+            # Add filters to the first row
+            if line_data:
+                worksheet.autofilter(0, 0, 0, len(line_data) - 1)
 
             workbook.close()
 
