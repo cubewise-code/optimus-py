@@ -40,6 +40,10 @@ C:\Projects\optimus-py\optimuspy.py -i="tm1srv01" -c="Cube Name" -v="Optimus" -e
 C:\Projects\optimus-py\optimuspy.py --instance="tm1srv01" --cube="Cube Name" --view="Optimus" --executions="15" --fast="True" --output="csv" --update=True --process="load.csv.file"
 ```
 
+You can use this public Google Sheet to construct the command prompt for the execution
+
+https://docs.google.com/spreadsheets/d/1dtgl9WkYcsyokWNdX29m4K_5oNm3MI3iTOH2f_g6Kd4/edit?usp=sharing
+
 ## Output
 
 OptimusPy determines the ideal dimension order for every cube, based on RAM and query speed.
@@ -59,11 +63,13 @@ For traceability and custom analysis, Optimus visualizes the results in a csv re
 ![](https://github.com/cubewise-code/optimus-py/blob/master/images/scatter_plot.png)
 
 ## Considerations
-- Run on the same machine
-- Use big and representative views 
-- Choose a sensible number of `executions`
+- Ideally run on the same machine as TM1
+- Use big and representative views _(e.g. typical slices that end users consume)_
+- Choose a sensible number of `executions` between 5 and 10
 - Provide enough spare memory on TM1 server
-- Fast mode determines first and last position only
+- Fast mode determines first and last position only _(Should get you 80% of possible improvement potential)_
+- XLSX output is preferable over CSV output but requires optional `xlsxwrite` dependency
+- Choose a TI that loads data to the cube and runs for at least a few seconds
 
 ## Need a .exe version of OptimusPy?
 
