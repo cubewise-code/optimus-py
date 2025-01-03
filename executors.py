@@ -4,9 +4,9 @@ import time
 from itertools import chain
 from typing import List, Dict
 
-from execution_mode import ExecutionMode
 from TM1py import TM1Service, Process
 
+from execution_mode import ExecutionMode
 from results import PermutationResult
 
 
@@ -66,7 +66,8 @@ class OptipyzerExecutor:
         return {self.process_name: execution_times}
 
     def _evaluate_permutation(self, permutation: List[str], retrieve_ram: bool = False,
-                              reset_counter: bool = False) -> PermutationResult:
+                              reset_counter: bool = False, is_original_order: bool = False,
+                              total_permutations=None) -> PermutationResult:
         ram_percentage_change = self.tm1.cubes.update_storage_dimension_order(self.cube_name, permutation)
         query_times_by_view = self._determine_query_permutation_result()
 
@@ -83,11 +84,17 @@ class OptipyzerExecutor:
                                                query_times_by_view, process_times_by_process, ram_usage,
                                                ram_percentage_change, reset_counter)
 
+        if is_original_order:
+            progress_log = "Original Order"
+        else:
+            # decrease counter by 2 because log happens post increment and original order not considered as iteration
+            progress_log = f"Iteration {PermutationResult.counter - 2} of {total_permutations}"
+
         process_log = " - No process included in test"
         if self.include_process:
             process_log = f" - Process time [s]: {permutation_result.median_process_time():.5f}"
 
-        logging.info(f"Evaluated order: {permutation} "
+        logging.info(f"{progress_log} - Evaluated order: {permutation} "
                      f"- RAM [GB]: {permutation_result.ram_usage / 1024 ** 3:.2f} "
                      f"- Query time [s]: {permutation_result.median_query_time():.5f}"
                      + process_log)
@@ -136,12 +143,14 @@ class OriginalOrderExecutor(OptipyzerExecutor):
         return [self._evaluate_permutation(
             self.original_dimension_order,
             retrieve_ram=True,
-            reset_counter=reset_counter)]
+            reset_counter=reset_counter,
+            is_original_order=True)]
 
 
 class MainExecutor(OptipyzerExecutor):
     def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], process_name: str, dimensions: List[str],
-                 executions: int, measure_dimension_only_numeric: bool, fast: bool = False, dimensions_to_exclude: List[str] = None):
+                 executions: int, measure_dimension_only_numeric: bool, fast: bool = False,
+                 dimensions_to_exclude: List[str] = None):
         super().__init__(tm1, cube_name, view_names, process_name, dimensions, executions,
                          measure_dimension_only_numeric)
         self.mode = ExecutionMode.ITERATIONS
@@ -174,10 +183,10 @@ class MainExecutor(OptipyzerExecutor):
         )
         string_elements = [element for element, element_type in elements.items() if element_type != "Numeric"]
         if string_elements:
-            logging.info(f"Skip swapping dimension '{dimension_name}' into last position because it has string elements: {string_elements}")
+            logging.info(
+                f"Skip swapping dimension '{dimension_name}' into last position because it has string elements: {string_elements}")
         last_target_position = target_position + 1 == self.cube_dim_number
         return string_elements and last_target_position
-
 
     def execute(self) -> List[PermutationResult]:
         dimensions = self.dimensions[:]
@@ -194,8 +203,16 @@ class MainExecutor(OptipyzerExecutor):
             dimension_pool.remove(self.dimensions[-1])
             dimensions.remove(self.dimensions[-1])
 
+        if self.fast:
+            # for 5 dimensional cubes we evaluate 5 + 4 permutations
+            total_permutations = len(dimension_pool) * 2 - 1
+        else:
+            # for 5 dimensional cubes we evaluate 5 + 4 + 3 + 2 permutations
+            total_permutations = sum(range(2, len(dimension_pool) + 1))
+
         # iteration through positions like: n, 0, n-1, 1, n-2, 2, ...
-        for iteration, target_position in enumerate(chain(*zip(reversed(range(len(dimensions))), range(len(dimensions))))):
+        for iteration, target_position in enumerate(
+                chain(*zip(reversed(range(len(dimensions))), range(len(dimensions))))):
             if self.fast and iteration == 2:
                 break
 
@@ -210,10 +227,10 @@ class MainExecutor(OptipyzerExecutor):
                 dimension_target = resulting_order[target_position]
 
                 if (not self._check_swap_dim_with_str_to_last_position(dimension, target_position)
-                    and dimension_target in dimension_pool):
+                        and dimension_target in dimension_pool):
                     permutation = list(resulting_order)
                     permutation = swap(permutation, target_position, original_position)
-                    permutation_result = self._evaluate_permutation(permutation)
+                    permutation_result = self._evaluate_permutation(permutation, total_permutations=total_permutations)
                     permutation_results.append(permutation_result)
                     results_per_dimension.append(permutation_result)
 
