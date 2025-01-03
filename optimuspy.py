@@ -190,12 +190,13 @@ def main(instance_name: str, cube_name: str, view_name: str, process_name: str, 
                     tm1.cubes.update_storage_dimension_order(cube_name, initial_dimension_order)
                     logging.info(
                         f"No ideal dimension order found for cube '{cube_name}'."
+                        f"Restored original dimension order for cube '{cube_name}' to {initial_dimension_order}"
                         f"Please pick manually based on csv and png results.")
                 else:
                     best_order = best_permutation.dimension_order
                     if update:
                         tm1.cubes.update_storage_dimension_order(cube_name, best_order)
-                        logging.info(f"Updated dimension order for cube '{cube_name}' to {best_order}")
+                        logging.info(f"Updated to best dimension order for cube '{cube_name}' to {best_order}")
                     else:
                         logging.info(f"Best order for cube '{cube_name}': {best_order}")
                         tm1.cubes.update_storage_dimension_order(cube_name, initial_dimension_order)
