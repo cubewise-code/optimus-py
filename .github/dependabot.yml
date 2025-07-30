@@ -17,6 +17,13 @@ updates:
       - "github-actions"
     reviewers:
       - "nicolasbisurgi"
+      - "MariusWirtz"
+      # Add more individual reviewers:
+      # - "username2"
+      # - "username3"
+      # Or assign to teams (use org/team-name format):
+      # - "myorg/backend-team"
+      # - "myorg/devops"
     open-pull-requests-limit: 5
 
   # Enable version updates for Python dependencies
@@ -36,4 +43,11 @@ updates:
       - "python"
     reviewers:
       - "nicolasbisurgi"
+      - "MariusWirtz"
+      # Add more individual reviewers:
+      # - "username2"
+      # - "username3"
+      # Or assign to teams (use org/team-name format):
+      # - "myorg/backend-team"
+      # - "myorg/devops"
     open-pull-requests-limit: 5
