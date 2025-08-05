@@ -28,21 +28,11 @@ jobs:
         run: |
           pyinstaller --onefile `
           --name "optimuspy" `
-          --add-data "executors.py:." `
-          --add-data "results.py:." `
-          --add-data "execution_mode.py:." `
-          --console `
-          optimuspy.py
-          
-          pyinstaller --onefile `
-          --name "optimuspy" `
           --add-data "execution_mode.py;." `
           --add-data "executors.py;." `
           --add-data "results.py;." `
-          --add-data "results;results" `
-          --add-data "optimuspy.py;." `
           --hidden-import "seaborn" `
-          --console .\optimuspy.py
+          --console optimuspy.py
 
       - name: Upload executable artifact
         uses: actions/upload-artifact@v4
