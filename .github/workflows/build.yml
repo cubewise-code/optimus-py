@@ -73,7 +73,7 @@ jobs:
         run: pyinstaller optimuspy.spec
 
       - name: Upload executable artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: optimuspy-windows
           path: dist/optimuspy.exe
