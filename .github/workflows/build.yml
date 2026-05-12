@@ -66,19 +66,21 @@ jobs:
           /tmp/venv/bin/pip install -r requirements.txt
           echo "/tmp/venv/bin" >> $GITHUB_PATH
 
-      - name: Build executable
-        run: pyinstaller optimuspy.spec
+      - name: Build executable (onedir)
+        run: pyinstaller optimuspy-linux.spec
 
       - name: Smoke test the binary
         run: |
-          ./dist/optimuspy --help || true
-          ldd dist/optimuspy || true
+          ./dist/optimuspy/optimuspy --help || true
+          ldd ./dist/optimuspy/optimuspy || true
           echo "Highest GLIBC version referenced:"
-          objdump -T dist/optimuspy 2>/dev/null | grep GLIBC_ | \
+          objdump -T ./dist/optimuspy/optimuspy 2>/dev/null | grep GLIBC_ | \
             awk '{print $5}' | sort -V -u | tail -n 5
 
-      - name: Rename binary
-        run: mv dist/optimuspy dist/optimuspy-linux
+      - name: Package onedir as tar.gz
+        run: |
+          mv dist/optimuspy dist/optimuspy-linux
+          tar -czf dist/optimuspy-linux.tar.gz -C dist optimuspy-linux
 
       - name: Get short SHA
         id: sha
@@ -92,4 +94,4 @@ jobs:
           tag_name: build-${{ steps.sha.outputs.short }}
           name: Build ${{ steps.sha.outputs.short }}
           body: "Automated build from commit ${{ github.sha }}"
-          files: dist/optimuspy-linux
+          files: dist/optimuspy-linux.tar.gz
