@@ -36,10 +36,10 @@ Click **Cancel** on the active job. OptimusPy:
 1. Sets the cancel event flag
 2. Waits for the current TM1 operation to return (or kills the active TM1 thread via `monitoring.cancel_thread` for very long queries)
 3. Restores the cube's original VMM/VMT values
-4. Restores the original dimension order
-5. Writes a final checkpoint
+4. Restores the original dimension order **best-effort** (a no-op if the connection is already gone — the checkpoint keeps the original order, so a resume restores it)
+5. Leaves the last checkpoint in place
 
-Re-running the same config resumes from the checkpoint — see [Checkpoints & Resume](../advanced/checkpoints-resume.md).
+Re-running the same config resumes from the checkpoint and recovers the single in-flight order — see [Checkpoints & Resume](../advanced/checkpoints-resume.md).
 
 ## Concurrency
 

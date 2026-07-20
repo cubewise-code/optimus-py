@@ -43,6 +43,15 @@ class ExecutionContext:
         self.current_ram = self.current_ram + (self.current_ram * percentage_change / 100)
         return self.current_ram
 
+    def reanchor_ram(self, ram: float) -> float:
+        """Re-anchor the %-chain to a fresh absolute reading on resume.
+
+        Moves only current_ram (the chain anchor); original_ram — the baseline
+        for ram_reduction — is left untouched, unlike set_initial_ram.
+        """
+        self.current_ram = ram
+        return ram
+
     @property
     def elapsed(self) -> float:
         return time.time() - self.start_time + getattr(self, '_elapsed_offset', 0.0)
@@ -68,7 +77,8 @@ class PermutationResult:
     def __init__(self, context: ExecutionContext, mode: str, cube_name: str, view_names: list,
                  process_names: list, dimension_order: list,
                  query_times_by_view: dict, process_times_by_process: dict, ram_usage: float = None,
-                 ram_percentage_change: float = None, reorder_duration: float = 0.0):
+                 ram_percentage_change: float = None, reorder_duration: float = 0.0,
+                 reanchor: bool = False):
 
         self.mode = ExecutionMode(mode)
         self.cube_name = cube_name
@@ -81,10 +91,13 @@ class PermutationResult:
         self.include_views = bool(view_names)
         self.include_process = bool(process_names)
 
-        # from original dimension order
+        # from original dimension order (baseline) or a resume re-anchor
         if ram_usage is not None:
             self.ram_usage = ram_usage
-            context.set_initial_ram(ram_usage)
+            if reanchor:
+                context.reanchor_ram(ram_usage)
+            else:
+                context.set_initial_ram(ram_usage)
         # from all other dimension orders
         elif ram_percentage_change is not None:
             self.ram_usage = context.update_ram(ram_percentage_change)

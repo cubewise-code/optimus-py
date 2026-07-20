@@ -252,7 +252,7 @@ v2.0 automatically saves progress after every permutation:
 
 - A checkpoint file is written to `results/checkpoint_{cube}.json` after each permutation completes
 - Re-running the **same command** automatically detects the checkpoint and resumes where it left off
-- The checkpoint validates that nothing has changed (same config, same cube, same instance, same initial dimension order)
+- The checkpoint validates that nothing has changed (same config, same cube, same instance, and the same dimension **set** — a cube left physically reordered by an interruption still resumes; only a dimension added/removed/renamed invalidates it)
 - Elapsed time accumulates across sessions, so the final report reflects total duration
 
 ```bash

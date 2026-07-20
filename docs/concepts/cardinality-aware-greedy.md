@@ -61,8 +61,8 @@ It locks the measured winner, recomputes the frontier, and continues. Undecided 
 
 Seed-and-refine, aimed at cutting reorder *count*:
 
-1. **Seed** from the cardinality-suggested order (ascending cardinality, string/measure dimensions last) and apply it — one reorder.
-2. **Coordinate-descent refinement**: for each *undecided* dimension (one with a within-τ neighbour), find its best position among only its **τ-allowed positions** — the contiguous span between the dimensions that must sit after it and those that must sit before it. Decided/pinned dimensions are skipped. Refinement runs largest-cardinality-first (a larger dimension moves RAM more).
+1. **Seed** from the cardinality-suggested order (ascending cardinality, **string-bearing dimensions last**) and apply it — one reorder. A numeric measure is *not* special-cased: it is placed by cardinality like any other dimension (a small/degenerate measure belongs at the *front* for RAM — the last slot is reserved for the largest-dense dimension by the 90/10 rule).
+2. **Coordinate-descent refinement**: for each *undecided* dimension (one with a within-τ neighbour), find its best position among only its **τ-allowed positions** — the contiguous span between the dimensions that must sit after it and those that must sit before it. Both the *accept metric* and the *τ used to prune that span* are chosen per dimension by its region (RAM on the back/last half, query or process on the front), exactly as the [ranking table](#pruning-is-keyed-to-the-ranking-metric) above — so a query-improving move that would regress RAM at the back is rejected. Decided/pinned dimensions are skipped. Refinement runs largest-cardinality-first (a larger dimension moves RAM more).
 3. **Iterate to stable**, capped at two passes, stopping early if a pass improves nothing.
 
 Because it seeds from a good order and only refines the genuinely undecided dimensions, the fast fold is both quicker and higher quality than a cardinality-blind "test the outer positions only" mode.
@@ -70,7 +70,7 @@ Because it seeds from a good order and only refines the genuinely undecided dime
 ## What τ never overrides
 
 - **Manual constraints win.** `dimensions_to_exclude` (keep a dimension fixed) and [`dimension_position_rules`](../advanced/dimension-position-rules.md) are hard constraints layered on top; τ-pruning operates only within the freedom they leave. Excluded dimensions are never moved and nothing is placed on top of them.
-- **String / measure stay last.** A string-bearing dimension (and the numeric measure dimension) is pinned to the last position exactly as always — see [String Element Constraint](string-element-constraint.md). τ never proposes a swap that would violate it.
+- **String dimensions stay last.** Only a *string-bearing* dimension is locked to the last position — TM1's single hard storage-order rule (`CellPutS`/string writes target the last dimension), see [String Element Constraint](string-element-constraint.md). A numeric measure carries no such constraint and is free to sit wherever cardinality places it. τ never proposes a swap that would move a string dimension off last, and no dimension is ever swept *into* a string dimension's (or an excluded dimension's) slot.
 - **The cost model stays honest.** The RAM baseline is read once (the original order); every other order's RAM is *derived* from the `%` change that each reorder returns. Every RAM figure therefore comes from a real reorder — placing a pinned dimension is still a real reorder; τ only skips the *alternatives* it would otherwise have tested.
 
 ## Tuning

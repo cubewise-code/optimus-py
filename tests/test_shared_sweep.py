@@ -41,6 +41,7 @@ def _bare_executor(view_names=None, process_names=None):
     ex.process_names = process_names or []
     ex.cancel_event = None
     ex.checkpoint_manager = None
+    ex._recovered_results = {}
     return ex
 
 
@@ -155,6 +156,7 @@ def _make_position_optimizer(target_position, dims, exclude=None):
     ex._resumed_results = []
     ex._original_order_result = None
     ex._initial_dimension_order = None
+    ex._recovered_results = {}
     # no string elements anywhere
     ex._has_string_elements = lambda name: False
     return ex
@@ -249,6 +251,7 @@ def _make_dimension_optimizer(target_dimension, dims, has_strings=False):
     ex._resumed_results = []
     ex._original_order_result = None
     ex._initial_dimension_order = None
+    ex._recovered_results = {}
     ex._has_string_elements = lambda name: has_strings
     return ex
 

@@ -19,7 +19,8 @@ from optimuspy.executors import (OriginalOrderExecutor, MainExecutor, Predefined
                                  PositionOptimizerExecutor, DimensionOptimizerExecutor,
                                  OptimizationCancelled)
 from optimuspy.metrics import (detect_is_v12, cube_memory_used_bytes, memory_by_cube_bytes,
-                               ram_source_ready)
+                               ram_source_ready, read_cube_memory_bytes)
+from optimuspy.resume import recover, RecoveryEffects
 from optimuspy.results import ExecutionContext, OptimusResult
 
 APP_NAME = "optimuspy"
@@ -212,6 +213,20 @@ def write_vmm_vmt(tm1: TM1Service, cube_name: str, vmm: str, vmt: str):
     tm1.cells.write_values_through_cellset(mdx, [vmm, vmt])
 
 
+def safe_restore_dimension_order(tm1: TM1Service, cube_name: str, dimension_order: List[str]):
+    """Best-effort restore of a cube's storage dimension order (crash/cancel paths).
+
+    An interrupted run leaves the cube at the last-applied permutation. Restoring
+    the true original keeps a non-resumed cube from being left reordered. Wrapped
+    in suppress(Exception) because the common interruption is a dropped
+    connection, which makes this a no-op — resume still recovers the work.
+    """
+    if not dimension_order:
+        return
+    with suppress(Exception):
+        tm1.cubes.update_storage_dimension_order(cube_name, dimension_order)
+
+
 def retrieve_ram_usage(tm1: TM1Service, cube_name: str) -> float:
     """Retrieve a cube's RAM in bytes via MetricService (cube_memory_used).
 
@@ -303,6 +318,32 @@ def _deduplicate_results(*result_lists):
     return unique
 
 
+def _recover_pending_order(tm1: TM1Service, cube_name: str, executor, pending: dict,
+                           original_order_result, resumed_results: list, is_v12: bool):
+    """Recover the single in-flight order (checkpoint v3 `pending`) on resume.
+
+    Delegates the land-check + back-calc to optimuspy.resume.recover, injecting
+    the executor's TM1 I/O as effects, then registers the recovered result so the
+    executor never re-applies that order.
+    """
+    pending_order = pending["dimension_order"]
+    current_order = list(tm1.cubes.get_storage_dimension_order(cube_name=cube_name))
+    # % is chained from the last completed order's absolute RAM (the original if
+    # nothing else completed).
+    prev_abs_ram = (resumed_results[-1].ram_usage if resumed_results
+                    else original_order_result.ram_usage)
+
+    effects = RecoveryEffects(
+        read_absolute_ram=lambda: read_cube_memory_bytes(tm1, cube_name, is_v12),
+        apply_and_measure=lambda order: executor._evaluate_permutation(order, retrieve_ram=True),
+        measure_views_processes=lambda order, abs_ram, pct: executor.measure_recovered_landed(
+            order, abs_ram, pct))
+
+    recovered = recover(pending_order, current_order, prev_abs_ram, effects)
+    executor.register_recovered(recovered)
+    logging.info(f"Recovered in-flight order for cube '{cube_name}': {pending_order}")
+
+
 def _execute_set_mode(tm1: TM1Service, cube_name: str, target_order: List[str], is_v12: bool = False) -> bool:
     logging.info(f"SET mode: applying dimension order for cube '{cube_name}' to: {target_order}")
 
@@ -344,7 +385,10 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
         write_vmm_vmt(tm1, cube_name, "1000000", "1000000")
 
     displayed_dimension_order = tm1.cubes.get_dimension_names(cube_name=cube_name)
-    measure_dimension_only_numeric = is_dimension_only_numeric(tm1, initial_dimension_order[-1])
+    # The live storage order (may be a crashed/reordered state); used only to
+    # validate the checkpoint by dimension SET. The true original is sourced from
+    # the checkpoint on resume (see below), never from this reordered read.
+    current_dimension_order = initial_dimension_order
 
     context = ExecutionContext()
     permutation_results = []
@@ -365,9 +409,14 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
     resume_state = None
 
     if not no_resume and checkpoint_mgr.exists():
-        if checkpoint_mgr.validate(initial_dimension_order):
+        if checkpoint_mgr.validate(current_dimension_order):
             checkpoint_data = checkpoint_mgr.load()
             logging.info("Resuming from checkpoint — restoring previous progress")
+
+            # The checkpoint is the source of truth for the original order — the
+            # live cube may be left reordered by the interruption, so re-reading it
+            # would lose the true original (baseline + end-restore target).
+            initial_dimension_order = checkpoint_data["initial_dimension_order"]
 
             # Restore execution context
             CheckpointManager.restore_execution_context(context, checkpoint_data)
@@ -390,6 +439,11 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
     elif no_resume and checkpoint_mgr.exists():
         logging.info("--no-resume specified — ignoring existing checkpoint")
         checkpoint_mgr.remove()
+
+    # Determine the measure (string-last) rule from the RESOLVED original order —
+    # on resume that is the checkpoint's original, not the reordered live cube,
+    # whose last dim need not be the measure.
+    measure_dimension_only_numeric = is_dimension_only_numeric(tm1, initial_dimension_order[-1])
 
     with ram_source_ready(tm1, is_v12):
         try:
@@ -450,8 +504,18 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
                     dimension_position_rules=dimension_position_rules, cancel_event=cancel_event,
                     is_v12=is_v12, cardinality=cardinality, string_dims=string_dims)
 
-            # Set resume context on executor
-            executor.set_resume_context(initial_dimension_order, original_order_result, resumed_results)
+            # Set resume context on executor (arm the RAM re-anchor only on a real resume)
+            executor.set_resume_context(initial_dimension_order, original_order_result,
+                                        resumed_results, resuming=resume_state is not None)
+
+            # Level 2: recover the single in-flight order recorded before the drop.
+            # register_recovered appends it to `resumed_results` (same list object),
+            # so it flows into the merged report below.
+            pending = resume_state.get("pending") if resume_state else None
+            if pending:
+                _recover_pending_order(
+                    tm1, cube_name, executor, pending, original_order_result,
+                    resumed_results, is_v12)
 
             # Execute (with resume state if available)
             new_results = executor.execute(resume_state=resume_state)
@@ -485,9 +549,13 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
             checkpoint_mgr.remove()
 
         except OptimizationCancelled:
+            # Best-effort: don't leave a non-resumed cube reordered (no-op if the
+            # connection is already gone; resume recovers regardless).
+            safe_restore_dimension_order(tm1, cube_name, initial_dimension_order)
             raise  # Let caller (JobManager) handle cancellation cleanly
         except Exception as e:
             logging.error(f"Fatal error: {e}", exc_info=True)
+            safe_restore_dimension_order(tm1, cube_name, initial_dimension_order)
             logging.info("Re-run the same command to resume from checkpoint")
             return False
 

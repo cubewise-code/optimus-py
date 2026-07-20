@@ -52,16 +52,61 @@ class OptipyzerExecutor:
         self._initial_dimension_order = None
         self._original_order_result = None
         self._resumed_results = []
+        # One-shot: the first evaluation after a resume takes an absolute RAM read
+        # to re-anchor the stale %-chain (set by set_resume_context).
+        self._reanchor_needed = False
+        # Snapshot of the last `received` checkpoint (completed results + executor
+        # state), so a `submitted` write can preserve it while adding pending.
+        self._last_checkpoint = None
+        # Level-2 recovered in-flight orders keyed by tuple(order); the evaluation
+        # paths inject these instead of re-applying the reorder.
+        self._recovered_results = {}
 
     def _check_cancelled(self):
         if self.cancel_event and self.cancel_event.is_set():
             raise OptimizationCancelled("Optimization cancelled by user")
 
-    def set_resume_context(self, initial_dimension_order, original_order_result, resumed_results):
-        """Set checkpoint resume context. Must be called before execute() when resuming."""
+    def set_resume_context(self, initial_dimension_order, original_order_result, resumed_results,
+                           resuming=True):
+        """Set checkpoint resume context. Called before execute() on every run.
+
+        `resuming` arms the one-shot RAM re-anchor: True only when actually
+        resuming a checkpoint (the %-chain anchor is stale then). On a fresh run
+        core passes resuming=False so the first iteration keeps the fast % method.
+        """
         self._initial_dimension_order = initial_dimension_order
         self._original_order_result = original_order_result
         self._resumed_results = resumed_results
+        self._reanchor_needed = resuming
+
+    def register_recovered(self, result):
+        """Record a Level-2 recovered in-flight order so it is never re-applied.
+
+        The order joins _resumed_results (so it appears in the merged report and
+        the checkpoint), and the evaluation paths inject its result instead of
+        re-sending the reorder. Recovery already took the one absolute RAM read,
+        so the first-eval re-anchor is disarmed here.
+        """
+        self._resumed_results.append(result)
+        self._recovered_results[tuple(result.dimension_order)] = result
+        self._reanchor_needed = False
+
+    def measure_recovered_landed(self, order, abs_ram, pct):
+        """Landed branch: run only the outstanding views/processes for `order`.
+
+        The reorder already landed before the drop, so it is not repeated. The
+        result carries the fresh absolute RAM (re-anchoring the %-chain) and the
+        back-calculated % for display.
+        """
+        query_times_by_view = self._determine_query_permutation_result()
+        process_times_by_process = None
+        if self.include_process:
+            process_times_by_process = self._determine_process_permutation_result()
+        return PermutationResult(
+            self.context, self.mode, self.cube_name, self.view_names, self.process_names,
+            list(order), query_times_by_view, process_times_by_process,
+            ram_usage=abs_ram, ram_percentage_change=pct, reorder_duration=0.0,
+            reanchor=True)
 
     def _determine_query_permutation_result(self) -> Dict[str, List[float]]:
         query_times_by_view = {}
@@ -106,6 +151,19 @@ class OptipyzerExecutor:
 
         logging.info(f"{progress_label} - Testing order: {permutation}")
 
+        # Mark this order `submitted` (v3 pending) before the reorder is sent, so a
+        # drop between the reorder and the received write leaves it recoverable.
+        if not is_original_order:
+            self._write_pending(permutation)
+
+        # First measurement after a resume: take one absolute read to re-anchor the
+        # stale %-chain, then fall back to the fast % method for every later order.
+        reanchor = False
+        if self._reanchor_needed and not is_original_order:
+            retrieve_ram = True
+            reanchor = True
+            self._reanchor_needed = False
+
         reorder_start = time.time()
         ram_percentage_change = self.tm1.cubes.update_storage_dimension_order(self.cube_name, permutation)
         reorder_duration = time.time() - reorder_start
@@ -122,7 +180,7 @@ class OptipyzerExecutor:
         permutation_result = PermutationResult(
             self.context, self.mode, self.cube_name, self.view_names, self.process_names,
             permutation, query_times_by_view, process_times_by_process, ram_usage,
-            ram_percentage_change, reorder_duration)
+            ram_percentage_change, reorder_duration, reanchor=reanchor)
 
         query_log = ""
         if self.view_names:
@@ -156,13 +214,35 @@ class OptipyzerExecutor:
         if not success:
             raise RuntimeError(f"Failed to clear cache for cube '{self.cube_name}'. Status: '{status}'")
 
+    @staticmethod
+    def _dedup_results(results):
+        """Drop duplicate PermutationResults by permutation_id, preserving order.
+
+        A recovered in-flight order lives in both _resumed_results and a sweep's
+        results; deduping here keeps completed_results a clean set.
+        """
+        seen, unique = set(), []
+        for r in results:
+            if r.permutation_id in seen:
+                continue
+            seen.add(r.permutation_id)
+            unique.append(r)
+        return unique
+
     def _save_checkpoint(self, new_results, last_applied_order, executor_state=None):
         if not self.checkpoint_manager:
             return
         if not self._original_order_result or not self._initial_dimension_order:
             logging.warning("Checkpoint skipped — resume context not set (call set_resume_context first)")
             return
-        all_completed = self._resumed_results + new_results
+        # Snapshot this `received` state so a later `submitted` write can preserve
+        # it (same completed set + executor_state) while adding a pending order.
+        self._last_checkpoint = {
+            "new_results": list(new_results),
+            "last_applied_order": list(last_applied_order),
+            "executor_state": executor_state,
+        }
+        all_completed = self._dedup_results(self._resumed_results + new_results)
         self.checkpoint_manager.save(
             executor_type=self.__class__.__name__,
             execution_context=self.context,
@@ -170,7 +250,33 @@ class OptipyzerExecutor:
             last_applied_order=last_applied_order,
             original_order_result=self._original_order_result,
             completed_results=all_completed,
-            executor_state=executor_state)
+            executor_state=executor_state,
+            pending=None)
+
+    def _write_pending(self, permutation):
+        """Write a `submitted` checkpoint (pending set) before the reorder is sent.
+
+        Preserves the last `received` snapshot's completed_results and
+        executor_state so no progress is lost; only `pending` is added.
+        """
+        if not self.checkpoint_manager:
+            return
+        if not self._original_order_result or not self._initial_dimension_order:
+            return
+        snap = self._last_checkpoint
+        new_results = snap["new_results"] if snap else []
+        executor_state = snap["executor_state"] if snap else None
+        last_applied = snap["last_applied_order"] if snap else self._initial_dimension_order
+        all_completed = self._dedup_results(self._resumed_results + new_results)
+        self.checkpoint_manager.save(
+            executor_type=self.__class__.__name__,
+            execution_context=self.context,
+            initial_dimension_order=self._initial_dimension_order,
+            last_applied_order=last_applied,
+            original_order_result=self._original_order_result,
+            completed_results=all_completed,
+            executor_state=executor_state,
+            pending={"dimension_order": list(permutation)})
 
     def _sweep_into_position(self, current_order, target_position, candidate_dims,
                              total_permutations, skip_candidate=None,
@@ -186,6 +292,13 @@ class OptipyzerExecutor:
                 continue
             permutation = swap(current_order, target_position, current_order.index(dim))
             if skip_permutation and skip_permutation(permutation):
+                continue
+            recovered = self._recovered_results.get(tuple(permutation))
+            if recovered is not None:
+                # Injected, not re-applied — still competes in _pick_best.
+                results.append(recovered)
+                if checkpoint_cb:
+                    checkpoint_cb(dim, results)
                 continue
             self._check_cancelled()
             result = self._evaluate_permutation(permutation, total_permutations=total_permutations)
@@ -205,6 +318,13 @@ class OptipyzerExecutor:
         for position in candidate_positions:
             permutation = swap(current_order, position, current_order.index(target_dim))
             if skip_permutation and skip_permutation(permutation):
+                continue
+            recovered = self._recovered_results.get(tuple(permutation))
+            if recovered is not None:
+                # Injected, not re-applied — still competes in _pick_best.
+                results.append(recovered)
+                if checkpoint_cb:
+                    checkpoint_cb(position, results)
                 continue
             self._check_cancelled()
             result = self._evaluate_permutation(permutation, total_permutations=total_permutations)
@@ -310,8 +430,22 @@ class MainExecutor(OptipyzerExecutor):
         dimension_pool = [d for d in self.dimensions if d not in self.dimensions_to_exclude]
         mid = int(len(dimension_pool) / 2)
         if not self.measure_dimension_only_numeric:
-            dimension_pool.remove(self.dimensions[-1])
-            dimensions.remove(self.dimensions[-1])
+            # Lock the string-bearing dim to the last slot using the authoritative
+            # string_dims set — NOT presentation-order [-1], which need not be the
+            # string dim on an already-optimized cube. Move it last if it isn't,
+            # then freeze it: never a swap candidate (out of the pool) and its slot
+            # is never a sweep target (out of the iterated range). Fall back to [-1]
+            # only if metadata flags no string dim while the measure is non-numeric.
+            # TM1 permits at most one such dim, but a list is handled defensively.
+            string_last = [d for d in self.dimensions if d in self.string_dims] or [self.dimensions[-1]]
+            for sd in string_last:
+                if sd in dimension_pool:
+                    dimension_pool.remove(sd)
+                if sd in dimensions:
+                    dimensions.remove(sd)
+                if resulting_order[-1] != sd:
+                    resulting_order.remove(sd)
+                    resulting_order.append(sd)
         has_views, has_processes = bool(self.view_names), bool(self.process_names)
 
         # Result representing the current resulting_order. It carries the "keep the
@@ -380,7 +514,16 @@ class MainExecutor(OptipyzerExecutor):
         return permutation_results
 
     def _seed_order(self):
-        """Cardinality-ascending seed with string/measure dims last.
+        """Cardinality-ascending seed with string dims last.
+
+        Only a *string*-bearing dimension is forced to the last slot — that is
+        TM1's sole storage-order constraint (CellPutS/string writes target the
+        last dimension, so a string dim cannot leave it). A numeric measure has
+        no such constraint and is placed purely by cardinality like any other
+        dimension: a small/degenerate measure belongs at the FRONT for RAM
+        (small-sparse first; the 90/10 rule reserves the last slot for the
+        largest-dense dim). This mirrors _compute_suggested_order, which likewise
+        locks only string dims last.
 
         Dimensions in dimensions_to_exclude are frozen at their original index;
         only the movable dims are re-ordered, into the movable positions.
@@ -392,10 +535,6 @@ class MainExecutor(OptipyzerExecutor):
         non_string = [d for d in movable if d not in self.string_dims]
         string_last = [d for d in movable if d in self.string_dims]
         non_string.sort(key=lambda d: self.cardinality.get(d, 0))
-        # keep the numeric measure last among the movable non-string dims
-        if self.measure_dimension_only_numeric and self.dimensions[-1] in non_string:
-            non_string.remove(self.dimensions[-1])
-            non_string.append(self.dimensions[-1])
         ordered_movable = non_string + string_last
         for pos, dim in zip(movable_positions, ordered_movable):
             result[pos] = dim
@@ -403,19 +542,20 @@ class MainExecutor(OptipyzerExecutor):
 
     def _run_fold_b(self, resume_state: dict = None) -> List[PermutationResult]:
         has_views, has_processes = bool(self.view_names), bool(self.process_names)
-        if has_views:
-            tau_split = tau_span = tau.TAU_QUERY
-            ranking = "query"
-        elif has_processes:
-            tau_split, tau_span, ranking = tau.TAU_RAM, None, "process"
-        else:
-            tau_split = tau_span = tau.TAU_RAM
-            ranking = "ram"
+        # The refine SET uses one tau_split (a dim is "undecided"/worth refining if
+        # a neighbour is within it): looser on views cubes so query candidates
+        # survive, else RAM strength. The ACCEPT metric and the position SPAN, by
+        # contrast, are both chosen PER DIM by region below (ranking_for_position /
+        # tau_for_position): RAM strength on the back/last half (the 90/10 rule),
+        # looser query on the front (views), unpruned on process fronts. So a
+        # query-improving move that regresses RAM at the back is rejected, and a
+        # back dim's window is pruned tightly by RAM even when views are set.
+        # Mirrors fold A and ADR-0002 ("the back half is always RAM-ranked").
+        tau_split = tau.TAU_QUERY if has_views else tau.TAU_RAM
 
         resulting_order = self._seed_order()
         permutation_results = []
-        last = len(resulting_order) - 1
-        pinned_last = self.dimensions[-1] if not self.measure_dimension_only_numeric else None
+        mid = int(len(resulting_order) / 2)
 
         start_pass = 0
         executor_state = resume_state.get("executor_state", {}) if resume_state else {}
@@ -432,19 +572,29 @@ class MainExecutor(OptipyzerExecutor):
         for pass_index in range(start_pass, tau.FOLD_B_MAX_PASSES):
             improved = False
             ordered = [(d, self.cardinality.get(d, 0)) for d in resulting_order]
+            # A string-bearing dim is locked to its (seeded-last) slot — moving it
+            # off last breaks CellPutS — and an excluded dim is frozen. Neither is
+            # ever a refine target, and no other dim may be swept INTO their slots.
             refine = [d for d in tau.fold_b_refine_order(ordered, tau_split)
-                      if d != pinned_last and d not in self.string_dims
+                      if d not in self.string_dims
                       and d not in self.dimensions_to_exclude]
-            excluded_positions = {i for i, d in enumerate(resulting_order)
-                                  if d in self.dimensions_to_exclude}
+            reserved_positions = {i for i, d in enumerate(resulting_order)
+                                  if d in self.dimensions_to_exclude
+                                  or d in self.string_dims}
             for dim in refine:
                 current_idx = resulting_order.index(dim)
+                # Judge this dim's move — and prune its position window — by the
+                # metric that owns its region: RAM for the back/last half, query
+                # (views) or process for the front. tau_for_position returns None
+                # for process fronts (cardinality can't predict process time), so
+                # fold_b_allowed_span leaves those spans unpruned.
+                ranking = tau.ranking_for_position(current_idx, mid, has_views, has_processes)
+                span_tau = tau.tau_for_position(ranking)
                 lo, hi = tau.fold_b_allowed_span(
-                    dim, [(d, self.cardinality.get(d, 0)) for d in resulting_order], tau_span)
+                    dim, [(d, self.cardinality.get(d, 0)) for d in resulting_order], span_tau)
                 positions = [p for p in range(lo, hi + 1)
                              if p != current_idx
-                             and not (p == last and dim in self.string_dims)
-                             and p not in excluded_positions]
+                             and p not in reserved_positions]
                 if not positions:
                     continue
 
@@ -521,6 +671,19 @@ class PredefinedOrderExecutor(OptipyzerExecutor):
 
         for idx, order in enumerate(self.predefined_orders):
             if idx in completed_indices:
+                continue
+
+            recovered = self._recovered_results.get(tuple(order))
+            if recovered is not None:
+                # Injected, not re-applied.
+                results.append(recovered)
+                completed_indices.add(idx)
+                self._save_checkpoint(
+                    new_results=results,
+                    last_applied_order=list(order),
+                    executor_state={
+                        "predefined_state": {"completed_indices": sorted(completed_indices)}
+                    })
                 continue
 
             self._check_cancelled()

@@ -8,7 +8,7 @@ from typing import List, Union
 
 from optimuspy.results import ExecutionContext, PermutationResult
 
-CHECKPOINT_VERSION = 2
+CHECKPOINT_VERSION = 3
 
 
 class CheckpointManager:
@@ -52,7 +52,16 @@ class CheckpointManager:
         with open(self.checkpoint_path, "r") as f:
             return json.load(f)
 
-    def validate(self, initial_dimension_order: List[str]) -> bool:
+    def validate(self, current_dimension_order: List[str]) -> bool:
+        """Return True if the checkpoint applies to the cube's current schema.
+
+        Validation is by dimension *set*, not order: every iterating mode leaves
+        the cube physically reordered after an interruption, so the live order is
+        never expected to equal the stored original. The only thing that makes the
+        stored orders inapplicable is a schema change (a dimension added, removed,
+        or renamed), which the set comparison catches. Version, config-fingerprint,
+        cube, and instance checks are unchanged.
+        """
         try:
             data = self.load()
         except Exception as e:
@@ -78,8 +87,9 @@ class CheckpointManager:
                             f"got '{data.get('instance')}'")
             return False
 
-        if data.get("initial_dimension_order") != initial_dimension_order:
-            logging.warning("Checkpoint initial dimension order does not match current cube order")
+        if set(data.get("initial_dimension_order") or []) != set(current_dimension_order):
+            logging.warning("Checkpoint dimension set does not match current cube — "
+                            "a dimension was added, removed, or renamed")
             return False
 
         # Cache created_at from the validated checkpoint
@@ -90,7 +100,7 @@ class CheckpointManager:
              initial_dimension_order: List[str], last_applied_order: List[str],
              original_order_result: PermutationResult,
              completed_results: List[PermutationResult],
-             executor_state: dict = None):
+             executor_state: dict = None, pending: dict = None):
         now = datetime.now().isoformat(timespec="seconds")
 
         data = {
@@ -101,6 +111,9 @@ class CheckpointManager:
             "executor_type": executor_type,
             "initial_dimension_order": initial_dimension_order,
             "last_applied_order": last_applied_order,
+            # The single in-flight order (v3): written as `submitted` before the
+            # reorder, cleared to None once the full evaluation is `received`.
+            "pending": pending,
             "execution_context": execution_context.to_checkpoint_dict(),
             "original_order_result": self.serialize_result(original_order_result),
             "completed_results": [self.serialize_result(r) for r in completed_results],

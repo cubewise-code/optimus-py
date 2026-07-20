@@ -22,7 +22,7 @@ OptimusPy benchmarks dimension orders by physically reordering the cube on the T
 8. Generate HTML / CSV / XLSX report
 ```
 
-Steps 2 and 7 are wrapped in a `try/finally` — even if the job fails or is cancelled, VMM/VMT and the original order are always restored.
+Steps 2 and 7 are wrapped in a `try/finally` — even if the job fails or is cancelled, VMM/VMT are always restored, and the original dimension order is restored **best-effort** (if the connection has already dropped this is a no-op; the checkpoint retains the original order, so a resume restores it instead).
 
 ## The cardinality-aware greedy (two folds)
 
