@@ -182,16 +182,7 @@ class OptipyzerExecutor:
             permutation, query_times_by_view, process_times_by_process, ram_usage,
             ram_percentage_change, reorder_duration, reanchor=reanchor)
 
-        query_log = ""
-        if self.view_names:
-            query_log = f" - Query [s]: {permutation_result.composite_query_time():.5f}"
-
-        process_log = ""
-        if self.include_process:
-            process_log = f" - Process [s]: {permutation_result.composite_process_time():.5f}"
-
-        logging.info(f"{progress_label} - Result: RAM [GB]: {permutation_result.ram_usage / 1024 ** 3:.2f}"
-                     + query_log + process_log)
+        logging.info(f"{progress_label} - Result: {permutation_result.stats_summary()}")
 
         return permutation_result
 

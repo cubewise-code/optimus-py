@@ -34,7 +34,7 @@ Iteration 1 of 30 - Result: RAM [GB]: 3.84
 Iteration 30 of 30 - Testing order: ['Periods', 'Sales', 'Currency', 'Versions', 'Customer', 'Accounts']
 Iteration 30 of 30 - Result: RAM [GB]: 2.71
 Completed analysis for cube 'Sales'
-Best order for cube 'Sales': ['Periods', 'Sales', 'Currency', 'Versions', 'Customer', 'Accounts']
+Iteration 30 was the best one for cube 'Sales' - RAM [GB]: 2.71 - Order: ['Periods', 'Sales', 'Currency', 'Versions', 'Customer', 'Accounts']
 Restored original dimension order for cube 'Sales'
 ```
 

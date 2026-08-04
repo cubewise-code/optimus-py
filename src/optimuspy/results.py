@@ -136,6 +136,27 @@ class PermutationResult:
         medians = [statistics.median(times) for times in self.process_times_by_process.values()]
         return statistics.median(medians) if len(medians) > 1 else medians[0]
 
+    @property
+    def label(self) -> str:
+        """Run label matching the progress logs ("Original Order" / "Iteration 5").
+
+        The original order always consumes permutation_id 1, so the iteration
+        number is permutation_id - 1 — the same value the executors log while
+        the order is being tested.
+        """
+        if self.mode == ExecutionMode.ORIGINAL_ORDER:
+            return "Original Order"
+        return f"Iteration {self.permutation_id - 1}"
+
+    def stats_summary(self) -> str:
+        """RAM / query / process stats in the same shape as the progress logs."""
+        stats = [f"RAM [GB]: {self.ram_usage / 1024 ** 3:.2f}"]
+        if self.include_views:
+            stats.append(f"Query [s]: {self.composite_query_time():.5f}")
+        if self.include_process:
+            stats.append(f"Process [s]: {self.composite_process_time():.5f}")
+        return " - ".join(stats)
+
     def build_header(self) -> list:
         dimensions = ["Dimension" + str(d) for d in range(1, len(self.dimension_order) + 1)]
         return HEADER + dimensions

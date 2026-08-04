@@ -537,11 +537,14 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
                     f"Please pick manually based on results.")
             else:
                 best_order = best_permutation.dimension_order
+                logging.info(
+                    f"{best_permutation.label} was the best one for cube '{cube_name}' "
+                    f"- {best_permutation.stats_summary()} - Order: {best_order}")
                 if update:
                     tm1.cubes.update_storage_dimension_order(cube_name, best_order)
-                    logging.info(f"Updated dimension order for cube '{cube_name}' to {best_order}")
+                    logging.info(f"Updated dimension order for cube '{cube_name}' "
+                                 f"to the {best_permutation.label} order")
                 else:
-                    logging.info(f"Best order for cube '{cube_name}': {best_order}")
                     tm1.cubes.update_storage_dimension_order(cube_name, initial_dimension_order)
                     logging.info(f"Restored original dimension order for cube '{cube_name}'")
 
