@@ -4499,6 +4499,8 @@ const OptimusPy = (function () {
       try {
         const data = await Api.getSavedCubes();
         const configs = data.saved_cubes || [];
+        // Reloaded after a delete or a folder change: replace the rows, don't add to them.
+        container.innerHTML = "";
 
         if (configs.length === 0) {
           container.appendChild(el("div", { className: "text-secondary text-sm" }, "No saved configs."));
