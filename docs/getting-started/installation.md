@@ -13,7 +13,7 @@ cd optimus-py
 pip install -e .
 ```
 
-This installs the dependencies (TM1py 2.3.0 or later, mdxpy, pandas, XlsxWriter, Jinja2 and configparser). `-e` installs in editable mode — code changes take effect without reinstalling. The `optimuspy` and `python -m optimuspy` commands both become available.
+This installs the dependencies (TM1py 2.3.0 or later, mdxpy, pandas, XlsxWriter and configparser). `-e` installs in editable mode — code changes take effect without reinstalling. The `optimuspy` and `python -m optimuspy` commands both become available.
 
 Verify the install:
 

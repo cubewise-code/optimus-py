@@ -32,7 +32,6 @@ dependencies = [
     "mdxpy>=0.2",
     "xlsxwriter",
     "pandas",
-    "Jinja2",
 ]
 
 [project.optional-dependencies]

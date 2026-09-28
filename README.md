@@ -84,7 +84,6 @@ The **Build Executable** workflow builds a Windows and a Linux bundle on every r
 * [mdxpy](https://pypi.org/project/mdxpy/)
 * [pandas](https://pypi.org/project/pandas/)
 * [XlsxWriter](https://pypi.org/project/XlsxWriter/)
-* [Jinja2](https://pypi.org/project/Jinja2/)
 * [configparser](https://pypi.org/project/configparser/)
 
 ## License
