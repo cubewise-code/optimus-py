@@ -73,15 +73,16 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
   - It can also export them to `exports/` as JSON cube configs that `optimuspy set` applies.
 
   See [Sync Order Page](docs/ui/sync-order-page.md) and [Exporting & Importing Orders](docs/advanced/exporting-importing-orders.md).
-- **Settings page.** It adds, edits, tests and deletes the instances in `config/config.ini`, and adding the first instance creates the file. See [Settings Page](docs/ui/settings-page.md).
+- **Settings page.** It links the `config.ini` you already keep for RushTI or your scripts, or copies it into `config/config.ini`, and shows each instance read-only with *Test Connection*. The CLI uses the same file. See [Settings Page](docs/ui/settings-page.md).
+- **A settings file.** The optional `config/settings.ini` remembers the linked `config.ini`, the UI's port and whether it opens a browser. The bundle ships `config/settings.ini.example`. See [Settings File](docs/getting-started/settings.md).
 - **TM1 v12 (PAoC / PAaaS)** alongside v11. VMM and VMT are raised during a run and put back afterwards on v11 only. See [Home](docs/index.md).
 - **`-v` / `--verbose`** logs the reason each skipped order was refused.
-- **Windows and Linux bundles.** Each holds the executable, `config/config.ini.example` and the sample cube configs. See [Installation](docs/getting-started/installation.md).
+- **Windows and Linux bundles.** Each holds the executable, `config/config.ini.example`, `config/settings.ini.example` and the sample cube configs. See [Installation](docs/getting-started/installation.md).
 
 ### Changed
 
 - **Command line.** The command is now `optimuspy <mode> <cube_config.json>` (or `python -m optimuspy`, or `python optimuspy.py` from a clone), and the 1.x flags are gone. See [CLI Reference](docs/advanced/cli-reference.md).
-- **Where `config.ini` lives.** It is read from `config/config.ini` in the folder you run from (for the bundle, the executable's folder). A file passed with `--config` is read-only.
+- **Where `config.ini` lives.** It is read from the file given with `--config`, else the file linked on the Settings page, else `config/config.ini` in the folder you run from (for the bundle, the executable's folder). OptimusPy doesn't edit it.
 - **Where the log is written.** OptimusPy writes `logs/optimuspy.log` in its install folder: the executable's folder for the bundle, the repository root for a clone. 1.x wrote `optimuspy.log` in the folder you ran from.
 - **Result files.** They go in a folder per instance, and the names no longer include the view or process. An HTML report is always written, and it replaces the 1.x `.png` chart.
 - **Python 3.9 or later.** You install with pip, which also installs the dependencies (TM1py 2.3.0 or later). matplotlib and seaborn are no longer needed.

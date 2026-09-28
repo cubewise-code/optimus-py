@@ -20,15 +20,16 @@ New to OptimusPy? We'd recommend starting with the [User Guide](guide/choose-a-m
 - **An HTML report for every run.** Summary cards, the recommended order, a chart of memory against query time relative to the original order, a podium with the best order per metric, and the full sortable table. See the [Results Page](ui/results-page.md).
 - **Checkpoint and resume.** Run the same `optimize` command again and it continues where a stopped or failed run left off, including the order that was in flight. `--no-resume` starts over, and `--tm1-checkpoint` keeps the checkpoint in TM1's file storage for environments without a persistent disk. See [Checkpoints & Resume](advanced/checkpoints-resume.md).
 - **Sync Order and exported orders.** The Sync Order page copies storage orders from one instance to another, and can export them to `exports/` as JSON configs that `optimuspy set` applies. See the [Sync Order Page](ui/sync-order-page.md) and [Exporting & Importing Orders](advanced/exporting-importing-orders.md).
-- **Settings page.** It adds, edits, tests and deletes the instances in `config/config.ini`, and adding the first instance creates the file. See the [Settings Page](ui/settings-page.md).
+- **Settings page.** It links the `config.ini` you already keep for RushTI or your scripts, or copies it into `config/config.ini`, then shows each instance read-only with *Test Connection*. The choice is shared with the CLI. See the [Settings Page](ui/settings-page.md).
+- **A settings file.** `config/settings.ini` remembers the linked `config.ini`, the UI's port and whether it opens a browser. It's optional; the bundle ships `config/settings.ini.example`. See [Settings File](getting-started/settings.md).
 - **TM1 v12 (PAoC / PAaaS)** alongside v11. Memory is read through TM1py's Metrics service on both, and the VMM / VMT override only happens on v11, where those settings exist. See [VMM / VMT Handling](concepts/vmm-vmt-handling.md).
 - **`-v` / `--verbose`** logs the reason each skipped order was refused. See [Optimization Logging](concepts/how-it-works.md#optimization-logging).
-- **Windows and Linux bundles.** Each holds the executable, `config/config.ini.example` and the sample cube configs, so nothing needs installing. See [Installation](getting-started/installation.md).
+- **Windows and Linux bundles.** Each holds the executable, `config/config.ini.example`, `config/settings.ini.example` and the sample cube configs, so nothing needs installing. See [Installation](getting-started/installation.md).
 
 ## Changed
 
 - **Command line.** The command is now `optimuspy <mode> <cube_config.json>` (or `python -m optimuspy`, or `python optimuspy.py` from a clone), and the 1.x flags are gone. See the [CLI Reference](advanced/cli-reference.md).
-- **Where `config.ini` lives.** It's read from `config/config.ini` in the folder you run from (for the bundle, the executable's folder). A file passed with `--config` is read-only, so it can be shared with other TM1py tools. See [TM1 Connection](getting-started/tm1-connection.md).
+- **Where `config.ini` lives.** It's read from the file given with `--config`, else the file linked on the Settings page, else `config/config.ini` in the folder you run from (for the bundle, the executable's folder). OptimusPy doesn't edit it, so it can be shared with other TM1py tools. See [TM1 Connection](getting-started/tm1-connection.md#which-configini-is-read).
 - **Where the log is written.** `logs/optimuspy.log` in the install folder: the executable's folder for the bundle, the repository root for a clone. 1.x wrote `optimuspy.log` in the folder you ran from.
 - **Result files.** They go in `results/<instance>/`, named `<instance>_<cube>_<timestamp>`, without the view or process in the name. An HTML report is always written, and it replaces the 1.x `.png` chart.
 - **Python 3.9 or later**, installed with pip along with the dependencies (TM1py 2.3.0 or later). matplotlib and seaborn are no longer needed.

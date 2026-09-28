@@ -2,16 +2,19 @@
 OptimusPy Workflow UI — Lightweight local web interface for the scan → optimize → set pipeline.
 
 Usage:
-    python ui.py                                    # localhost:8765, default config.ini
+    python ui.py                                    # localhost:8765, the config.ini chosen in Settings
     python ui.py --port 9000                        # custom port
     python ui.py --config config/production.ini     # custom config.ini
 """
 
 import argparse
+import configparser
 import json
 import logging
 import math
+import os
 import re
+import shutil
 import sys
 import threading
 import time
@@ -29,7 +32,8 @@ from optimuspy.core import (
     get_tm1_config, validate_cube_config,
     main as run_optimuspy, _scan_to_data_light, configure_logging, get_logfile_path, RESULT_PATH,
     set_current_directory, _collect_dimension_metadata, _compute_suggested_order,
-    resolve_config_path
+    resolve_config_path, save_setting, setting_open_browser, setting_ui_port,
+    DEFAULT_CONFIG_INI, DEFAULT_PORT, SETTINGS_PATH
 )
 from optimuspy.executors import OptimizationCancelled
 from optimuspy.metrics import detect_is_v12
@@ -38,11 +42,7 @@ from optimuspy.optimize_db import (
     validate_db_config
 )
 
-DEFAULT_PORT = 8765
-DEFAULT_CONFIG_INI = "config/config.ini"
-
-# config.ini keys that carry a credential. The Settings page writes them through
-# write-only fields; the server never sends them back to the browser.
+# config.ini keys that carry a credential. The server never sends them to the browser.
 SECRET_KEYS = frozenset({
     "password", "api_key", "application_client_secret", "cam_passport", "access_token",
 })
@@ -75,9 +75,10 @@ def _error_text(e: Exception) -> str:
     return f"{status}: {message}" if message else status
 
 
-# Global state
+# Global state. The config.ini in use and where it came from: "flag" (--config),
+# "linked" or "default" (see core.resolve_config_path). Settings can switch it.
 _config_ini_path = DEFAULT_CONFIG_INI
-_config_read_only = False
+_config_source = "default"
 
 
 def _resolve_static_dir() -> Path:
@@ -90,13 +91,62 @@ def _create_tm1_connection(instance_name: str, password: str = None):
     return tm1_connector(_config_ini_path, instance_name, password)()
 
 
-def _write_config(config) -> None:
-    """Save config.ini, creating its folder: the executable ships without one, so
-    the first instance added from Settings is what creates config/config.ini."""
-    path = Path(_config_ini_path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with open(path, "w", encoding="utf-8") as f:
-        config.write(f)
+def _typed_path(text: str) -> Path:
+    """A path as it was typed or pasted: surrounding whitespace and one pair of
+    quotes removed (Windows "Copy as path" adds them), and ~ expanded."""
+    text = (text or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        text = text[1:-1].strip()
+    return Path(text).expanduser()
+
+
+def _parse_config_ini(path) -> configparser.ConfigParser:
+    """config.ini parsed the way the CLI reads it, but raising on a file that is
+    missing, unreadable or malformed instead of reading it as empty."""
+    config = configparser.ConfigParser()
+    with open(path, encoding="utf-8") as f:
+        config.read_file(f)
+    return config
+
+
+def _config_ini_to_use(text: str) -> Path:
+    """The absolute path of the config.ini that a typed path names: the file itself,
+    or config.ini inside a folder. Raises ValueError naming the path and the reason."""
+    if not (text or "").strip():
+        raise ValueError("Enter the path to a config.ini, or to the folder that holds one")
+    path = _typed_path(text)
+    if path.is_dir():
+        path = path / "config.ini"
+    if not path.is_file():
+        raise ValueError(f"{path}: no such file")
+    try:
+        config = _parse_config_ini(path)
+    except (configparser.Error, OSError, UnicodeDecodeError) as e:
+        raise ValueError(f"{path} can't be read as a config.ini: {e}")
+    if not config.sections():
+        raise ValueError(f"{path} has no instance sections")
+    return Path(os.path.abspath(path))
+
+
+def _config_state() -> dict:
+    """The config.ini in use as Settings shows it. `error` says why a linked or
+    --config file cannot be read; a default file that does not exist yet is not
+    an error, it is the empty state."""
+    instances, error = [], None
+    try:
+        instances = _parse_config_ini(_config_ini_path).sections()
+    except FileNotFoundError:
+        if _config_source != "default":
+            error = f"config.ini not found: {_config_ini_path}"
+    except (configparser.Error, OSError, UnicodeDecodeError) as e:
+        error = f"{_config_ini_path} can't be read: {e}"
+    return {
+        "instances": instances,
+        "config_path": os.path.abspath(_config_ini_path),
+        "source": _config_source,
+        "own_copy_exists": os.path.isfile(DEFAULT_CONFIG_INI),
+        "error": error,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -405,11 +455,8 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
         elif path.startswith("/api/job/") and path.endswith("/cancel"):
             job_id = path.split("/")[3]
             return self._handle_cancel_job(job_id)
-        elif path == "/api/instances":
-            return self._handle_create_instance(body)
-        elif path.startswith("/api/instance/"):
-            instance_name = unquote(path[len("/api/instance/"):])
-            return self._handle_update_instance(instance_name, body)
+        elif path == "/api/config-source":
+            return self._handle_config_source(body)
         elif path == "/api/transfer/scan":
             return self._handle_transfer_scan(body)
         elif path == "/api/transfer/target-orders":
@@ -434,15 +481,6 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
         if path.startswith("/api/config/"):
             filename = unquote(path[len("/api/config/"):])
             return self._handle_delete_config(filename)
-        elif path.startswith("/api/instance/") and "/field/" in path:
-            # DELETE /api/instance/<name>/field/<key>
-            parts = path[len("/api/instance/"):].split("/field/", 1)
-            instance_name = unquote(parts[0])
-            field_key = unquote(parts[1])
-            return self._handle_delete_instance_field(instance_name, field_key)
-        elif path.startswith("/api/instance/"):
-            instance_name = unquote(path[len("/api/instance/"):])
-            return self._handle_delete_instance(instance_name)
         else:
             self._send_json(404, {"error": "Not found"})
 
@@ -514,16 +552,7 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
     # ---- API Handlers ----
 
     def _handle_instances(self):
-        try:
-            config = get_tm1_config(_config_ini_path)
-            instances = [s for s in config.sections()]
-            self._send_json(200, {
-                "instances": instances,
-                "config_path": _config_ini_path,
-                "read_only": _config_read_only,
-            })
-        except Exception as e:
-            self._send_json(500, {"error": _error_text(e)})
+        self._send_json(200, _config_state())
 
     def _handle_get_instance(self, instance_name: str):
         try:
@@ -536,73 +565,46 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
         except Exception as e:
             self._send_json(500, {"error": _error_text(e)})
 
-    def _handle_update_instance(self, instance_name: str, body: dict):
-        if _config_read_only:
-            return self._send_json(403, {"error":
-                "This config.ini is managed externally and is read-only in OptimusPy."})
+    def _handle_config_source(self, body: dict):
+        """Switch the config.ini in use: `link` reads a file where it is, `copy`
+        snapshots one into config/config.ini, `own` goes back to that copy. The
+        choice is saved in the settings file, so the CLI uses it too."""
+        global _config_ini_path, _config_source
+        if _config_source == "flag":
+            return self._send_json(409, {"error":
+                "Set by --config at launch; restart without it to change the file here"})
+        mode = body.get("mode")
+        own = Path(DEFAULT_CONFIG_INI)
         try:
-            config = get_tm1_config(_config_ini_path)
-            if instance_name not in config:
-                return self._send_json(404, {"error": f"Instance '{instance_name}' not found"})
-            params = body.get("params", {})
-            for key, value in params.items():
-                config[instance_name][key] = str(value)
-            _write_config(config)
-            self._send_json(200, {"success": True})
-        except Exception as e:
-            self._send_json(500, {"error": _error_text(e)})
-
-    def _handle_create_instance(self, body: dict):
-        if _config_read_only:
-            return self._send_json(403, {"error":
-                "This config.ini is managed externally and is read-only in OptimusPy."})
-        name = body.get("name", "").strip()
-        if not name:
-            return self._send_json(400, {"error": "Missing 'name'"})
-        if "]" in name:
-            return self._send_json(400, {"error": "Instance name must not contain ']'"})
-        try:
-            config = get_tm1_config(_config_ini_path)
-            if name in config:
-                return self._send_json(409, {"error": f"Instance '{name}' already exists"})
-            config.add_section(name)
-            params = body.get("params", {})
-            for key, value in params.items():
-                config[name][key] = str(value)
-            _write_config(config)
-            self._send_json(200, {"success": True})
-        except Exception as e:
-            self._send_json(500, {"error": _error_text(e)})
-
-    def _handle_delete_instance(self, instance_name: str):
-        if _config_read_only:
-            return self._send_json(403, {"error":
-                "This config.ini is managed externally and is read-only in OptimusPy."})
-        try:
-            config = get_tm1_config(_config_ini_path)
-            if instance_name not in config:
-                return self._send_json(404, {"error": f"Instance '{instance_name}' not found"})
-            config.remove_section(instance_name)
-            _write_config(config)
-            self._send_json(200, {"success": True})
-        except Exception as e:
-            self._send_json(500, {"error": _error_text(e)})
-
-    def _handle_delete_instance_field(self, instance_name: str, field_key: str):
-        if _config_read_only:
-            return self._send_json(403, {"error":
-                "This config.ini is managed externally and is read-only in OptimusPy."})
-        try:
-            config = get_tm1_config(_config_ini_path)
-            if instance_name not in config:
-                return self._send_json(404, {"error": f"Instance '{instance_name}' not found"})
-            if field_key not in config[instance_name]:
-                return self._send_json(404, {"error": f"Field '{field_key}' not found"})
-            config.remove_option(instance_name, field_key)
-            _write_config(config)
-            self._send_json(200, {"success": True})
-        except Exception as e:
-            self._send_json(500, {"error": _error_text(e)})
+            if mode == "own":
+                if not own.is_file():
+                    return self._send_json(400, {"error": f"{own} does not exist"})
+                save_setting("config_ini", None)
+            elif mode in ("link", "copy"):
+                try:
+                    source = _config_ini_to_use(body.get("path"))
+                except ValueError as e:
+                    return self._send_json(400, {"error": _error_text(e)})
+                if mode == "link":
+                    save_setting("config_ini", str(source))
+                else:
+                    if own.is_file() and os.path.samefile(source, own):
+                        return self._send_json(400, {"error":
+                            f"{source} is OptimusPy's own copy already"})
+                    if own.exists() and body.get("overwrite") is not True:
+                        return self._send_json(409, {"exists": True,
+                                                     "error": f"{own} already exists"})
+                    own.parent.mkdir(parents=True, exist_ok=True)
+                    # Byte for byte, so the comments and the key order survive.
+                    shutil.copyfile(source, own)
+                    save_setting("config_ini", None)
+            else:
+                return self._send_json(400, {"error": "'mode' must be link, copy or own"})
+        except (OSError, configparser.Error) as e:
+            return self._send_json(500, {"error": _error_text(e)})
+        # A job already running keeps the path it started with.
+        _config_ini_path, _config_source = resolve_config_path(None)
+        self._send_json(200, _config_state())
 
     def _handle_connect(self, body: dict):
         instance = body.get("instance")
@@ -1096,24 +1098,19 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
 # ---------------------------------------------------------------------------
 
 def main(argv=None):
-    global _config_ini_path, _config_read_only
+    global _config_ini_path, _config_source
 
     parser = argparse.ArgumentParser(description="OptimusPy Workflow UI")
-    parser.add_argument('--port', type=int, default=DEFAULT_PORT,
-                        help=f"Port to listen on (default: {DEFAULT_PORT})")
+    parser.add_argument('--port', type=int, default=None,
+                        help=f"Port to listen on (default: ui_port in {SETTINGS_PATH.as_posix()}, "
+                             f"else {DEFAULT_PORT})")
     parser.add_argument('--config', dest='config_ini', default=None,
-                        help=f"Path to TM1 connection config.ini (default: {DEFAULT_CONFIG_INI})")
+                        help="Path to TM1 connection config.ini (default: the file chosen on "
+                             f"the Settings page, else {DEFAULT_CONFIG_INI})")
     args = parser.parse_args(argv)
 
-    try:
-        location = resolve_config_path(args.config_ini)
-    except FileNotFoundError as e:
-        print(f"ERROR: config.ini not found: {e}")
-        sys.exit(1)
-    _config_ini_path = location.path
-    _config_read_only = location.read_only
-
-    # Only change CWD for frozen exe — pip/script users expect CWD-relative paths
+    # Only change CWD for frozen exe — pip/script users expect CWD-relative paths.
+    # Before anything is read: the settings file is relative to it.
     if getattr(sys, 'frozen', False):
         set_current_directory()
 
@@ -1122,18 +1119,30 @@ def main(argv=None):
     configure_logging()
     log_path = get_logfile_path()
 
-    server = ThreadingHTTPServer(('127.0.0.1', args.port), OptimusPyHandler)
-    url = f"http://127.0.0.1:{args.port}"
+    # A linked file that is missing still starts the UI: Settings reports it, and
+    # that is where the link is changed.
+    try:
+        _config_ini_path, _config_source = resolve_config_path(args.config_ini)
+    except FileNotFoundError as e:
+        print(f"ERROR: config.ini not found: {e}")
+        sys.exit(1)
 
+    port = args.port if args.port is not None else setting_ui_port()
+    server = ThreadingHTTPServer(('127.0.0.1', port), OptimusPyHandler)
+    url = f"http://127.0.0.1:{port}"
+
+    sources = {"flag": "set by --config", "linked": "linked from Settings", "default": "OptimusPy's own copy"}
     print("\n  OptimusPy Workflow UI")
     print(f"  {'─' * 40}")
     print(f"  URL:        {url}")
-    print(f"  Config:     {_config_ini_path}{' (read-only)' if _config_read_only else ''}")
+    print(f"  Config:     {_config_ini_path} ({sources[_config_source]})")
+    if SETTINGS_PATH.is_file():
+        print(f"  Settings:   {SETTINGS_PATH}")
     print(f"  Log:        {log_path}")
     print("  Press Ctrl+C to stop\n")
 
-    # Auto-open browser
-    threading.Timer(0.5, lambda: webbrowser.open(url)).start()
+    if setting_open_browser():
+        threading.Timer(0.5, lambda: webbrowser.open(url)).start()
 
     try:
         server.serve_forever()

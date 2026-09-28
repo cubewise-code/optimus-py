@@ -16,7 +16,7 @@ It's a single-page app served by a lightweight Python HTTP server, with no extra
 python -m optimuspy.ui
 ```
 
-Your default browser opens automatically at `http://127.0.0.1:8765`. The server runs in the foreground; `Ctrl+C` stops it.
+Your default browser opens automatically at `http://127.0.0.1:8765`. The server runs in the foreground; `Ctrl+C` stops it. `ui_port` and `open_browser` in [`config/settings.ini`](../getting-started/settings.md) change the port and stop the browser tab.
 
 ### Custom port
 
@@ -30,7 +30,7 @@ python -m optimuspy.ui --port 9000
 python -m optimuspy.ui --config config/production.ini
 ```
 
-A file passed with `--config` is treated as belonging to another tool, so Settings shows it read-only; see [Read-only config.ini](settings-page.md#read-only-configini).
+A file passed with `--config` wins over the one chosen on the Settings page, for as long as the UI runs; see [Which config.ini is read](../getting-started/tm1-connection.md#which-configini-is-read).
 
 ### From the executable
 
@@ -43,7 +43,7 @@ optimuspy.exe ui --port 8800 --config D:\tm1\config.ini
 
 With Python installed, `optimuspy ui` does the same.
 
-The executable ships without a `config.ini`. The first instance you add in [Settings](settings-page.md#new-instance) creates `config/config.ini` next to it.
+The executable ships without a `config.ini`. Create `config/config.ini` next to it from `config/config.ini.example`, or link the `config.ini` you already have on the [Settings page](settings-page.md#tm1-instances).
 
 ## Sidebar navigation
 
@@ -56,7 +56,7 @@ The executable ships without a `config.ini`. The first instance you add in [Sett
 | **Results** | Browse generated HTML / CSV / XLSX reports. |
 | **Sync Order** | Promote dimension orders from a source instance to a target instance. |
 | **Optimize DB** | Reorder every cube on an instance by leaf-element count, fewest first, within a time limit. See the [Optimize DB Page](optimize-db-page.md). |
-| **Settings** | At the bottom of the sidebar: manage TM1 connections, theme, and local cache. |
+| **Settings** | At the bottom of the sidebar: choose the `config.ini`, test connections, theme, and local cache. |
 
 The sidebar collapses to icons on narrow screens, and folds away behind a menu button on a phone. While a job is running, the **Activity Monitor** appears below the page links and names it; click it to open the job's page. The [Jobs page](jobs-page.md) has no sidebar item: open it at `#/jobs`, for example `http://127.0.0.1:8765/#/jobs`.
 

@@ -133,6 +133,7 @@ nav:
   - Getting Started:
       - Installation: getting-started/installation.md
       - TM1 Connection: getting-started/tm1-connection.md
+      - Settings File: getting-started/settings.md
       - Quick Start: getting-started/quick-start.md
   - User Guide:
       - Choose a Mode: guide/choose-a-mode.md

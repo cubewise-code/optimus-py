@@ -1,6 +1,7 @@
 """OptimusPy CLI entry point."""
 import argparse
 import logging
+import os
 import sys
 from contextlib import suppress
 
@@ -152,7 +153,8 @@ def main():
     parser.add_argument('cube_config', nargs='?', default=None,
                         help="Path to cube JSON configuration file (required for optimize/set)")
     parser.add_argument('--config', dest='config_ini', default=None,
-                        help="Path to TM1 connection config.ini (default: config/config.ini)")
+                        help="Path to TM1 connection config.ini (default: the file chosen "
+                             "on the UI's Settings page, else config/config.ini)")
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', default=False,
                         help="Log at DEBUG level — includes the reason every skipped "
                              "dimension order was refused")
@@ -190,6 +192,10 @@ def main():
         config_location = resolve_config_path(cmd_args.config_ini)
     except FileNotFoundError as e:
         print(f"ERROR: config.ini not found: {e}")
+        sys.exit(1)
+    if config_location.source == "linked" and not os.path.isfile(config_location.path):
+        print(f"ERROR: config.ini not found: {config_location.path} "
+              f"(linked from the UI's Settings page)")
         sys.exit(1)
 
     if cmd_args.mode == 'optimize-db':

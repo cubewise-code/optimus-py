@@ -7,7 +7,7 @@ Get from a fresh install to your first optimized cube in about 10 minutes.
 </div>
 
 1. **Open the UI.** Double-click the executable, or run `optimuspy ui`. It opens at `http://127.0.0.1:8765`.
-2. **Add your server.** On *Settings*, click *New Instance* and give it a name. On the new instance's tab, use *Add Field* for `address`, `port`, `user` and `ssl`, type the password in *Update Password*, and click *Save*. See [TM1 Connection](tm1-connection.md) for every parameter.
+2. **Add your server.** Copy `config/config.ini.example` to `config/config.ini` and fill in `address`, `port`, `user`, `password` and `ssl`. If you already keep a `config.ini` for RushTI or your scripts, link it on the *Settings* page instead. See [TM1 Connection](tm1-connection.md) for every parameter.
 3. **Pick a cube.** Choose the instance in the sidebar. The *Optimize* page lists the biggest cubes, up to 60% of the instance's memory (move the *RAM Threshold* slider to see more); click one.
 4. **Run it.** On *Configure*, keep *Greedy*, pick a view and click *Save & Start Optimization*. When it ends, open the HTML report on the cube's *Results* tab.
 

@@ -23,15 +23,15 @@ optimuspy --help
 
 ## Prebuilt bundles
 
-Use a bundle when you cannot install Python (locked-down servers, kiosk environments, etc.). The **Build Executable** workflow builds a Windows and a Linux bundle. Each unpacks to an `optimuspy/` folder holding the executable, `config/config.ini.example` and `samples/` (example cube configs).
+Use a bundle when you cannot install Python (locked-down servers, kiosk environments, etc.). The **Build Executable** workflow builds a Windows and a Linux bundle. Each unpacks to an `optimuspy/` folder holding the executable, `config/config.ini.example`, `config/settings.ini.example` (see [Settings File](settings.md)) and `samples/` (example cube configs).
 
 ### Windows
 
 1. Open the [Actions tab](https://github.com/cubewise-code/optimus-py/actions) of the repository.
 2. Click the most recent successful **Build Executable** run.
 3. Scroll to the **Artifacts** section and download `optimuspy-windows`.
-4. Unzip it. The `optimuspy/` folder holds `optimuspy.exe`, `config/config.ini.example` and `samples/` (example cube configs).
-5. Double-click `optimuspy.exe` to open the web UI and add your TM1 instances under **Settings**. For the command line, copy `config/config.ini.example` to `config/config.ini` and fill it in.
+4. Unzip it. The `optimuspy/` folder holds `optimuspy.exe`, `config/config.ini.example`, `config/settings.ini.example` and `samples/` (example cube configs).
+5. Copy `config/config.ini.example` to `config/config.ini` and fill in your TM1 instances, or link the `config.ini` you already have under **Settings**. Double-click `optimuspy.exe` to open the web UI.
 
 Builds from `master` also publish the same bundle as `optimuspy-windows.zip` on the [Releases page](https://github.com/cubewise-code/optimus-py/releases).
 
@@ -46,7 +46,7 @@ Builds from `master` also publish the same bundle as `optimuspy-windows.zip` on 
     ./optimuspy
     ```
 
-    With no arguments it opens the web UI; add your TM1 instances under **Settings**. The UI listens on `127.0.0.1` only, so open it in a browser on the same machine. For the command line, copy `config/config.ini.example` to `config/config.ini`, fill it in, and run for example `./optimuspy scan --instance <name>`.
+    With no arguments it opens the web UI. The UI listens on `127.0.0.1` only, so open it in a browser on the same machine. Copy `config/config.ini.example` to `config/config.ini` and fill it in, or link the `config.ini` you already have under **Settings**; the command line reads the same file, for example `./optimuspy scan --instance <name>`.
 
 The same bundle is kept as the `optimuspy-linux` artifact of each **Build Executable** run on the [Actions tab](https://github.com/cubewise-code/optimus-py/actions). GitHub delivers an artifact as a zip, which does not keep the executable bit: after unzipping, run `chmod +x optimuspy/optimuspy`.
 

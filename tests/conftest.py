@@ -196,14 +196,25 @@ def measure_orders():
     return install_offline_measurements
 
 
-# --- UI server plumbing -----------------------------------------------------
+# --- settings and UI server plumbing ----------------------------------------
+
+@pytest.fixture(autouse=True)
+def settings_path(tmp_path, monkeypatch):
+    """The settings file every test reads and writes: tmp_path/config/settings.ini,
+    never the repo's config/settings.ini."""
+    path = tmp_path / "config" / "settings.ini"
+    monkeypatch.setattr("optimuspy.core.SETTINGS_PATH", path)
+    monkeypatch.setattr("optimuspy.ui.SETTINGS_PATH", path)
+    return path
+
 
 @pytest.fixture
 def ui_server(tmp_path, monkeypatch):
     """Start the UI's request handler on a free port, against a throwaway config.ini.
 
-    Returns `start(ini_text, read_only=False) -> (base_url, ini_path)`. The test
-    runs inside `tmp_path`, so the `results/` and `configs/` folders the UI reads
+    Returns `start(ini_text, source="default") -> (base_url, ini_path)`, where
+    `source` is where the config.ini in use came from. The test runs inside
+    `tmp_path`, so the `results/`, `configs/` and `config/` folders the UI reads
     and writes are the test's own. Every server started is shut down afterwards.
     """
     from http.server import ThreadingHTTPServer
@@ -212,11 +223,11 @@ def ui_server(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     servers = []
 
-    def start(ini_text, read_only=False):
+    def start(ini_text, source="default"):
         ini = tmp_path / "config.ini"
         ini.write_text(ini_text, encoding="utf-8")
         monkeypatch.setattr(ui, "_config_ini_path", str(ini))
-        monkeypatch.setattr(ui, "_config_read_only", read_only)
+        monkeypatch.setattr(ui, "_config_source", source)
         server = ThreadingHTTPServer(("127.0.0.1", 0), ui.OptimusPyHandler)
         threading.Thread(target=server.serve_forever, daemon=True).start()
         servers.append(server)

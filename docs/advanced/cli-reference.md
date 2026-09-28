@@ -22,7 +22,7 @@ These work in every mode except `ui`, which has its own two options (see below).
 
 | Option | Default | Description |
 |---|---|---|
-| `--config <path>` | `config/config.ini` | Path to the TM1 connection config. An explicit path is treated as read-only, so it can be shared with other tools. |
+| `--config <path>` | the file linked on the Settings page, else `config/config.ini` | Path to the TM1 connection config. It wins over the file chosen on the Settings page. See [Which config.ini is read](../getting-started/tm1-connection.md#which-configini-is-read). |
 | `-p`, `--password <password>` | (from config.ini) | Override the password for the active instance. Taken as plain text. |
 | `-v`, `--verbose` | (off) | Log at DEBUG level. This is where you see the reason behind every skipped dimension order. |
 
@@ -102,7 +102,7 @@ optimuspy ui --port 9000
 optimuspy ui --config production.ini
 ```
 
-The bundled executable opens the UI when it's double-clicked, which is the same as running it with `ui`. `python -m optimuspy.ui` takes the same two options.
+The bundled executable opens the UI when it's double-clicked, which is the same as running it with `ui`. `python -m optimuspy.ui` takes the same two options. Without `--port`, the port is `ui_port` in [`config/settings.ini`](../getting-started/settings.md), else 8765.
 
 [UI Overview →](../ui/overview.md)
 

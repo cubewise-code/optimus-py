@@ -78,12 +78,12 @@ Behavior is **frozen** — only the *data source* changes. The RAM model is unch
 
 Both entry points (`optimuspy` CLI and `python -m optimuspy.ui`) resolve the connection config the same way, via `resolve_config_path`:
 
-- `--config PATH` (explicit) beats the built-in default.
-- No `--config` ⇒ falls back to `config/config.ini`, which stays **writable** (the UI Settings page can create/edit/delete instances in it).
-- Explicit `--config PATH` ⇒ treated as owned by another tool and **read-only**; OptimusPy never writes to it. This is what lets a `config.ini` be shared safely with other tm1py tools (e.g. RushTI) instead of duplicating credentials.
-- Explicit `--config PATH` that doesn't exist ⇒ fail-fast: print `ERROR: config.ini not found: <path>` and exit 1, no traceback. (The default path has no such existence check; it's left to the existing read path.)
+- `--config PATH` (source `flag`) wins. If it doesn't exist ⇒ fail-fast: print `ERROR: config.ini not found: <path>` and exit 1, no traceback.
+- Otherwise the `config_ini` key of `config/settings.ini` (source `linked`), set when the UI's Settings page links a file. A linked file that is missing stops the CLI with `ERROR: config.ini not found: <path> (linked from the UI's Settings page)`; the UI still starts and Settings reports it.
+- Otherwise `config/config.ini` (source `default`), OptimusPy's own copy, which Settings can fill by copying another file byte for byte. It has no existence check; it's left to the existing read path.
+- OptimusPy never edits a `config.ini`: the Settings page shows instances read-only. This is what lets a `config.ini` be shared safely with other tm1py tools (e.g. RushTI) instead of duplicating credentials.
 
-Out of scope / not shipped: no environment-variable override, no keyring integration (deferred to a later phase), no comment-preserving INI writer.
+Out of scope / not shipped: no environment-variable override, no keyring integration (deferred to a later phase).
 
 ## Flagged ambiguities
 

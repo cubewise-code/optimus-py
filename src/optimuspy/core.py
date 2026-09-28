@@ -5,6 +5,7 @@ import logging
 import math
 import os
 import sys
+import tempfile
 import time
 from contextlib import suppress
 from pathlib import Path
@@ -115,24 +116,119 @@ def tm1_params(config_ini_path: str, instance: str, password: str = None) -> dic
     return params
 
 
+# The installation's own settings, an optional INI file with one [optimuspy]
+# section. The defaults live in the code, so a missing file or key means the
+# default; config/settings.ini.example lists every key with a comment. The file
+# is relative to the working directory, like DEFAULT_CONFIG_INI.
+SETTINGS_PATH = Path("config/settings.ini")
+SETTINGS_SECTION = "optimuspy"
+DEFAULT_PORT = 8765
+
+
+def _read_settings() -> configparser.ConfigParser:
+    """The settings file, parsed. A missing file is an empty one, and so is one that
+    cannot be read or parsed, with a warning: a broken settings file never stops
+    the CLI or the UI."""
+    try:
+        return _parse_settings()
+    except (configparser.Error, OSError, UnicodeDecodeError) as e:
+        logging.warning(f"Ignoring {SETTINGS_PATH}: {e}")
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.add_section(SETTINGS_SECTION)
+    return parser
+
+
+def _parse_settings() -> configparser.ConfigParser:
+    """The settings file, always with an [optimuspy] section; a missing file gives
+    an empty one. Raises when the file cannot be read or parsed."""
+    parser = configparser.ConfigParser(interpolation=None)
+    with suppress(FileNotFoundError), open(SETTINGS_PATH, encoding="utf-8") as f:
+        parser.read_file(f)
+    if not parser.has_section(SETTINGS_SECTION):
+        parser.add_section(SETTINGS_SECTION)
+    return parser
+
+
+def load_settings() -> dict:
+    """The [optimuspy] section of the settings file, as strings. {} when there is none."""
+    return dict(_read_settings()[SETTINGS_SECTION])
+
+
+def save_setting(key: str, value: Optional[str]) -> None:
+    """Set one key in the settings file, or remove it when `value` is None.
+
+    The other keys are kept. The file is written to a temporary file beside it and
+    moved into place, so a crash never leaves half a file. Python's INI writer
+    drops comments; they live in settings.ini.example. A file that cannot be read
+    or parsed raises rather than being overwritten.
+    """
+    parser = _parse_settings()
+    if value is None:
+        parser.remove_option(SETTINGS_SECTION, key)
+    else:
+        parser.set(SETTINGS_SECTION, key, str(value))
+
+    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp = tempfile.mkstemp(dir=SETTINGS_PATH.parent, prefix=".settings-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            parser.write(f)
+        os.replace(temp, SETTINGS_PATH)
+    except BaseException:
+        with suppress(OSError):
+            os.remove(temp)
+        raise
+
+
+def setting_ui_port() -> int:
+    """The `ui_port` setting: a port from 1 to 65535, or DEFAULT_PORT."""
+    value = load_settings().get("ui_port")
+    if value is None:
+        return DEFAULT_PORT
+    with suppress(ValueError):
+        port = int(value)
+        if 1 <= port <= 65535:
+            return port
+    logging.warning(f"Ignoring ui_port = {value!r} in {SETTINGS_PATH}: "
+                    f"expected a port from 1 to 65535; using {DEFAULT_PORT}")
+    return DEFAULT_PORT
+
+
+def setting_open_browser() -> bool:
+    """The `open_browser` setting: whether the UI opens a browser tab. True by default."""
+    parser = _read_settings()
+    try:
+        return parser.getboolean(SETTINGS_SECTION, "open_browser", fallback=True)
+    except ValueError:
+        value = parser.get(SETTINGS_SECTION, "open_browser")
+        logging.warning(f"Ignoring open_browser = {value!r} in {SETTINGS_PATH}: "
+                        f"expected true or false; using true")
+        return True
+
+
 class ConfigLocation(NamedTuple):
     path: str
-    read_only: bool
+    source: str  # "flag" (--config), "linked" (from Settings) or "default"
 
 
 def resolve_config_path(cli_path: Optional[str]) -> ConfigLocation:
-    """Resolve the config.ini path and whether it must be treated as read-only.
+    """The config.ini to read, and where that choice came from.
 
-    A path supplied explicitly via --config is assumed to be owned by another tool
-    (shared credentials) and is therefore read-only. The built-in default is OptimusPy's
-    own file and remains writable. Existence is checked only for an explicit path
-    (fail-fast); the default is left to the existing read path.
+    An explicit --config wins and must exist. Next comes the file linked from the
+    UI's Settings page (the `config_ini` setting), which is returned even when it
+    is missing: the CLI reports that, and the UI starts so the link can be fixed.
+    Otherwise it is DEFAULT_CONFIG_INI, which is not checked here.
     """
-    if cli_path is None:
-        return ConfigLocation(DEFAULT_CONFIG_INI, read_only=False)
-    if not os.path.isfile(cli_path):
-        raise FileNotFoundError(cli_path)
-    return ConfigLocation(cli_path, read_only=True)
+    if cli_path is not None:
+        if not os.path.isfile(cli_path):
+            raise FileNotFoundError(cli_path)
+        location = ConfigLocation(cli_path, "flag")
+    else:
+        linked = load_settings().get("config_ini")
+        location = (ConfigLocation(linked, "linked") if linked
+                    else ConfigLocation(DEFAULT_CONFIG_INI, "default"))
+    logging.info(f"config.ini: {location.path} ({location.source})")
+    return location
 
 
 def load_cube_config(path: str) -> dict:

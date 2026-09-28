@@ -20,6 +20,30 @@ def test_cli_missing_config_exits_1(monkeypatch, tmp_path, capsys):
     assert "not found" in capsys.readouterr().out.lower()
 
 
+def test_cli_with_a_linked_file_that_is_gone_exits_1(monkeypatch, tmp_path, capsys):
+    from optimuspy.core import save_setting
+
+    gone = tmp_path / "gone.ini"
+    save_setting("config_ini", str(gone))
+    monkeypatch.setattr(sys, "argv", ["optimuspy", "scan", "--instance", "tm1srv01"])
+    with pytest.raises(SystemExit) as exc:
+        main()
+    assert exc.value.code == 1
+    assert (f"ERROR: config.ini not found: {gone} (linked from the UI's Settings page)"
+            in capsys.readouterr().out)
+
+
+def test_cli_reads_the_linked_file_without_a_flag(monkeypatch, tmp_path, capsys):
+    from optimuspy.core import save_setting
+
+    save_setting("config_ini", str(_write_config_ini(tmp_path)))
+    monkeypatch.setattr(sys, "argv", ["optimuspy", "scan", "--instance", "nosuch"])
+    code = main()
+    out = capsys.readouterr().out
+    assert code == 1
+    assert f"ERROR: Instance 'nosuch' not found in {tmp_path / 'config.ini'}" in out
+
+
 def _write_config_ini(tmp_path):
     ini = tmp_path / "config.ini"
     ini.write_text("[tm1srv01]\naddress=localhost\nport=8001\nuser=admin\npassword=apple\nssl=True\n")
@@ -111,8 +135,10 @@ def test_no_arguments_outside_the_executable_still_asks_for_a_mode(monkeypatch):
     assert seen == []
 
 
-def test_the_ui_reads_the_options_it_is_given(tmp_path, capsys):
+def test_the_ui_reads_the_options_it_is_given(monkeypatch, tmp_path, capsys):
     from optimuspy import ui
+    monkeypatch.setattr(ui, "configure_logging", lambda: None)
+    monkeypatch.setattr(ui, "get_logfile_path", lambda: tmp_path / "optimuspy.log")
     with pytest.raises(SystemExit) as exc:
         ui.main(["--config", str(tmp_path / "nope.ini")])
     assert exc.value.code == 1

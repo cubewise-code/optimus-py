@@ -16,7 +16,8 @@ const OptimusPy = (function () {
     activeInstance: null,
     connected: false,
     serverName: null,
-    configReadOnly: false,
+    // The config.ini in use: { config_path, source, own_copy_exists, error }
+    config: {},
 
     // Scan
     scanData: null,
@@ -222,12 +223,12 @@ const OptimusPy = (function () {
       }
       const res = await fetch(url, opts);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      if (!res.ok) throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { status: res.status, data });
       return data;
     },
     getInstances() { return this._fetch("GET", "/api/instances"); },
     getInstance(name) { return this._fetch("GET", `/api/instance/${encodeURIComponent(name)}`); },
-    updateInstance(name, params) { return this._fetch("POST", `/api/instance/${encodeURIComponent(name)}`, { params }); },
+    setConfigSource(body) { return this._fetch("POST", "/api/config-source", body); },
     connect(instance, password) { return this._fetch("POST", "/api/connect", { instance, password }); },
     scan(instance, password, ramPercent, includeOptimized) {
       return this._fetch("POST", "/api/scan", { instance, password, ram_percent: ramPercent, include_optimized: includeOptimized });
@@ -250,9 +251,6 @@ const OptimusPy = (function () {
     cancelJob(id) { return this._fetch("POST", `/api/job/${id}/cancel`); },
     getJobs() { return this._fetch("GET", "/api/jobs"); },
     getResults() { return this._fetch("GET", "/api/results"); },
-    createInstance(name, params) { return this._fetch("POST", "/api/instances", { name, params }); },
-    deleteInstance(name) { return this._fetch("DELETE", `/api/instance/${encodeURIComponent(name)}`); },
-    deleteInstanceField(name, key) { return this._fetch("DELETE", `/api/instance/${encodeURIComponent(name)}/field/${encodeURIComponent(key)}`); },
     transferScan(instance, password, ramPercent) {
       return this._fetch("POST", "/api/transfer/scan", { instance, password, ram_percent: ramPercent });
     },
@@ -289,6 +287,10 @@ const OptimusPy = (function () {
 
     get(instance) {
       return this._typed.has(instance) ? this._typed.get(instance) : null;
+    },
+
+    clear() {
+      this._typed.clear();
     },
 
     ensure(instance) {
@@ -1329,7 +1331,7 @@ const OptimusPy = (function () {
       try {
         const data = await Api.getInstances();
         state.instances = data.instances || [];
-        state.configReadOnly = data.read_only || false;
+        state.config = data;
         this.renderInstanceSwitcher();
       } catch (err) {
         Toast.error("Failed to load instances: " + err.message);
@@ -4248,55 +4250,35 @@ const OptimusPy = (function () {
       themeCard.appendChild(themeRow);
       page.appendChild(themeCard);
 
-      // Instance configs — show ALL instances from config.ini
+      // TM1 Instances — the config.ini in use, read-only
       {
+        const cfg = state.config;
         const instancesCard = el("div", { className: "card mb-4" });
         instancesCard.appendChild(el("div", { className: "card-title mb-4" }, "TM1 Instances"));
 
-        if (state.configReadOnly) {
-          instancesCard.appendChild(el("div", {
-            className: "readonly-banner mb-3",
-          }, "This config.ini is managed externally — read-only. Edit it where it is maintained (e.g. the shared file or RushTI)."));
-        } else {
-          // "New Instance" button
-          const newInstanceBtn = el("button", { className: "btn btn-secondary btn-sm mb-3", onClick: () => {
-            const nameInput = el("input", { className: "form-input", type: "text", placeholder: "Instance name (e.g. prod_server)" });
-            const bodyEl = el("div", null,
-              el("label", { className: "form-label" }, "Instance Name"),
-              nameInput,
-            );
-            Modal.open({
-              title: "New TM1 Instance",
-              body: bodyEl,
-              footer: [
-                el("button", { className: "btn btn-ghost", onClick: () => Modal.close() }, "Cancel"),
-                el("button", { className: "btn btn-primary", onClick: async () => {
-                  const name = nameInput.value.trim();
-                  if (!name) { Toast.error("Instance name is required"); return; }
-                  try {
-                    await Api.createInstance(name, {});
-                    Toast.success(`Instance "${name}" created`);
-                    Modal.close();
-                    await Sidebar.loadInstances();
-                    this.mount();
-                  } catch (err) {
-                    Toast.error(err.message);
-                  }
-                }}, "Create"),
-              ],
-            });
-            nameInput.focus();
-          }}, el("span", { html: Icons.plus }), " New Instance");
-          instancesCard.appendChild(newInstanceBtn);
-        }
+        const sourceLabels = { linked: "Linked file", default: "OptimusPy's own copy", flag: "Set by --config at launch" };
+        instancesCard.appendChild(el("div", { className: "form-group" },
+          el("div", { className: "form-label" }, "File in use"),
+          el("div", { className: "flex items-center gap-2 flex-wrap" },
+            el("code", { className: "config-path" }, cfg.config_path || ""),
+            el("span", { className: "badge badge-neutral" }, sourceLabels[cfg.source] || ""),
+          ),
+        ));
 
-        if (state.instances.length === 0) {
-          instancesCard.appendChild(el("div", { className: "text-secondary text-sm" }, "No instances configured. Add one to get started."));
+        if (cfg.source !== "flag") instancesCard.appendChild(this._buildConfigChooser(cfg));
+
+        if (cfg.error) {
+          instancesCard.appendChild(el("div", { className: "config-error" }, cfg.error));
+        } else if (state.instances.length === 0) {
+          instancesCard.appendChild(el("div", { className: "text-secondary text-sm" }, cfg.source === "default"
+            ? "There's no config.ini yet. Point to one above, or create config/config.ini from config/config.ini.example."
+            : "This config.ini has no instances."));
         }
 
         const tabs = el("div", { className: "tabs" });
         const containers = {};
-        state.instances.forEach((name, i) => {
+        const instances = cfg.error ? [] : state.instances;
+        instances.forEach((name, i) => {
           const tab = el("div", {
             className: `tab${i === 0 ? " active" : ""}`,
             dataset: { instance: name },
@@ -4317,13 +4299,15 @@ const OptimusPy = (function () {
           tabs.appendChild(tab);
           containers[name] = el("div", { style: i === 0 ? "" : "display:none" });
         });
-        instancesCard.appendChild(tabs);
-        Object.values(containers).forEach(c => instancesCard.appendChild(c));
+        if (instances.length > 0) {
+          instancesCard.appendChild(tabs);
+          Object.values(containers).forEach(c => instancesCard.appendChild(c));
+        }
         page.appendChild(instancesCard);
 
         // Load first instance config
-        if (state.instances.length > 0) {
-          const firstName = state.instances[0];
+        if (instances.length > 0) {
+          const firstName = instances[0];
           this._loadInstanceConfig(containers[firstName], firstName);
           containers[firstName].dataset.loaded = "true";
         }
@@ -4359,79 +4343,84 @@ const OptimusPy = (function () {
       this._loadSavedConfigs(configsList);
     },
 
+    // Point OptimusPy at another config.ini, by link or by copy. Hidden when
+    // --config chose the file at launch.
+    _buildConfigChooser(cfg) {
+      const box = el("div", { className: "form-group" });
+      box.appendChild(el("label", { className: "form-label", for: "config-path-input" }, "Change file"));
+      const input = el("input", {
+        id: "config-path-input", className: "form-input", type: "text",
+        placeholder: "Path to a config.ini, or to the folder that holds one",
+      });
+      box.appendChild(input);
+      const buttons = el("div", { className: "flex gap-2 mt-2 flex-wrap" },
+        el("button", { className: "btn btn-secondary", onClick: () => this._switchConfig({ mode: "link", path: input.value }) }, "Link to this file"),
+        el("button", { className: "btn btn-secondary", onClick: () => this._switchConfig({ mode: "copy", path: input.value }) }, "Copy into OptimusPy"),
+      );
+      if (cfg.source === "linked" && cfg.own_copy_exists) {
+        buttons.appendChild(el("button", { className: "btn btn-ghost", onClick: () => this._switchConfig({ mode: "own" }) }, "Use OptimusPy's own copy"));
+      }
+      box.appendChild(buttons);
+      box.appendChild(el("p", { className: "text-xs text-tertiary mt-2" },
+        "A link follows the file, so changes made for RushTI or your scripts show up here. A copy is a snapshot, so later changes to the original don't."));
+      return box;
+    },
+
+    async _switchConfig(body) {
+      let data;
+      try {
+        data = await Api.setConfigSource(body);
+      } catch (err) {
+        if (err.status === 409 && err.data && err.data.exists) {
+          Modal.open({
+            title: "Replace config/config.ini?",
+            body: el("p", { className: "text-sm" }, "OptimusPy's own copy is replaced with this file. The instances in the current copy are lost."),
+            size: "sm",
+            footer: [
+              el("button", { className: "btn btn-secondary", onClick: () => Modal.close() }, "Cancel"),
+              el("button", { className: "btn btn-danger", onClick: () => {
+                Modal.close();
+                this._switchConfig(Object.assign({}, body, { overwrite: true }));
+              }}, "Replace"),
+            ],
+          });
+        } else {
+          Toast.error(err.message);
+        }
+        return;
+      }
+      // The same instance name can point at a different server in the new file,
+      // so nothing from the old one carries over.
+      state.activeInstance = null;
+      state.connected = false;
+      state.serverName = null;
+      Credentials.clear();
+      await Sidebar.loadInstances();
+      Toast.success(`Reading ${data.config_path}`);
+      this.mount();
+    },
+
     async _loadInstanceConfig(container, instanceName) {
       try {
         const data = await Api.getInstance(instanceName);
-        const params = data.params || {};
-        const ro = state.configReadOnly;
         const fieldsContainer = el("div", { className: "instance-fields" });
-
-        // Render existing fields (skip password — handled separately)
-        Object.entries(params).forEach(([key, value]) => {
-          if (key.toLowerCase() === "password") return;
-          fieldsContainer.appendChild(this._createFieldRow(key, value, instanceName, fieldsContainer));
+        Object.entries(data.params || {}).forEach(([key, value]) => {
+          fieldsContainer.appendChild(el("div", { className: "flex gap-2 items-center mb-2" },
+            el("span", { className: "form-label", style: "flex:0.4;min-width:100px;margin:0;" }, key),
+            value === ""
+              ? el("span", { className: "text-sm text-tertiary", style: "flex:1;" }, "(empty)")
+              : el("span", { className: "text-sm", style: "flex:1;word-break:break-all;" }, value),
+          ));
         });
         container.appendChild(fieldsContainer);
-        if (ro) {
-          fieldsContainer.querySelectorAll("input").forEach(i => { i.disabled = true; });
-          fieldsContainer.querySelectorAll("button").forEach(b => b.remove());
-        }
 
-        let pwInput = null;
-        if (!ro) {
-          // "Add Field" button
-          const addFieldBtn = el("button", { className: "btn btn-secondary btn-sm mt-2", onClick: () => {
-            const row = this._createFieldRow("", "", instanceName, fieldsContainer, true);
-            fieldsContainer.appendChild(row);
-            // Focus the key input
-            const keyInput = row.querySelector("[data-field-key]");
-            if (keyInput) keyInput.focus();
-          }}, el("span", { html: Icons.plus }), " Add Field");
-          container.appendChild(addFieldBtn);
-
-          // Password field (write-only)
-          const pwGroup = el("div", { className: "form-group mt-4" });
-          pwGroup.appendChild(el("label", { className: "form-label" }, "Update Password (write-only)"));
-          pwInput = el("input", { className: "form-input", type: "password", placeholder: "Leave empty to keep current", dataset: { key: "password" } });
-          pwGroup.appendChild(pwInput);
-          container.appendChild(pwGroup);
-        }
-
-        // Action buttons row
-        const actionsRow = el("div", { className: "flex gap-2 mt-4 flex-wrap" });
-
-        if (!ro) {
-          // Save button
-          const saveBtn = el("button", { className: "btn btn-primary" }, "Save");
-          saveBtn.addEventListener("click", async () => {
-            const newParams = {};
-            fieldsContainer.querySelectorAll("[data-field-row]").forEach(row => {
-              const keyEl = row.querySelector("[data-field-key]");
-              const valEl = row.querySelector("[data-field-value]");
-              const key = keyEl ? (keyEl.dataset.fieldKey || keyEl.value || "").trim() : "";
-              const val = valEl ? valEl.value : "";
-              if (key) newParams[key] = val;
-            });
-            // Include password only if non-empty
-            if (pwInput.value) newParams.password = pwInput.value;
-            try {
-              await Api.updateInstance(instanceName, newParams);
-              Toast.success(`Config saved for ${instanceName}`);
-            } catch (err) {
-              Toast.error(err.message);
-            }
-          });
-          actionsRow.appendChild(saveBtn);
-        }
-
-        // Test Connection button
-        const testBtn = el("button", { className: "btn btn-secondary" }, "Test Connection");
+        // Test Connection: the password typed in the Connect dialog, else config.ini's
+        const testBtn = el("button", { className: "btn btn-secondary mt-2" }, "Test Connection");
         testBtn.addEventListener("click", async () => {
           testBtn.disabled = true;
           testBtn.textContent = "Testing...";
           try {
-            const pw = (pwInput && pwInput.value) || Credentials.get(instanceName);
-            const resp = await Api.connect(instanceName, pw);
+            const resp = await Api.connect(instanceName, Credentials.get(instanceName));
             Toast.success(`Connected to ${resp.server_name} (${resp.cube_count} cubes)`);
           } catch (err) {
             Toast.error(`Connection failed: ${err.message}`);
@@ -4440,73 +4429,10 @@ const OptimusPy = (function () {
             testBtn.textContent = "Test Connection";
           }
         });
-        actionsRow.appendChild(testBtn);
-
-        if (!ro) {
-          // Delete Instance button
-          const deleteBtn = el("button", { className: "btn btn-danger" }, "Delete Instance");
-          deleteBtn.addEventListener("click", () => {
-            Modal.confirm(`Delete instance "${instanceName}" from config.ini? This cannot be undone.`, async () => {
-              try {
-                await Api.deleteInstance(instanceName);
-                Toast.success(`Instance "${instanceName}" deleted`);
-                // Reload instances and re-render settings
-                await Sidebar.loadInstances();
-                this.mount();
-              } catch (err) {
-                Toast.error(err.message);
-              }
-            });
-          });
-          actionsRow.appendChild(deleteBtn);
-        }
-
-        container.appendChild(actionsRow);
+        container.appendChild(testBtn);
       } catch (err) {
         container.appendChild(el("div", { className: "text-secondary text-sm" }, "Failed to load config: " + err.message));
       }
-    },
-
-    _createFieldRow(key, value, instanceName, fieldsContainer, isNew = false) {
-      const row = el("div", { className: "flex gap-2 items-center mb-2", dataset: { fieldRow: "true" } });
-
-      if (isNew) {
-        // Editable key input for new fields
-        const keyInput = el("input", {
-          className: "form-input", type: "text", placeholder: "key",
-          style: "flex:0.4;", dataset: { fieldKey: "" },
-        });
-        keyInput.addEventListener("input", () => { keyInput.dataset.fieldKey = keyInput.value; });
-        row.appendChild(keyInput);
-      } else {
-        // Hidden input to carry the key value + visible label
-        row.appendChild(el("input", { type: "hidden", dataset: { fieldKey: key }, value: key }));
-        row.appendChild(el("label", { className: "form-label", style: "flex:0.4;min-width:100px;margin:0;" }, key));
-      }
-
-      const valInput = el("input", { className: "form-input", type: "text", value, style: "flex:1;", dataset: { fieldValue: "true" } });
-      row.appendChild(valInput);
-
-      // Delete field button
-      const delBtn = el("button", {
-        className: "btn btn-ghost btn-sm", "aria-label": `Delete field ${key}`, html: Icons.x,
-        onClick: async () => {
-          if (isNew || !key) {
-            // Just remove the row from DOM — not saved yet
-            row.remove();
-            return;
-          }
-          try {
-            await Api.deleteInstanceField(instanceName, key);
-            row.remove();
-            Toast.success(`Field "${key}" removed`);
-          } catch (err) {
-            Toast.error(err.message);
-          }
-        }
-      });
-      row.appendChild(delBtn);
-      return row;
     },
 
     async _loadSavedConfigs(container) {

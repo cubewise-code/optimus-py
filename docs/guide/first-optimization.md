@@ -5,9 +5,7 @@ The same single-cube run, first in the UI, then on the command line.
 ## In the UI
 
 1. **Open the UI.** Double-click the executable, or run `optimuspy ui`. It opens at `http://127.0.0.1:8765`.
-2. **Add your server.** On *Settings*, click *New Instance*, give it a name and click *Create*. The first instance you add creates `config/config.ini`. On the new instance's tab, use *Add Field* for the address, port, user and SSL fields, type the password under *Update Password*, then click *Save*. *Test Connection* checks the saved settings.
-
-    ![Instance field rows, each with a delete (×) button, and the Add Field button below](../assets/images/optimuspy/ui/settings-field-rows.png)
+2. **Add your server.** OptimusPy reads your TM1 connections from a `config.ini`; see [TM1 Connection](../getting-started/tm1-connection.md) for its format. If you already keep one for RushTI or your scripts, open *Settings*, paste its path under *Change file* and click *Link to this file*. Otherwise copy `config/config.ini.example` to `config/config.ini` and fill in your server. The instance then shows on its own tab, and *Test Connection* checks it.
 
 3. **Connect.** Choose the instance in the sidebar's instance selector. The first time, the UI asks for the password; leave it blank if config.ini already holds it. The UI keeps what you typed until you reload the page.
 4. **Find a cube.** The *Optimize* page lists cubes by memory. The *RAM Threshold* slider limits the list to the cubes that make up that share of the instance's memory (60% by default); click the refresh button next to *Include optimized* to scan again after you move it. *opt* means the cube's storage order already differs from its visual order; those cubes are hidden until you tick *Include optimized*. *str* means the last dimension of the storage order has string elements, so it can't move.

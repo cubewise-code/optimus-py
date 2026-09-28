@@ -94,27 +94,6 @@ def test_stored_secrets_are_never_sent_to_the_page(ui_server):
     assert "api_key" not in params
 
 
-def test_saving_an_instance_without_its_secrets_keeps_them(ui_server):
-    base, ini = ui_server(INI)
-    status, _, _ = request("POST", f"{base}/api/instance/prod", body={"params": {"port": "9999"}})
-    text = ini.read_text(encoding="utf-8")
-    assert status == 200
-    assert "port = 9999" in text
-    assert "password = s3cret" in text
-    assert "api_key = k3y" in text
-
-
-def test_the_first_instance_added_creates_config_ini(ui_server, monkeypatch, tmp_path):
-    # The executable ships without a config/ folder; the first save creates it.
-    base, _ = ui_server(INI)
-    fresh = tmp_path / "config" / "config.ini"
-    monkeypatch.setattr(ui, "_config_ini_path", str(fresh))
-    status, _, text = request("POST", f"{base}/api/instances", body={
-        "name": "dev", "params": {"address": "localhost", "port": "8001", "user": "admin"}})
-    assert status == 200, text
-    assert "[dev]" in fresh.read_text(encoding="utf-8")
-
-
 # --- jobs --------------------------------------------------------------------
 
 def wait_done(job, timeout=5):

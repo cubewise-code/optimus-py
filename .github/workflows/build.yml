@@ -60,6 +60,7 @@ jobs:
           New-Item -ItemType Directory -Force bundle/optimuspy/config, bundle/optimuspy/samples | Out-Null
           Copy-Item dist\optimuspy.exe bundle/optimuspy/
           Copy-Item config\config.ini.example bundle/optimuspy/config/
+          Copy-Item config\settings.ini.example bundle/optimuspy/config/
           Copy-Item samples\*.json bundle/optimuspy/samples/
           Compress-Archive -Path bundle/optimuspy -DestinationPath optimuspy-windows.zip
 
@@ -122,6 +123,7 @@ jobs:
           mkdir -p bundle/optimuspy/config bundle/optimuspy/samples
           cp dist/optimuspy bundle/optimuspy/
           cp config/config.ini.example bundle/optimuspy/config/
+          cp config/settings.ini.example bundle/optimuspy/config/
           cp samples/*.json bundle/optimuspy/samples/
           tar -czf optimuspy-linux.tar.gz -C bundle optimuspy
 

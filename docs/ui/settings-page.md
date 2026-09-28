@@ -1,8 +1,8 @@
 # Settings Page
 
-Manage TM1 connections, browser theme, local cache, and saved cube configs, all without touching `config.ini` by hand.
+Choose which `config.ini` OptimusPy reads, test your TM1 connections, and manage the browser theme, the local cache and saved cube configs. Settings doesn't edit a `config.ini`: you maintain the file where it lives, in a text editor or in the tool it belongs to.
 
-![Settings page with the TM1 Instances card showing the fields of an example instance](../assets/images/optimuspy/ui/settings-page.png)
+![Settings page with the TM1 Instances card: the file in use, the path field with Link and Copy, and the read-only fields of an example instance](../assets/images/optimuspy/ui/settings-page.png)
 
 ## Appearance
 
@@ -10,36 +10,30 @@ Theme switcher: **System** (follows OS preference), **Light**, or **Dark**. Pers
 
 ## TM1 Instances
 
-A tab per instance defined in `config.ini`. Each tab shows the instance's fields as editable rows.
+The card shows, from top to bottom:
 
-### Read-only config.ini
+1. **File in use.** The full path of the `config.ini` OptimusPy is reading, and where that choice came from:
+    - *OptimusPy's own copy*: `config/config.ini`;
+    - *Linked file*: a file linked from this page;
+    - *Set by --config at launch*: the file given with `--config`.
+2. **Change file.** Type or paste the path to a `config.ini`, or to the folder that holds one. Quotes around the path, which Windows *Copy as path* adds, are removed. Then pick one of two options:
+    - **Link to this file** reads the file where it is, so changes made for RushTI or your scripts show up here.
+    - **Copy into OptimusPy** puts a snapshot in `config/config.ini`, so later changes to the original don't. If `config/config.ini` already exists, a confirmation asks before replacing it.
 
-If OptimusPy was launched with an explicit `--config PATH` (see [TM1 Connection](../getting-started/tm1-connection.md#sharing-configini-across-tools)), that file is treated as owned by another tool and the Settings page switches to read-only mode: a banner explains that the config is managed externally, and the create/edit/delete controls below are hidden. **Test Connection** still works, since it doesn't write to the file. The default `config/config.ini` (no `--config` flag) is never read-only.
+    When a linked file is in use and `config/config.ini` exists, **Use OptimusPy's own copy** switches back to it. This part is hidden when `--config` chose the file: restart without the flag to change it here.
+3. **One tab per instance**, with its fields read-only. Secrets such as the password are never shown.
 
-### Editing fields
+The choice is saved in [`config/settings.ini`](../getting-started/settings.md), so the command line uses the same file: `optimuspy optimize x.json` without `--config` reads the file you picked here. See [TM1 Connection](../getting-started/tm1-connection.md#which-configini-is-read) for the order in which the choices apply.
 
-- Click any value to edit it.
-- Click the **×** next to a field to delete that key from the section. This one takes effect immediately, without Save.
-- Click **Add Field** to add a new key/value pair (freeform: type any TM1py-supported parameter name).
-- Use **Update Password (write-only)** to change the password without exposing the current value.
+After you switch files, the UI disconnects and forgets the passwords typed in the Connect dialog, because the same instance name can point at a different server in the new file.
 
-Click **Save** to persist the edited values and the new password to `config.ini`.
-
-![Instance field rows, each with a delete (×) button, and the Add Field button below](../assets/images/optimuspy/ui/settings-field-rows.png)
+If the file in use is missing or doesn't parse, the card says so in place of the tabs. If there's no `config.ini` yet, it tells you to point to one above, or to create `config/config.ini` from `config/config.ini.example`.
 
 ### Test Connection
 
-Connects to the live TM1 server with the instance's saved `config.ini` fields (so Save first if you want to test an edit) and the password typed in **Update Password**, or else the one given in the Connect dialog. Returns the server name and cube count on success, or a clear error toast on failure.
+Connects to the TM1 server with the instance's fields from `config.ini`, and with the password typed in the Connect dialog if there is one. Returns the server name and cube count on success, or a clear error toast on failure.
 
 ![Test Connection success toast showing the server name and cube count](../assets/images/optimuspy/ui/settings-test-connection-toast.png)
-
-### New Instance
-
-Click **+ New Instance** above the tabs. A modal asks for the instance name (anything but empty or containing `]`; surrounding whitespace is trimmed). The new section appears as an empty tab where you add fields. If there is no `config.ini` yet (the executable ships without one), the first instance created here creates `config/config.ini`.
-
-### Delete Instance
-
-The red **Delete Instance** button at the bottom of each tab removes the section from `config.ini` after a confirmation modal. Permanent.
 
 ## Cache
 

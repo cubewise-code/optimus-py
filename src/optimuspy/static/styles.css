@@ -2934,13 +2934,20 @@ input[type="range"]:focus {
   margin-bottom: 0.5rem;
 }
 
-.readonly-banner {
+.config-path {
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.config-error {
   padding: 10px 12px;
   border-radius: 6px;
   border: 1px solid var(--warning, #d9a441);
   background: color-mix(in srgb, var(--warning, #d9a441) 12%, transparent);
   color: var(--text-secondary, #b8b8b8);
   font-size: 13px;
+  white-space: pre-wrap;
 }
 
 /* ------------------------------------------------------------------

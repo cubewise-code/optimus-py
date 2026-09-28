@@ -35,6 +35,8 @@ CLAUDE.md
 
 # Credentials. The only file here that is dangerous rather than merely untidy.
 config/config.ini
+# The installation's settings. The repo ships config/settings.ini.example instead.
+config/settings.ini
 
 # Runtime output directories the product itself creates, relative to the working
 # directory: results/ (core.py RESULT_PATH), configs/ (ui.py saved configs) and
