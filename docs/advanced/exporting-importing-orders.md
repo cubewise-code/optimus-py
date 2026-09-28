@@ -10,7 +10,7 @@ Open the [Sync Order page](../ui/sync-order-page.md):
 2. Drag cubes from the source list to the target panel. Drag order = apply order.
 3. Click **Export to Folder**.
 
-OptimusPy writes one JSON per cube into the local `exports/` directory, named after the cube (characters other than letters, digits, `.`, `_` and `-` are dropped from the file name):
+OptimusPy writes one JSON per cube into the exports folder, named after the cube. The folder is `exports/` by default, and the [Folders card](../ui/settings-page.md#folders) on Settings changes it; the examples on this page use the default. In the file name, characters other than letters, digits, `.`, `_` and `-` are dropped:
 
 ![Sync Order page after Export to Folder, with the success toast](../assets/images/optimuspy/ui/sync-order-export.png)
 

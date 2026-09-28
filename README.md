@@ -56,10 +56,10 @@ optimuspy optimize samples/optimize.json
 
 The report is written to `results/<instance>/`. With `"update": false` the cube ends in its original order.
 
-To find which cubes are worth optimizing, scan the instance. This lists the largest cubes, the ones that make up 60% of its memory, leaves out those already optimized, and writes a starter config for each into `configs/`; add your views to each file before you run it:
+To find which cubes are worth optimizing, scan the instance. This lists the largest cubes, the ones that make up 60% of its memory, leaves out those already optimized, and writes a starter config for each into `cube-configs/`; add your views to each file before you run it:
 
 ```bash
-optimuspy scan --instance tm1srv01 --output configs/
+optimuspy scan --instance tm1srv01 --output cube-configs/
 ```
 
 ## Documentation

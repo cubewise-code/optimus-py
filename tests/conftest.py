@@ -214,7 +214,7 @@ def ui_server(tmp_path, monkeypatch):
 
     Returns `start(ini_text, source="default") -> (base_url, ini_path)`, where
     `source` is where the config.ini in use came from. The test runs inside
-    `tmp_path`, so the `results/`, `configs/` and `config/` folders the UI reads
+    `tmp_path`, so the `results/`, `cube-configs/`, `exports/` and `config/` folders the UI reads
     and writes are the test's own. Every server started is shut down afterwards.
     """
     from http.server import ThreadingHTTPServer

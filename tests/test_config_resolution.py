@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from optimuspy import core
+from optimuspy import core, ui
 from optimuspy.core import (
     ConfigLocation, DEFAULT_CONFIG_INI, DEFAULT_PORT, load_settings, resolve_config_path,
     save_setting, setting_open_browser, setting_ui_port,
@@ -160,8 +160,12 @@ def test_every_key_in_the_example_is_commented_at_its_default(settings_path):
         "config_ini", "cube_configs_dir", "exports_dir", "ui_port", "open_browser"}
 
     # The same answers with no file and with the uncommented example.
-    with_no_file = (resolve_config_path(None), setting_ui_port(), setting_open_browser())
+    def answers():
+        return (resolve_config_path(None), setting_ui_port(), setting_open_browser(),
+                ui.cube_configs_dir(), ui.exports_dir())
+
+    with_no_file = answers()
     settings_path.parent.mkdir(parents=True)
     settings_path.write_text(_example_uncommented(), encoding="utf-8")
     assert core.load_settings()["ui_port"] == "8765"
-    assert (resolve_config_path(None), setting_ui_port(), setting_open_browser()) == with_no_file
+    assert answers() == with_no_file

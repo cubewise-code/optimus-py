@@ -244,6 +244,8 @@ const OptimusPy = (function () {
     saveConfig(config, filename) { return this._fetch("POST", "/api/config", { config, filename }); },
     deleteConfig(filename) { return this._fetch("DELETE", `/api/config/${encodeURIComponent(filename)}`); },
     getSavedCubes() { return this._fetch("GET", "/api/saved-cubes"); },
+    getFolders() { return this._fetch("GET", "/api/folders"); },
+    setFolder(body) { return this._fetch("POST", "/api/folders", body); },
     validate(config, mode) { return this._fetch("POST", "/api/validate", { config, mode }); },
     startJob(mode, cubeConfig, password) {
       return this._fetch("POST", "/api/job/start", { mode, cube_config: cubeConfig, password });
@@ -2482,9 +2484,9 @@ const OptimusPy = (function () {
         const config = buildConfig();
         try {
           const filename = `${config.cube}_${config.instance}.json`;
-          await Api.saveConfig(config, filename);
+          const resp = await Api.saveConfig(config, filename);
           Sidebar.loadSavedCubes();
-          Toast.success("Config saved");
+          Toast.success(`Config saved to ${resp.path}`);
         } catch (err) {
           Toast.error(err.message);
         }
@@ -3374,7 +3376,7 @@ const OptimusPy = (function () {
           });
           try {
             const resp = await Api.transferExport(this._targetInstance || this._sourceInstance || "", orders);
-            Toast.success(`Exported ${resp.files.length} file(s) to exports/`);
+            Toast.success(`Exported ${resp.files.length} file(s) to ${resp.folder}`);
           } catch (err) {
             Toast.error(err.message);
           }
@@ -4334,6 +4336,14 @@ const OptimusPy = (function () {
       cacheCard.appendChild(clearCacheBtn);
       page.appendChild(cacheCard);
 
+      // Folders the UI writes JSON to
+      const foldersCard = el("div", { className: "card mb-4" });
+      foldersCard.appendChild(el("div", { className: "card-title mb-4" }, "Folders"));
+      const foldersList = el("div");
+      foldersCard.appendChild(foldersList);
+      foldersCard.appendChild(el("p", { className: "text-xs text-tertiary" }, "Files already saved stay in the old folder."));
+      page.appendChild(foldersCard);
+
       // Saved configs management
       const configsCard = el("div", { className: "card" });
       configsCard.appendChild(el("div", { className: "card-title mb-4" }, "Saved Cube Configs"));
@@ -4341,6 +4351,56 @@ const OptimusPy = (function () {
       configsCard.appendChild(configsList);
       page.appendChild(configsCard);
       this._loadSavedConfigs(configsList);
+      this._loadFolders(foldersList, configsList);
+    },
+
+    async _loadFolders(container, configsList) {
+      let folders;
+      try {
+        folders = await Api.getFolders();
+      } catch (err) {
+        container.appendChild(el("div", { className: "text-secondary text-sm" }, "Failed to load folders: " + err.message));
+        return;
+      }
+      const rows = [
+        { kind: "cube_configs", label: "Saved cube configs" },
+        { kind: "exports", label: "Sync Order exports" },
+      ];
+      const change = async (body) => {
+        try {
+          await Api.setFolder(body);
+        } catch (err) {
+          Toast.error(err.message);
+          return;
+        }
+        if (body.kind === "cube_configs") {
+          configsList.innerHTML = "";
+          this._loadSavedConfigs(configsList);
+          Sidebar.loadSavedCubes();
+        }
+        container.innerHTML = "";
+        this._loadFolders(container, configsList);
+      };
+      rows.forEach(({ kind, label }) => {
+        const folder = folders[kind];
+        const inputId = `folder-input-${kind}`;
+        const input = el("input", { id: inputId, className: "form-input", type: "text", placeholder: "Path to a folder", style: "flex:1;min-width:200px;" });
+        const controls = el("div", { className: "flex gap-2 flex-wrap items-center" },
+          input,
+          el("button", { className: "btn btn-secondary", onClick: () => change({ kind, path: input.value }) }, "Change folder"),
+        );
+        if (!folder.is_default) {
+          controls.appendChild(el("button", { className: "btn btn-ghost", onClick: () => change({ kind, reset: true }) }, "Use default"));
+        }
+        container.appendChild(el("div", { className: "form-group" },
+          el("label", { className: "form-label", for: inputId }, label),
+          el("div", { className: "flex items-center gap-2 flex-wrap mb-2" },
+            el("code", { className: "config-path" }, folder.path),
+            folder.is_default ? el("span", { className: "text-xs text-tertiary" }, "(default)") : null,
+          ),
+          controls,
+        ));
+      });
     },
 
     // Point OptimusPy at another config.ini, by link or by copy. Hidden when

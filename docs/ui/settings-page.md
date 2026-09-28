@@ -46,6 +46,17 @@ Two caches are stored in your browser's `localStorage`:
 
 Click **Clear Cache** to wipe both, plus the in-memory state. Use this after server-side changes (deleted string elements, renamed dimensions, fresh data load) to force a clean fetch.
 
+## Folders
+
+Where the UI writes JSON files, one row each:
+
+- **Saved cube configs**: where the Optimize page saves a cube config. `cube-configs/` by default.
+- **Sync Order exports**: where Sync Order's *Export to Folder* writes. `exports/` by default.
+
+Each row shows the folder in use, marked *(default)* when it's the default. Type a path and click **Change folder** to use another one; it's created at once, so a folder that can't be written is reported here rather than at the first save. **Use default**, shown when the folder isn't the default, goes back to it. The choice is saved in [`config/settings.ini`](../getting-started/settings.md) as `cube_configs_dir` and `exports_dir`.
+
+Files already saved stay in the old folder. After the cube configs folder changes, the list below shows the files in the new one.
+
 ## Saved Cube Configs
 
-Lists every JSON config saved in `configs/` from the Optimize workflow. Each row shows the cube, then its instance, mode (`greedy` or `predefined`) and file name, with a trash button to delete it. Useful for cleaning up experiments.
+Lists every JSON config saved in the cube configs folder from the Optimize workflow. Each row shows the cube, then its instance, mode (`greedy` or `predefined`) and file name, with a trash button to delete it. Useful for cleaning up experiments.

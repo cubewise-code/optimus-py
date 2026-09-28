@@ -15,6 +15,7 @@ import pytest
 from TM1py.Exceptions import TM1pyRestException
 
 from optimuspy import ui
+from optimuspy.core import load_settings
 from optimuspy.executors import OptimizationCancelled
 
 INI = (
@@ -535,8 +536,8 @@ def test_a_saved_config_is_read_as_utf8(ui_server, tmp_path):
     # Pins Windows behaviour: on a UTF-8 host this passes with or without the
     # explicit encoding, so it guards against the encoding being dropped again.
     base, _ = ui_server(INI)
-    (tmp_path / "configs").mkdir()
-    (tmp_path / "configs" / "ventas.json").write_bytes(
+    (tmp_path / "cube-configs").mkdir()
+    (tmp_path / "cube-configs" / "ventas.json").write_bytes(
         json.dumps({"cube": "Ventas €", "instance": "prod"}, ensure_ascii=False).encode("utf-8"))
     status, _, text = request("GET", f"{base}/api/saved-cubes")
     assert status == 200
@@ -545,8 +546,8 @@ def test_a_saved_config_is_read_as_utf8(ui_server, tmp_path):
 
 def test_a_response_never_carries_nan(ui_server, tmp_path):
     base, _ = ui_server(INI)
-    (tmp_path / "configs").mkdir()
-    (tmp_path / "configs" / "odd.json").write_text(
+    (tmp_path / "cube-configs").mkdir()
+    (tmp_path / "cube-configs" / "odd.json").write_text(
         '{"cube": "Sales", "instance": "prod", "executions": NaN}', encoding="utf-8")
     _, _, text = request("GET", f"{base}/api/saved-cubes")
     assert "NaN" not in text
@@ -627,3 +628,121 @@ def test_a_job_that_hits_a_tm1_error_reports_it_without_the_headers():
     assert events[-1]["event"] == "error_event"
     assert events[-1]["data"]["error"] == "TM1 returned 500 Internal Server Error: boom"
     assert "TM1SessionId" not in json.dumps(events)
+
+
+# --- folders -------------------------------------------------------------------
+
+CUBE_CONFIG = {"instance": "prod", "cube": "Sales", "executions": 1, "output": "csv"}
+
+
+def _set_folder(base, body):
+    status, _, text = request("POST", f"{base}/api/folders", body=body)
+    return status, json.loads(text)
+
+
+def test_saved_cube_configs_go_to_cube_configs_by_default(ui_server, tmp_path):
+    base, _ = ui_server(INI)
+    status, _, text = request("POST", f"{base}/api/config", body={"config": CUBE_CONFIG, "filename": "sales"})
+    assert status == 200
+    saved = tmp_path / "cube-configs" / "sales.json"
+    assert json.loads(text)["path"] == str(saved)
+    assert json.loads(saved.read_text(encoding="utf-8")) == CUBE_CONFIG
+
+
+def test_a_chosen_folder_is_used_to_save_list_and_delete(ui_server, tmp_path):
+    base, _ = ui_server(INI)
+    folder = tmp_path / "shared" / "cubes"
+    status, folders = _set_folder(base, {"kind": "cube_configs", "path": f' "{folder}" '})
+    assert status == 200
+    assert folders["cube_configs"] == {"path": str(folder), "is_default": False}
+
+    status, _, text = request("POST", f"{base}/api/config", body={"config": CUBE_CONFIG, "filename": "sales"})
+    assert status == 200 and json.loads(text)["path"] == str(folder / "sales.json")
+    _, _, text = request("GET", f"{base}/api/saved-cubes")
+    assert [c["filename"] for c in json.loads(text)["saved_cubes"]] == ["sales.json"]
+    status, _, _ = request("DELETE", f"{base}/api/config/sales.json")
+    assert status == 200
+    assert not (folder / "sales.json").exists()
+    assert not (tmp_path / "cube-configs").exists()
+
+
+def test_a_chosen_exports_folder_is_used_by_export_to_folder(ui_server, tmp_path):
+    base, _ = ui_server(INI)
+    folder = tmp_path / "orders"
+    _set_folder(base, {"kind": "exports", "path": str(folder)})
+    status, _, text = request("POST", f"{base}/api/transfer/export",
+                              body={"instance": "prod", "orders": {"Sales": ["Time", "Region"]}})
+    payload = json.loads(text)
+    assert status == 200
+    assert payload == {"files": [str(folder / "Sales.json")], "folder": str(folder)}
+    assert json.loads((folder / "Sales.json").read_text())["predefined_orders"] == [["Time", "Region"]]
+    assert not (tmp_path / "exports").exists()
+
+
+def test_exports_go_to_exports_by_default(ui_server, tmp_path):
+    base, _ = ui_server(INI)
+    _, _, text = request("POST", f"{base}/api/transfer/export",
+                         body={"instance": "prod", "orders": {"Sales": ["Time"]}})
+    assert json.loads(text)["folder"] == str(tmp_path / "exports")
+
+
+def test_the_folders_start_at_their_defaults(ui_server, tmp_path):
+    base, _ = ui_server(INI)
+    status, _, text = request("GET", f"{base}/api/folders")
+    assert status == 200
+    assert json.loads(text) == {
+        "cube_configs": {"path": str(tmp_path / "cube-configs"), "is_default": True},
+        "exports": {"path": str(tmp_path / "exports"), "is_default": True},
+    }
+
+
+@pytest.mark.parametrize("body", [{"kind": "results", "path": "x"}, {"path": "x"}, {"kind": "exports"}])
+def test_an_unknown_kind_or_no_path_is_refused(ui_server, body):
+    base, _ = ui_server(INI)
+    status, _ = _set_folder(base, body)
+    assert status == 400
+    assert load_settings() == {}
+
+
+def test_reset_goes_back_to_the_default(ui_server, tmp_path):
+    base, _ = ui_server(INI)
+    _set_folder(base, {"kind": "cube_configs", "path": str(tmp_path / "elsewhere")})
+    status, folders = _set_folder(base, {"kind": "cube_configs", "reset": True})
+    assert status == 200
+    assert folders["cube_configs"] == {"path": str(tmp_path / "cube-configs"), "is_default": True}
+    assert load_settings() == {}
+
+
+def test_choosing_the_default_folder_stores_nothing(ui_server, tmp_path):
+    base, _ = ui_server(INI)
+    status, folders = _set_folder(base, {"kind": "exports", "path": "exports"})
+    assert status == 200 and folders["exports"]["is_default"] is True
+    assert load_settings() == {}
+
+
+def test_a_path_that_is_a_file_is_refused(ui_server, tmp_path):
+    base, _ = ui_server(INI)
+    (tmp_path / "notes.txt").write_text("x")
+    status, payload = _set_folder(base, {"kind": "exports", "path": str(tmp_path / "notes.txt")})
+    assert status == 400
+    assert "notes.txt" in payload["error"]
+    assert load_settings() == {}
+
+
+def test_a_chosen_folder_is_created_at_once(ui_server, tmp_path):
+    base, _ = ui_server(INI)
+    folder = tmp_path / "a" / "b"
+    _set_folder(base, {"kind": "exports", "path": str(folder)})
+    assert folder.is_dir()
+
+
+def test_a_chosen_folder_survives_a_restart(ui_server, tmp_path):
+    folder = tmp_path / "shared"
+    base, _ = ui_server(INI)
+    _set_folder(base, {"kind": "cube_configs", "path": str(folder)})
+    (folder / "sales.json").write_text(json.dumps(CUBE_CONFIG), encoding="utf-8")
+
+    restarted, _ = ui_server(INI)  # a new server reading the same settings.ini
+    _, _, text = request("GET", f"{restarted}/api/saved-cubes")
+    assert [c["filename"] for c in json.loads(text)["saved_cubes"]] == ["sales.json"]
+    assert ui.cube_configs_dir() == folder

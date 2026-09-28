@@ -39,11 +39,13 @@ config/config.ini
 config/settings.ini
 
 # Runtime output directories the product itself creates, relative to the working
-# directory: results/ (core.py RESULT_PATH), configs/ (ui.py saved configs) and
-# logs/ (core.py log path). They are working state, not scratch, so they stay
+# directory: results/ (core.py RESULT_PATH), cube-configs/ and exports/ (the ui.py
+# defaults for saved cube configs and Sync Order exports; Settings can move both)
+# and logs/ (core.py log path). They are working state, not scratch, so they stay
 # where the code expects them rather than moving under .local/.
 results/
-configs/
+cube-configs/
+exports/
 logs/
 *.log
 

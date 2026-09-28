@@ -39,7 +39,7 @@ Cubes accounting for up to 60% of total model RAM (12.43 GB), not yet optimized:
 Add `--output` with a directory to write one JSON config per candidate, ready to feed back into `optimuspy optimize`:
 
 ```bash
-optimuspy scan --instance tm1srv01 --output configs/auto/
+optimuspy scan --instance tm1srv01 --output cube-configs/auto/
 ```
 
 Each generated file uses safe defaults (`executions: 5`, `output: csv`, no views/processes). Edit each one to add views, processes, or position rules before running.

@@ -32,7 +32,7 @@ from optimuspy.core import (
     get_tm1_config, validate_cube_config,
     main as run_optimuspy, _scan_to_data_light, configure_logging, get_logfile_path, RESULT_PATH,
     set_current_directory, _collect_dimension_metadata, _compute_suggested_order,
-    resolve_config_path, save_setting, setting_open_browser, setting_ui_port,
+    resolve_config_path, load_settings, save_setting, setting_open_browser, setting_ui_port,
     DEFAULT_CONFIG_INI, DEFAULT_PORT, SETTINGS_PATH
 )
 from optimuspy.executors import OptimizationCancelled
@@ -73,6 +73,37 @@ def _error_text(e: Exception) -> str:
         message = json.loads(message)["error"]["message"]
     status = f"TM1 returned {e.status_code} {e.reason}".rstrip()
     return f"{status}: {message}" if message else status
+
+
+# The folders the UI writes JSON to, which Settings can change: each kind's
+# setting in config/settings.ini, and its default.
+DEFAULT_CUBE_CONFIGS_DIR = Path("cube-configs")
+DEFAULT_EXPORTS_DIR = Path("exports")
+FOLDERS = {
+    "cube_configs": ("cube_configs_dir", DEFAULT_CUBE_CONFIGS_DIR),
+    "exports": ("exports_dir", DEFAULT_EXPORTS_DIR),
+}
+
+
+def _folder(kind: str) -> Path:
+    key, default = FOLDERS[kind]
+    return Path(load_settings().get(key) or default)
+
+
+def cube_configs_dir() -> Path:
+    """Where the Optimize page saves cube configs."""
+    return _folder("cube_configs")
+
+
+def exports_dir() -> Path:
+    """Where Sync Order's Export to Folder writes."""
+    return _folder("exports")
+
+
+def _folders_state() -> dict:
+    settings = load_settings()
+    return {kind: {"path": os.path.abspath(settings.get(key) or default), "is_default": not settings.get(key)}
+            for kind, (key, default) in FOLDERS.items()}
 
 
 # Global state. The config.ini in use and where it came from: "flag" (--config),
@@ -412,6 +443,8 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
             return self._handle_get_instance(instance_name)
         elif path == "/api/saved-cubes":
             return self._handle_list_saved_cubes()
+        elif path == "/api/folders":
+            return self._send_json(200, _folders_state())
         elif path == "/api/results":
             return self._handle_list_results()
         elif path.startswith("/api/result/"):
@@ -457,6 +490,8 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
             return self._handle_cancel_job(job_id)
         elif path == "/api/config-source":
             return self._handle_config_source(body)
+        elif path == "/api/folders":
+            return self._handle_set_folder(body)
         elif path == "/api/transfer/scan":
             return self._handle_transfer_scan(body)
         elif path == "/api/transfer/target-orders":
@@ -606,6 +641,33 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
         _config_ini_path, _config_source = resolve_config_path(None)
         self._send_json(200, _config_state())
 
+    def _handle_set_folder(self, body: dict):
+        """Change where one kind of JSON is written, or `reset` it to the default.
+        The folder is created now, so a path that can't be written fails here and
+        not at the first save. Files already in the old folder stay there."""
+        kind = body.get("kind")
+        if kind not in FOLDERS:
+            return self._send_json(400, {"error": "'kind' must be cube_configs or exports"})
+        key, default = FOLDERS[kind]
+        try:
+            if body.get("reset") is True:
+                save_setting(key, None)
+            else:
+                if not (body.get("path") or "").strip():
+                    return self._send_json(400, {"error": "Enter the path to a folder"})
+                path = Path(os.path.abspath(_typed_path(body["path"])))
+                if path.exists() and not path.is_dir():
+                    return self._send_json(400, {"error": f"{path} is a file, not a folder"})
+                try:
+                    path.mkdir(parents=True, exist_ok=True)
+                except OSError as e:
+                    return self._send_json(400, {"error": f"{path} can't be created: {_error_text(e)}"})
+                # The default is stored as no setting at all.
+                save_setting(key, None if path == Path(os.path.abspath(default)) else str(path))
+        except (OSError, configparser.Error) as e:
+            return self._send_json(500, {"error": _error_text(e)})
+        self._send_json(200, _folders_state())
+
     def _handle_connect(self, body: dict):
         instance = body.get("instance")
         password = body.get("password")
@@ -715,18 +777,19 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
         if not safe_name.endswith(".json"):
             safe_name += ".json"
 
-        configs_dir = Path("configs")
-        configs_dir.mkdir(exist_ok=True)
-        config_path = configs_dir / safe_name
+        config_path = cube_configs_dir() / safe_name
+        try:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(config_path, "w") as f:
+                json.dump(config_data, f, indent=2)
+        except OSError as e:
+            return self._send_json(500, {"error": _error_text(e)})
 
-        with open(config_path, "w") as f:
-            json.dump(config_data, f, indent=2)
-
-        self._send_json(200, {"path": str(config_path), "filename": safe_name})
+        self._send_json(200, {"path": os.path.abspath(config_path), "filename": safe_name})
 
     def _handle_delete_config(self, filename: str):
         safe_name = "".join(c for c in filename if c.isalnum() or c in "._-")
-        config_path = Path("configs") / safe_name
+        config_path = cube_configs_dir() / safe_name
         if not config_path.exists():
             return self._send_json(404, {"error": "Config not found"})
         try:
@@ -737,7 +800,7 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
 
     def _handle_list_saved_cubes(self):
         configs = []
-        configs_dir = Path("configs")
+        configs_dir = cube_configs_dir()
         if configs_dir.exists():
             for f in sorted(configs_dir.glob("*.json")):
                 try:
@@ -902,8 +965,8 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
         if not orders:
             return self._send_json(400, {"error": "Missing 'orders'"})
         try:
-            export_dir = Path("exports")
-            export_dir.mkdir(exist_ok=True)
+            export_dir = exports_dir()
+            export_dir.mkdir(parents=True, exist_ok=True)
             files = []
             for cube_name, dim_order in orders.items():
                 safe_name = "".join(c for c in cube_name if c.isalnum() or c in "._-")
@@ -918,8 +981,8 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
                 file_path = export_dir / f"{safe_name}.json"
                 with open(file_path, "w") as f:
                     json.dump(config_data, f, indent=2)
-                files.append(str(file_path))
-            self._send_json(200, {"files": files})
+                files.append(os.path.abspath(file_path))
+            self._send_json(200, {"files": files, "folder": os.path.abspath(export_dir)})
         except Exception as e:
             self._send_json(500, {"error": _error_text(e)})
 

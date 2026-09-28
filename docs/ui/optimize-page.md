@@ -47,7 +47,7 @@ For each mode you can:
 
 ![Configure tab in Greedy mode with one view and a dimension position rule in the Config Preview](../assets/images/optimuspy/ui/optimize-configure-tab.png)
 
-The **Config Preview** beside the form shows the generated JSON config (it's identical to what the CLI consumes). **Save & Start Optimization** saves it to `configs/`, starts the job in the background and opens the Optimize tab. **Save Config Only** saves it without starting.
+The **Config Preview** beside the form shows the generated JSON config (it's identical to what the CLI consumes). **Save & Start Optimization** saves it to the cube configs folder, `cube-configs/` by default, starts the job in the background and opens the Optimize tab. **Save Config Only** saves it without starting, and the toast shows the file's full path. The [Folders card](settings-page.md#folders) on Settings changes the folder.
 
 ![Config Preview with the Save & Start Optimization and Save Config Only buttons](../assets/images/optimuspy/ui/optimize-config-preview.png)
 

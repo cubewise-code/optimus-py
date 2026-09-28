@@ -75,6 +75,7 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
   See [Sync Order Page](docs/ui/sync-order-page.md) and [Exporting & Importing Orders](docs/advanced/exporting-importing-orders.md).
 - **Settings page.** It links the `config.ini` you already keep for RushTI or your scripts, or copies it into `config/config.ini`, and shows each instance read-only with *Test Connection*. The CLI uses the same file. See [Settings Page](docs/ui/settings-page.md).
 - **A settings file.** The optional `config/settings.ini` remembers the linked `config.ini`, the UI's port and whether it opens a browser. The bundle ships `config/settings.ini.example`. See [Settings File](docs/getting-started/settings.md).
+- **Folders chosen in Settings.** Saved cube configs go to `cube-configs/` and Sync Order exports to `exports/`; the Settings page moves either one.
 - **TM1 v12 (PAoC / PAaaS)** alongside v11. VMM and VMT are raised during a run and put back afterwards on v11 only. See [Home](docs/index.md).
 - **`-v` / `--verbose`** logs the reason each skipped order was refused.
 - **Windows and Linux bundles.** Each holds the executable, `config/config.ini.example`, `config/settings.ini.example` and the sample cube configs. See [Installation](docs/getting-started/installation.md).

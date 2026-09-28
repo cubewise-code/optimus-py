@@ -61,7 +61,7 @@ Requires `predefined_orders` with **exactly one** entry (the order to apply). No
 
 ```bash
 optimuspy scan --instance tm1srv01
-optimuspy scan --instance tm1srv01 --output configs/auto/
+optimuspy scan --instance tm1srv01 --output cube-configs/auto/
 ```
 
 | Option | Description |

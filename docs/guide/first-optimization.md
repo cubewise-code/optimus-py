@@ -39,7 +39,7 @@ Describe the cube in a JSON file. `samples/optimize.json` is a starting point:
 ```
 
 1. **Configure the connection.** Copy `config/config.ini.example` to `config/config.ini` and add a section for your instance. To keep the password out of the file, pass it with `-p`. See [TM1 Connection](../getting-started/tm1-connection.md).
-2. **Optional: find candidates.** `optimuspy scan --instance tm1srv01 --output configs/` lists the largest cubes and writes a starter JSON for each.
+2. **Optional: find candidates.** `optimuspy scan --instance tm1srv01 --output cube-configs/` lists the largest cubes and writes a starter JSON for each.
 3. **Run.** `optimuspy optimize sales.json`. Add `-v` to log why any order was skipped.
 4. **If it stops.** Run the same command again: it continues from its checkpoint. `--no-resume` starts over. See [Checkpoints & Resume](../advanced/checkpoints-resume.md).
 5. **Find the report.** `results/<instance>/<instance>_<cube>_<timestamp>.html`, next to a CSV or XLSX of the same name, in the folder you ran from (for the bundle, the executable's folder). The log is `logs/optimuspy.log` in the install folder: the executable's folder for the bundle, the repository root for a clone.

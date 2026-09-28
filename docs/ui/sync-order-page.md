@@ -36,7 +36,7 @@ The first time you connect an instance after the page loads, it asks for the pas
 
 ## Export to Folder
 
-Generates one `<cube>.json` file per cube into the local `exports/` directory. Each file is **CLI-compatible** with `optimuspy set <file>.json`. Use this when you'd rather apply orders through a controlled deployment pipeline than from the UI. The `instance` in each file is the target you had connected, or the source if you hadn't connected a target yet.
+Generates one `<cube>.json` file per cube into the exports folder, `exports/` by default; the [Folders card](settings-page.md#folders) on Settings changes it, and the toast names the folder the files went to. Each file is **CLI-compatible** with `optimuspy set <file>.json`. Use this when you'd rather apply orders through a controlled deployment pipeline than from the UI. The `instance` in each file is the target you had connected, or the source if you hadn't connected a target yet.
 
 ```json
 {
