@@ -49,8 +49,8 @@ def captured(logging_sandbox):
 @pytest.fixture
 def logging_sandbox(monkeypatch, tmp_path):
     """Let a test configure the root logger without leaking the change."""
-    # configure_logging's basicConfig names a logfile; keep it out of the repo.
-    monkeypatch.chdir(tmp_path)
+    # configure_logging writes to logs/ under the install dir; keep it out of the repo.
+    monkeypatch.setattr("optimuspy.core.get_app_base_dir", lambda: tmp_path)
     root = logging.getLogger()
     before = root.level
     yield root
