@@ -6,21 +6,22 @@ OptimusPy benchmarks dimension orders by physically reordering the cube on the T
 
 ```
 1. Capture the original dimension order
-2. Disable TM1's stargate cache (set VMM/VMT to 1,000,000)
+2. v11 only: disable TM1's stargate cache (set VMM/VMT to 1,000,000)
 3. Evaluate the original order as a baseline
 4. Run iterations:
      For each candidate order:
        a. Apply the order to the cube
-       b. Clear cube cache
-       c. Run each view N times — record query times
-       d. Run each process N times — record process times
-       e. Read RAM from the TM1py Metrics service (`cube_memory_used`), version-agnostic across v11 and v12
-       f. Save a checkpoint
-5. Pick the best result by composite score
+       b. Run each view N times, clearing the cube cache before each run — record query times
+       c. Run each process N times, clearing the cube cache before each run — record process times
+       d. Derive RAM from the % change the server returns for the reorder
+       e. Save a checkpoint
+5. Pick the best order (see "How the best order is chosen" below)
 6. Apply best (if update=true) or restore the original
-7. Restore VMM/VMT
+7. v11 only: restore VMM/VMT
 8. Generate HTML / CSV / XLSX report
 ```
+
+RAM is read from the TM1py Metrics service (`cube_memory_used`) once, for the original order, and again only to re-anchor the figures when a run resumes from a checkpoint. Every other RAM figure is derived from the % change the server reports for each reorder.
 
 Steps 2 and 7 are wrapped in a `try/finally` — even if the job fails or is cancelled, VMM/VMT are always restored, and the original dimension order is restored **best-effort** (if the connection has already dropped this is a no-op; the checkpoint retains the original order, so a resume restores it instead).
 
@@ -44,7 +45,7 @@ pruning**. Uniform cubes (nothing decided) degrade gracefully to a full search.
 
 → Full explanation: [Cardinality-Aware Greedy Optimization](cardinality-aware-greedy.md).
 
-## Composite metrics
+## How the best order is chosen
 
 When multiple views and/or processes are tested, OptimusPy reports a single number per metric using the **median of medians**:
 
@@ -54,15 +55,24 @@ When multiple views and/or processes are tested, OptimusPy reports a single numb
 
 Median-of-medians is robust against outliers (TM1 servers occasionally have transient spikes from other workloads).
 
+There is no combined score. For each metric that was measured (RAM always, query time if `views` are set, process time if `processes` are set), OptimusPy takes the range between the best and worst value across all tested orders, then:
+
+1. Sets a tolerance of 1% of that range above the best value.
+2. Walks the orders in the order they were tested and picks the first one that is within the tolerance on every measured metric. The original order is tested first, so it wins a tie.
+3. If no order qualifies, it retries with 2.5%, then 5%.
+4. If still no order qualifies, it restores the original order and the log says to pick one manually from the results.
+
 ## Cache & VMM/VMT handling
 
 TM1's **stargate views** cache aggregated query results per cube. If the cache is warm, query times reflect cache hits — not the real cost of the dimension order.
 
 OptimusPy:
 
-1. Sets VMM (memory threshold) and VMT (time threshold) to **1,000,000** before benchmarking. This effectively disables stargate caching for the duration.
-2. Calls `DebugUtility(125, 0, 0, '<cube>', '', '')` between iterations to clear any residual cache.
-3. Restores the original VMM/VMT in the `finally` block.
+1. On v11, sets VMM (memory threshold) and VMT (time threshold) to **1,000,000** before benchmarking. This effectively disables stargate caching for the duration.
+2. Calls `DebugUtility(125, 0, 0, '<cube>', '', '')` before every view and process execution to clear any residual cache.
+3. On v11, restores the original VMM/VMT in the `finally` block.
+
+On v12 the VMM/VMT caps do not exist, so OptimusPy neither changes nor restores them.
 
 [Why VMM/VMT matters → VMM/VMT Handling](vmm-vmt-handling.md)
 

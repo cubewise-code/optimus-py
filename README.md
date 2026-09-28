@@ -71,7 +71,7 @@ Each run writes an HTML report to `results/<instance>/`, in the folder you run f
 - Use big and representative views _(e.g. typical slices that end users consume)_
 - Choose a sensible number of `executions` between 5 and 10
 - Provide enough spare memory on TM1 server
-- Fast mode (`fast: true`) seeds from the cardinality-suggested order, then coordinate-descent refines only the dimensions leaf-count tolerance (τ) leaves undecided (≤2 passes); the default thorough fold searches the full τ-frontier
+- Fast mode (`fast: true`) starts from the order the leaf counts suggest, then only tests moves for dimensions whose leaf counts are close to each other. It needs fewer reorders than the default search, which is more thorough.
 - Choose a TI that loads data to the cube and runs for at least a few seconds
 
 ## Executable bundles

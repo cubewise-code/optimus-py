@@ -1,6 +1,6 @@
 # Optimize Mode
 
-The default mode. OptimusPy benchmarks dimension permutations using a greedy outside-in algorithm and reports the order with the best composite score.
+The default mode. OptimusPy benchmarks dimension orders with a greedy search and reports the first tested order that comes within a small tolerance of the best value on every metric it measured (see [How the best order is chosen](../concepts/how-it-works.md#how-the-best-order-is-chosen)).
 
 ## When to use
 
@@ -12,11 +12,11 @@ If you already have a short list of candidate orders, use [Predefined Orders](pr
 
 ## How the greedy algorithm works
 
-OptimusPy walks dimension positions from the outside in: position 0 (first), position N-1 (last), position 1 (second), position N-2 (second-to-last), and so on, stopping at the middle.
+OptimusPy fills the positions from both ends toward the middle, last position first: `N-1`, then `0`, then `N-2`, then `1`, and so on. Each position gets the best dimension found for it, and the search moves on with one dimension fewer.
 
-For each position, it tries swapping every remaining dimension into that slot and measures RAM (and optionally query / process time). The winner is locked into that position; the algorithm moves on to the next position with one fewer free dimension.
+At each position it does not try every remaining dimension. In the back half it tries only the dimensions whose leaf count is close to the largest one still unplaced; in the front half, only those close to the smallest. A dimension with no near neighbour, such as one with far more leaves than any other, is placed in a single reorder without testing alternatives.
 
-This converges in roughly `N × (N-1)` evaluations rather than `N!`, which is the difference between minutes and millennia for a typical 8-dimension cube.
+The back half is always ranked by RAM. The front half is ranked by query time when `views` are set, by process time when only `processes` are set, and by RAM otherwise. The details are in [Cardinality-Aware Greedy Optimization](../concepts/cardinality-aware-greedy.md).
 
 Set **`fast: true`** for the seed-and-refine fold (see [How It Works](../concepts/how-it-works.md)).
 
