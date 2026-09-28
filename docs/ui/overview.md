@@ -6,6 +6,8 @@ OptimusPy ships with a local web UI that wraps the entire scan → configure →
 [← Back to the landing page](https://cubewise-code.github.io/optimus-py/){ .back-link }
 </div>
 
+For a first run from start to finish, see the User Guide: [Your First Optimization](../guide/first-optimization.md).
+
 It's a single-page app served by a lightweight Python HTTP server — no extra dependencies, no cloud.
 
 ## Launching

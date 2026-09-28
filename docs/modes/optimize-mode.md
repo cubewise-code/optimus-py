@@ -2,6 +2,8 @@
 
 The default mode. OptimusPy benchmarks dimension orders with a greedy search and reports the first tested order that comes within a small tolerance of the best value on every metric it measured (see [How the best order is chosen](../concepts/how-it-works.md#how-the-best-order-is-chosen)).
 
+For a first run step by step, see the User Guide: [Your First Optimization](../guide/first-optimization.md).
+
 ## When to use
 
 - You have **no strong prior** about which order will win.

@@ -16,6 +16,14 @@ Supported versions: TM1 v11 and v12 (PAoC/PAaaS).
 
 <div class="grid cards" markdown>
 
+-   :material-book-open-variant:{ .lg .middle } __User Guide__
+
+    ---
+
+    New to OptimusPy? Start here: pick a mode, run your first optimization, read the result and take it to production.
+
+    [:octicons-arrow-right-24: Choose a mode](guide/choose-a-mode.md)
+
 -   :material-rocket-launch-outline:{ .lg .middle } __Quick Start__
 
     ---

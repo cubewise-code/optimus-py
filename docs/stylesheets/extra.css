@@ -71,3 +71,25 @@
 .optimus-banner a.back-link:hover {
   color: #a78bfa !important;
 }
+
+/* Embedded diagrams (User Guide). */
+
+.diagram-frame {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 8px;
+  overflow: hidden;
+  margin: 1em 0 0.5em;
+}
+
+.diagram-frame iframe {
+  display: block;
+  width: 100%;
+  height: 900px;
+  border: 0;
+}
+
+@media (max-width: 700px) {
+  .diagram-frame iframe {
+    height: 640px;
+  }
+}

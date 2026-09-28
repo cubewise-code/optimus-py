@@ -5,6 +5,8 @@ Reorder **every cube in an instance** with one simple rule — dimensions ordere
 !!! warning "This is not the measured optimizer"
     Optimize DB **benchmarks nothing**. No permutation is tested, no view is queried, no process is timed. Each cube gets its dimensions ordered by leaf-element count, fewest first, applied once, and the only evidence of improvement is the percentage `update_storage_dimension_order` reports. For a searched, measured answer on a cube that matters, use [Optimize mode](optimize-mode.md).
 
+For a run step by step, in the UI and on the command line, see the User Guide: [Optimize DB Step by Step](../guide/optimize-db-step-by-step.md).
+
 ## When to use
 
 - You are about to start a **model-wide optimization exercise** and want to shrink the footprint first.

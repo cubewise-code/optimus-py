@@ -36,25 +36,11 @@ The HTML report names the winning order. Verify it makes sense — sometimes the
 
 ## Step 2 — Export from Sync Order
 
-Open the UI on the DEV instance, navigate to **Sync Order**:
-
-1. Connect to **source = `tm1srv01_dev`** (where you ran the benchmark)
-2. Drag the optimized cubes onto the Target panel
-3. Click **Export to Folder**
-
-OptimusPy writes one `set_order.json` per cube into `exports/`:
-
-```
-exports/
-├── Sales.json
-└── Budget.json
-```
-
-Each file's `instance` field is set to whatever target you had selected — edit if needed.
+Export the winning orders from the Sync Order page with **Export to Folder**, as described in [Taking an Order to Production](../guide/taking-an-order-to-production.md). Connect the source to `tm1srv01_dev`, where you ran the benchmark.
 
 ![Sync Order page after Export to Folder, with the success toast](../assets/images/optimuspy/ui/sync-order-export.png)
 
-That export wrote one file per cube:
+The export writes one `set` config per cube into `exports/`:
 
 ```text
 exports/
@@ -62,13 +48,15 @@ exports/
 └── plan_Report.json
 ```
 
+Each file's `instance` field is set to whatever target you had selected — edit if needed.
+
 ## Step 3 — Apply to PROD
 
 Two choices.
 
 ### Option A — From the UI
 
-In the same Sync Order page, switch the target to **PROD**, click **Apply All**. The job runs in the background; live progress on the Jobs page.
+Apply the orders from the same Sync Order page with **Apply All**, as described in [Taking an Order to Production](../guide/taking-an-order-to-production.md#with-sync-order-ui). The job runs in the background; live progress on the Jobs page.
 
 ### Option B — Via CLI (recommended for CI/CD)
 
@@ -84,13 +72,7 @@ Capture the log file. Each apply records RAM before and after — useful for cha
 
 ## Step 4 — Verify
 
-After apply, run a quick scan on PROD to confirm the new orders are in place:
-
-```bash
-optimuspy scan --instance tm1srv01_prod --include-optimized
-```
-
-The `Storage Order` column on the previously-touched cubes should now match what you applied.
+After apply, open the **Optimize** page in the UI on PROD and tick **Include optimized**, so cubes whose storage order now differs from their visual order are listed too. Each cube's **Overview** tab shows its current storage order, which should now match what you applied. `optimuspy scan` does not help here: it lists only cubes whose storage order still matches their visual order.
 
 ## Rollback
 

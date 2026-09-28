@@ -20,6 +20,7 @@ exclude_docs: |
   superpowers/
   plans/
   adr/
+  guide/diagrams/src/
 
 theme:
   name: material
@@ -97,6 +98,9 @@ plugins:
 extra_css:
   - stylesheets/extra.css
 
+extra_javascript:
+  - javascripts/diagram-theme.js
+
 extra:
   social:
     - icon: fontawesome/solid/globe
@@ -128,6 +132,13 @@ nav:
       - Installation: getting-started/installation.md
       - Quick Start: getting-started/quick-start.md
       - TM1 Connection: getting-started/tm1-connection.md
+  - User Guide:
+      - Choose a Mode: guide/choose-a-mode.md
+      - Your First Optimization: guide/first-optimization.md
+      - What Happens During a Run: guide/during-a-run.md
+      - Reading the Result: guide/reading-the-result.md
+      - Optimize DB Step by Step: guide/optimize-db-step-by-step.md
+      - Taking an Order to Production: guide/taking-an-order-to-production.md
   - UI:
       - Overview: ui/overview.md
       - Optimize Page: ui/optimize-page.md
