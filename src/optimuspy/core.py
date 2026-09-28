@@ -480,12 +480,7 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
     # Stamped when the run starts, not when the module loads: the UI runs many
     # optimizations in one process, and each needs its own report file.
     run_stamp = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
-    # VMM/VMT live in the }CubeProperties control cube, which only exists on v11.
-    # On v12 those caps are gone, so we neither raise nor restore them there.
     original_vmm, original_vmt = (None, None)
-    if not is_v12:
-        original_vmm, original_vmt = retrieve_vmm_vmt(tm1, cube_name)
-        write_vmm_vmt(tm1, cube_name, "1000000", "1000000")
 
     # The live storage order (may be a crashed/reordered state); used only to
     # validate the checkpoint by dimension SET. The true original is sourced from
@@ -583,6 +578,13 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
 
     with ram_source_ready(tm1, is_v12):
         try:
+            # VMM/VMT live in the }CubeProperties control cube, which only exists on v11.
+            # On v12 those caps are gone, so we neither raise nor restore them there.
+            # Raised inside the try, so the finally below always puts them back.
+            if not is_v12:
+                original_vmm, original_vmt = retrieve_vmm_vmt(tm1, cube_name)
+                write_vmm_vmt(tm1, cube_name, "1000000", "1000000")
+
             # Benchmark original order (skip if resumed)
             if original_order_result is None:
                 original_executor = OriginalOrderExecutor(
@@ -719,7 +721,8 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
             return False
 
         finally:
-            if not is_v12:
+            # None if they were never read: nothing was raised, so nothing to restore.
+            if original_vmm is not None:
                 with suppress(Exception):
                     write_vmm_vmt(tm1, cube_name, original_vmm, original_vmt)
 
