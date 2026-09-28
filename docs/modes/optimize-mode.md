@@ -16,7 +16,7 @@ OptimusPy fills the positions from both ends toward the middle, last position fi
 
 At each position it does not try every remaining dimension. In the back half it tries only the dimensions whose leaf count is close to the largest one still unplaced; in the front half, only those close to the smallest. A dimension with no near neighbour, such as one with far more leaves than any other, is placed in a single reorder without testing alternatives.
 
-The back half is always ranked by RAM. The front half is ranked by query time when `views` are set, by process time when only `processes` are set, and by RAM otherwise. The details are in [Cardinality-Aware Greedy Optimization](../concepts/cardinality-aware-greedy.md).
+The back half is always ranked by RAM. The front half is ranked by query time when `views` are set, by process time when only `processes` are set, and by RAM otherwise. Leaf counts say nothing about how long a process takes, so a position ranked by process time tries every remaining dimension. The details are in [Cardinality-Aware Greedy Optimization](../concepts/cardinality-aware-greedy.md).
 
 Set **`fast: true`** for the seed-and-refine fold (see [How It Works](../concepts/how-it-works.md)).
 
