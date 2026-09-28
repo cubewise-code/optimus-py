@@ -32,7 +32,7 @@
   pointer-events: none;
 }
 
-.optimus-banner h2,
+.optimus-banner h1,
 .optimus-banner p,
 .optimus-banner a {
   color: #ffffff !important;
@@ -41,7 +41,7 @@
   margin: 0;
 }
 
-.optimus-banner h2 {
+.optimus-banner h1 {
   font-size: 1.5rem;
   font-weight: 700;
   margin-bottom: 8px;

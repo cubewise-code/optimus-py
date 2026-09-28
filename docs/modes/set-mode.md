@@ -1,6 +1,6 @@
 # Set Mode
 
-Apply a specific dimension order to a cube without benchmarking. No iterations, no measurements — just a write.
+Apply a specific dimension order to a cube without benchmarking. No iterations, no measurements, just a write.
 
 ## When to use
 
@@ -12,7 +12,7 @@ For interactive cross-instance promotion, the [Sync Order page](../ui/sync-order
 
 ## JSON config
 
-Set mode reuses the cube config schema with a single rule: `predefined_orders` must contain **exactly one** entry — the order to apply.
+Set mode reuses the cube config schema with a single rule: `predefined_orders` must contain **exactly one** entry, the order to apply.
 
 ```json
 {
@@ -26,7 +26,7 @@ Set mode reuses the cube config schema with a single rule: `predefined_orders` m
 }
 ```
 
-`executions` and `output` are required by the schema but ignored — they only matter for benchmarks.
+`executions` and `output` are required by the schema but ignored, because they only matter for benchmarks. One thing to bear in mind is that if the config also lists `views` or `processes` (e.g., a benchmark config you're reusing), they're still checked for existence on the target cube before the write, so a view that only exists on DEV would stop a `set` on PROD. The files the Sync Order page exports leave both out.
 
 ## CLI usage
 
@@ -34,7 +34,9 @@ Set mode reuses the cube config schema with a single rule: `predefined_orders` m
 optimuspy set sales_prod.json
 ```
 
-OptimusPy validates the cube exists, that the dimension list matches the cube's current dimensions (a sanity check — no missing or extra dims), then calls `update_storage_dimension_order`.
+The repository includes [`samples/set_order.json`](../examples/set_order.json) as a starting point.
+
+OptimusPy validates that the cube exists and that the dimension list matches the cube's current dimensions (a sanity check: no missing or extra dims), then calls `update_storage_dimension_order`.
 
 ## Output
 
@@ -59,7 +61,7 @@ A TI process calling `optimuspy set` through `ExecuteCommand` cannot tell "appli
 
 ### Why a skipped reorder exits 0
 
-If the cube's storage-last dimension has string elements, that slot is locked and the dimension never moves. An order that moves it is a legitimate request TM1 would refuse anyway — not a failure of yours, and not a failure of the run. OptimusPy applies nothing, leaves the cube exactly as it was, and exits 0 so a release pipeline is not broken by a constraint the server owns:
+If the cube's storage-last dimension has string elements, that slot is locked and the dimension never moves. An order that moves it is a legitimate request TM1 would refuse anyway, so it's not a failure of yours, and not a failure of the run. OptimusPy applies nothing, leaves the cube exactly as it was, and exits 0 so a release pipeline is not broken by a constraint the server owns:
 
 ```
 WARNING - SET mode: REORDER SKIPPED for cube 'Sales' — 'Measures' has string elements and is
@@ -67,7 +69,7 @@ locked to the last position; this order moves it to position 0. The cube is unch
 ordered ['Time', 'Version', 'Product', 'Measures']. Exiting 0: nothing failed, nothing was applied.
 ```
 
-The message is a single greppable line naming the dimension, stating the cube is unchanged, and stating what the exit code means. If you are bulk-applying orders in a loop, grep for `REORDER SKIPPED` — a clean exit status will not tell you.
+The message is a single greppable line naming the dimension, stating the cube is unchanged, and stating what the exit code means. If you are bulk-applying orders in a loop, grep for `REORDER SKIPPED`, because a clean exit status will not tell you.
 
 ### Why a malformed order exits 1
 
@@ -81,7 +83,7 @@ No reorder was applied.
 
 ## Bulk apply via shell
 
-The Sync Order page's **Export to Folder** button generates one `set_order.json` per cube. Apply them all in a loop:
+The Sync Order page's **Export to Folder** button generates one `<cube>.json` per cube in `exports/`. Apply them all in a loop:
 
 ```bash
 for f in exports/*.json; do

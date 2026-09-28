@@ -14,7 +14,7 @@ The same single-cube run, first in the UI, then on the command line.
 
     ![Optimize page with the cube list of tm1srv01 and plan_BudgetPlan selected](../assets/images/optimuspy/ui/optimize-cube-selected.png)
 
-5. **Look at the cube.** Click it. The *Overview* tab shows its current storage order, the leaf count of each dimension, and a suggested order.
+5. **Look at the cube.** Click it. The *Overview* tab shows its current storage order. Click *Analyze Cube Dimensions & Views* to add the leaf count of each dimension and a suggested order.
 
     ![Overview tab of plan_BudgetPlan with the Suggested Order and the dimension table with leaf element counts](../assets/images/optimuspy/ui/optimize-overview-tab.png)
 
@@ -22,7 +22,7 @@ The same single-cube run, first in the UI, then on the command line.
 7. **Start.** Click *Save & Start Optimization*. The *Optimize* tab shows the live log. *Stop* ends the run and puts the original order back.
 8. **Read the report.** When the run ends, the cube's *Results* tab lists the report. Open the HTML file. See [Reading the Result](reading-the-result.md).
 
-Every page of the UI is described under [Web UI](../ui/overview.md), starting with the [Optimize Page](../ui/optimize-page.md).
+Every page of the UI is described under [UI](../ui/overview.md), starting with the [Optimize Page](../ui/optimize-page.md).
 
 ## On the command line
 

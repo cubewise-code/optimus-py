@@ -1,10 +1,10 @@
 # The Order Frame
 
-The order frame is the single authority on which dimension orders OptimusPy is allowed to ask a cube for. Every order source consults it — both greedy folds, `predefined_orders`, position optimization, dimension optimization and set mode — and no code enforces an order constraint anywhere else.
+The order frame is the single authority on which dimension orders OptimusPy is allowed to ask a cube for. Every order source consults it (both greedy folds, `predefined_orders`, position optimization, dimension optimization and set mode), and no code enforces the *server* constraint anywhere else. The one user preference enforced outside it is `dimensions_to_exclude` in position optimization, where the executor simply leaves excluded dimensions out of its candidate list.
 
 It is a pure module (`src/optimuspy/order_frame.py`): no `TM1Service`, no I/O, no logging of its own. It returns a verdict and a reason; the caller decides how to report it. That purity is what makes admissibility fully testable offline.
 
-For the user-facing view of the same behaviour, see [The Locked Slot](../concepts/string-element-constraint.md) and [Dimension Position Rules](../advanced/dimension-position-rules.md).
+For the user-facing view of the same behavior, see [The Locked Slot](../concepts/string-element-constraint.md) and [Dimension Position Rules](../advanced/dimension-position-rules.md).
 
 ## The storage order is the frame
 
@@ -12,7 +12,7 @@ A cube has two dimension orders, and OptimusPy reasons about exactly one of them
 
 | | Returned by | What it is |
 |---|---|---|
-| **Storage order** | `get_storage_dimension_order()` | What the server physically stores the cube in, what `update_storage_dimension_order` writes, and the only order that determines RAM and query behaviour. **This is the frame.** |
+| **Storage order** | `get_storage_dimension_order()` | What the server physically stores the cube in, what `update_storage_dimension_order` writes, and the only order that determines RAM and query behavior. **This is the frame.** |
 | **Presentation order** | `get_dimension_names()` | The build order shown in Architect, conventionally ending with the measure dimension for readability. Never used for optimization decisions. |
 
 Every position index in this document, in `dimension_position_rules`, and in the frame's own messages counts against the **storage** order.
@@ -22,11 +22,11 @@ Every position index in this document, in `dimension_position_rules`, and in the
 Two things, and nothing else is required:
 
 - the cube's storage order;
-- one boolean — whether the last slot is locked.
+- one boolean: whether the last slot is locked.
 
 The greedy folds additionally supply the user preferences (`dimensions_to_exclude`, `orders_to_ignore`, `dimension_position_rules`). A caller that supplies only the first two gets the server constraint alone, which is exactly what `predefined_orders` and set mode need.
 
-The frame reads the run's `initial_dimension_order`, not a fresh server call at the construction site. On resume that variable comes from the checkpoint before the executors are built, so it carries the true original order rather than a crash-reordered one — see [Checkpoint and Resume](checkpoint-resume.md).
+The frame reads the run's `initial_dimension_order`, not a fresh server call at the construction site. On resume that variable comes from the checkpoint before the executors are built, so it carries the true original order rather than a crash-reordered one; see [Checkpoint Format and Recovery](checkpoint-resume.md).
 
 ## The three tiers
 
@@ -34,9 +34,9 @@ Admissibility is not one verdict. It is three, and callers handle them different
 
 | Tier | What it is | Binds | On refusal |
 |---|---|---|---|
-| **1 — well-formedness** | The candidate is not an order at all: wrong length, unknown dimension name, a duplicate. Almost always a typo. | Every order source | **Fails loudly.** There is nothing coherent to be courteous about, and a silent no-op is the worst available outcome. |
-| **2 — the server constraint** | The locked slot. | Every order source | **Skipped with a logged reason**, processing continues. The user asked for something legitimate that TM1 will refuse anyway. |
-| **3 — user preference** | Position rules, excluded dimensions, ignored orders. | The greedy folds only | **Skipped silently at DEBUG.** |
+| **1, well-formedness** | The candidate is not an order at all: wrong length, unknown dimension name, a duplicate. Almost always a typo. | Every order source | **Fails loudly.** There is nothing coherent to be courteous about, and a silent no-op is the worst available outcome. |
+| **2, the server constraint** | The locked slot. | Every order source | **Skipped with a logged reason**, processing continues. The user asked for something legitimate that TM1 will refuse anyway. In the iterating modes the reason is logged at DEBUG, like tier 3; in set mode, where the skip is the whole outcome, it is logged at WARNING. |
+| **3, user preference** | Position rules, excluded dimensions, ignored orders. | The greedy folds (and `dimensions_to_exclude` in position optimization) | **Skipped, logged at DEBUG only.** |
 
 Tier 2 is checked before tier 3, so a refusal always names the strongest reason. Each refusal carries a greppable code (`not_a_permutation`, `locked_slot`, `ignored_order`, `position_rule`) alongside the human-readable sentence.
 
@@ -49,7 +49,7 @@ Four consequences follow, and all four are load-bearing:
 1. **Nothing is ever relocated or repaired.** OptimusPy never moves a dimension to satisfy this constraint. A repaired order is one the user did not ask for, reported as though they had; skipping keeps the result set honest, and the result count reflects only orders that were genuinely measured.
 2. **It keys off the position, not the dimension.** Dimensions are shared between cubes, and a dimension carries string elements as a property of the whole model. A dimension that has strings because of how *another* cube uses it is an ordinary sparse dimension here, and is placed by cardinality like any other.
 3. **A cube whose storage-last dimension is numeric-only has no lock at all**, and every position is free.
-4. **It is one check per cube**, taken before the sweep begins — not a server round-trip per candidate.
+4. **It is one check per cube**, taken before the sweep begins, not a server round-trip per candidate.
 
 ### Where it produces no results
 
@@ -65,7 +65,7 @@ Three different things hold a dimension in place. The frame distinguishes them b
 
 | Held by | Set via | Tier | Where it sits |
 |---|---|---|---|
-| The lock | Nothing — it is the server's rule | 2 | The last slot |
+| The lock | Nothing, it is the server's rule | 2 | The last slot |
 | An exclusion | `dimensions_to_exclude` | 3 | Its original index |
 | A position rule | `dimension_position_rules` | 3 | The slot the rule names |
 
@@ -83,6 +83,6 @@ Pre-application is the mechanism; `admits()` still checks rules on every candida
 
 - One module decides admissibility. `grep -rn "_has_string_elements\|_string_last_skip" src/` returns nothing.
 - No TM1 round-trip happens inside a sweep to decide whether an order is allowed.
-- A candidate is refused with a reason, never silently dropped: tier 1 raises, tier 2 logs at WARNING, tier 3 logs at DEBUG.
+- A candidate is refused with a reason, never dropped without one: tier 1 raises; tier 2 logs at DEBUG in the iterating modes and at WARNING in set mode; tier 3 logs at DEBUG.
 - A refusal never changes the order. There is no repair path.
 - The reported result count equals the number of orders actually measured.

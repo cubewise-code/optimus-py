@@ -14,7 +14,7 @@ Discover candidate cubes in an instance, ranked by RAM consumption. Use this as 
 optimuspy scan --instance tm1srv01
 ```
 
-`--instance` is required and must match a section in `config/config.ini`.
+`--instance` is required and must match a section in `config/config.ini`. By default the list stops at the cubes that together account for 60% of the model's RAM; `--ram-percent 80` widens it (the cube that crosses the threshold is included).
 
 ## Output format
 
@@ -32,7 +32,7 @@ Cubes accounting for up to 60% of total model RAM (12.43 GB), not yet optimized:
   Total: 3 cubes, 8.00 GB (64.4% of model RAM)
 ```
 
-By default, **already-optimized cubes** (where the visible dimension order differs from storage order) are excluded. To see them, use the UI's Optimize page with **Include optimized** ticked.
+**Already-optimized cubes** (where the visible dimension order differs from the storage order) are always excluded on the command line, because a cube someone has already reordered deserves a look before it's benchmarked again. To see them, use the UI's Optimize page with **Include optimized** ticked.
 
 ## Generating config files
 
@@ -46,4 +46,4 @@ Each generated file uses safe defaults (`executions: 5`, `output: csv`, no views
 
 ## Use from the UI
 
-The Optimize page runs the same scan automatically when you connect to an instance. The CLI mode is mostly for scripting — e.g. nightly inventory of cubes that need attention.
+The Optimize page runs the same scan automatically when you connect to an instance, with a slider for the RAM threshold. The CLI mode is mostly for scripting (e.g., a nightly inventory of cubes that need attention).

@@ -1,6 +1,6 @@
-# Example: RAM-Only Optimization
+# RAM-Only Optimization
 
-The fastest baseline. No views, no processes — just RAM. Perfect for a first pass on a model where you don't have benchmark views set up yet.
+The fastest baseline: no views, no processes, just RAM. It's a good first pass on a model where you don't have benchmark views set up yet, because it tells you how much memory is on the table before you invest in views.
 
 ## Config
 
@@ -28,27 +28,28 @@ A console log per iteration:
 ```
 Original Order - Testing order: ['Periods', 'Currency', 'Versions', 'Accounts', 'Customer', 'Sales']
 Original Order - Result: RAM [GB]: 4.21
-Iteration 1 of 30 - Testing order: ['Sales', 'Currency', 'Versions', 'Accounts', 'Customer', 'Periods']
-Iteration 1 of 30 - Result: RAM [GB]: 3.84
+Iteration 1 - Testing order: ['Sales', 'Currency', 'Versions', 'Accounts', 'Customer', 'Periods']
+Iteration 1 - Result: RAM [GB]: 3.84
 ...
-Iteration 30 of 30 - Testing order: ['Periods', 'Sales', 'Currency', 'Versions', 'Customer', 'Accounts']
-Iteration 30 of 30 - Result: RAM [GB]: 2.71
+Iteration 14 - Testing order: ['Periods', 'Sales', 'Currency', 'Versions', 'Customer', 'Accounts']
+Iteration 14 - Result: RAM [GB]: 2.71
 Completed analysis for cube 'Sales'
-Iteration 30 was the best one for cube 'Sales' - RAM [GB]: 2.71 - Order: ['Periods', 'Sales', 'Currency', 'Versions', 'Customer', 'Accounts']
+Iteration 14 was the best one for cube 'Sales' - RAM [GB]: 2.71 - Order: ['Periods', 'Sales', 'Currency', 'Versions', 'Customer', 'Accounts']
 Restored original dimension order for cube 'Sales'
 ```
 
-The last line confirms the original order has been restored. Add `"update": true` to apply the best order automatically.
+The greedy doesn't print "of N", because it prunes candidates as it goes and there's no honest total upfront. The last line confirms the original order has been restored. Add `"update": true` to apply the best order automatically.
 
 ## Output files
 
 ```
 results/
-├── Sales_2026-04-01_15-23-44.html   ← interactive report
-└── Sales_2026-04-01_15-23-44.csv    ← raw data
+└── tm1srv01/
+    ├── tm1srv01_Sales_2026-04-01_15-23-44.html   ← interactive report
+    └── tm1srv01_Sales_2026-04-01_15-23-44.csv    ← raw data
 ```
 
-The CSV has one row per tested order. Its column header and first two rows, from a run on `plan_BudgetPlan` with one view:
+The CSV has one row per tested order. It starts with four `#` comment lines (report title, instance, cube, generation time) and a blank line, which is worth knowing if you parse it. Then comes the column header and one row per order; here are the header and first two rows from a run on `plan_BudgetPlan` with one view:
 
 ```text
 ID,Mode,Is Best,Composite Query Time,Query Ratio,Composite Process Time,Process Ratio,RAM,RAM in GB,% Reduction,Reorder Duration,Dimension1,Dimension2,Dimension3,Dimension4,Dimension5,Dimension6,Dimension7
@@ -68,4 +69,4 @@ For production-critical cubes, follow up with [View Benchmarking](view-benchmark
 
 ## Sample file
 
-The repository includes [`samples/optimize.json`](optimize.json) — copy it into your working directory and edit for your cube.
+The repository includes [`samples/optimize.json`](optimize.json). Copy it into your working directory and edit it for your cube.

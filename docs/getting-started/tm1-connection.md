@@ -1,6 +1,6 @@
 # TM1 Connection
 
-OptimusPy uses TM1py to connect to TM1 / Planning Analytics. Connections live in `config/config.ini` — one section per instance, freely-named (the section name is what you reference as `instance` in cube configs and in the UI).
+OptimusPy uses TM1py to connect to TM1 / Planning Analytics. Connections live in `config/config.ini`, one section per instance, freely-named (the section name is what you reference as `instance` in cube configs and in the UI).
 
 ## INI file format
 
@@ -21,7 +21,7 @@ decode_b64=True
 ssl=True
 ```
 
-Each `[section]` is independent. Add as many instances as you like — DEV, UAT, PROD, regional models, etc.
+Each `[section]` is independent. Add as many instances as you like (DEV, UAT, PROD, regional models, etc.).
 
 ## On-premise (address / port)
 
@@ -64,7 +64,7 @@ async_requests_mode=true
 | `verify` | `true` validates the TLS certificate (recommended) |
 
 !!! tip "Spaces in model names"
-    `base_url` may contain spaces (e.g. `…/tm1/api/TM1 PROD`). Do **not** URL-encode them — `configparser` reads the value as-is.
+    `base_url` may contain spaces (e.g., `…/tm1/api/TM1 PROD`). Do **not** URL-encode them, because `configparser` reads the value as-is.
 
 ## Encoded passwords (`decode_b64`)
 
@@ -82,19 +82,19 @@ decode_b64=True
 ```
 
 !!! warning "Not encryption"
-    Base64 is encoding, not encryption — anyone with the file can decode it. Use OS-level file permissions or a secrets manager for real protection.
+    Base64 is encoding, not encryption: anyone with the file can decode it. Use OS-level file permissions or a secrets manager for real protection.
 
 ## Common parameters
 
 | Parameter | Default | Description |
 |---|---|---|
-| `session_context` | `optimuspy` | Label that appears in `}StatsByActiveSession` |
+| `session_context` | always `optimuspy` | Label that appears in `}StatsByActiveSession`. OptimusPy sets it itself, so a value in `config.ini` is ignored. |
 | `async_requests_mode` | `false` | Recommended `true` for benchmarking large cubes |
 | `connection_pool_size` | `10` | Connection pool size for parallel requests |
 
 ## Editing connections from the UI
 
-You don't have to hand-edit `config.ini`. The **Settings → TM1 Instances** page provides full CRUD: add/remove fields, create/delete instances, and **Test Connection** before saving.
+You don't have to hand-edit `config.ini`. The **Settings → TM1 Instances** page lets you create and delete instances, add and remove fields, and **Test Connection**. One thing to bear in mind is that the test uses the saved fields plus the password you typed, so save the address, port and user first.
 
 [Settings Page →](../ui/settings-page.md)
 
@@ -107,7 +107,7 @@ optimuspy scan --instance tm1srv01 --config /path/to/shared/config.ini
 python -m optimuspy.ui --config /path/to/shared/config.ini
 ```
 
-OptimusPy then consumes that file **read-only** — it never writes to it, so both tools can safely read the same credentials without stepping on each other. Manage the file's contents (add instances, rotate passwords) in whichever tool owns it; in OptimusPy's UI the Settings page reflects this with a read-only banner and disabled edit controls (Test Connection still works).
+OptimusPy then consumes that file **read-only**: it never writes to it, so both tools can safely read the same credentials without stepping on each other. Manage the file's contents (add instances, rotate passwords) in whichever tool owns it; in OptimusPy's UI the Settings page reflects this with a read-only banner and disabled edit controls (Test Connection still works).
 
 This only applies when `--config` is passed explicitly. Without the flag, OptimusPy falls back to its own default `config/config.ini`, which remains fully editable from the Settings page.
 

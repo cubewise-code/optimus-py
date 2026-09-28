@@ -32,8 +32,8 @@ Optimize a specific position (1-based):
 
 | Value | Meaning |
 |---|---|
-| `"first"` | Position 0 (the leftmost slot) |
-| `"last"` | Position N-1 (the rightmost slot — typically the measure dim) |
+| `"first"` | The first slot, same as `1` |
+| `"last"` | The last slot, same as `N` on an N-dimension cube (typically where the measure dimension sits) |
 | Integer ≥ 1 | A 1-based index. `1` is first, `2` is second, etc. |
 
 !!! warning "`optimize_position` is 1-based; `dimension_position_rules` is 0-based"
@@ -42,19 +42,19 @@ Optimize a specific position (1-based):
 
 ## Which order the position counts against
 
-Positions resolve against the cube's **storage** order — `get_storage_dimension_order()`, the order TM1 actually stores the cube in and the only order OptimusPy's engine reasons about. Not the presentation order shown in Architect or returned by `get_dimension_names()`.
+Positions resolve against the cube's **storage** order (`get_storage_dimension_order()`, the order TM1 actually stores the cube in, and the only order OptimusPy's engine reasons about), not the presentation order shown in Architect or returned by `get_dimension_names()`.
 
-On most cubes the two are identical and this changes nothing. On a cube that has already been optimized, they can differ, and there an existing `"optimize_position": 3` now targets the third *storage* slot — which is the slot that determines RAM and query behaviour, and so the one worth optimizing. Read the cube's storage order first if you need to be sure which dimension is currently in the slot you are naming.
+On most cubes the two are identical and this changes nothing. On a cube that has already been optimized, they can differ, and there `"optimize_position": 3` targets the third *storage* slot, which is the slot that determines RAM and query behavior, and so the one worth optimizing. Read the cube's storage order first (the Overview tab in the UI shows it) if you need to be sure which dimension is currently in the slot you are naming.
 
 ## What it does
 
-OptimusPy keeps every other dimension fixed in its current position and tries swapping each remaining dimension into the target position. Iterations = N-1 (one per dimension, minus the one already there).
+OptimusPy keeps every other dimension fixed in its current position and tries swapping each remaining dimension into the target position. Iterations = N-1 (one per dimension, minus the one already there). Dimensions listed in `dimensions_to_exclude` are left out of the candidates.
 
 ## Interaction with the locked slot
 
 If the cube's storage-last dimension has string elements, that slot is [locked](../concepts/string-element-constraint.md) and the dimension in it never moves. Two consequences:
 
-- **Targeting the locked slot evaluates nothing.** `"optimize_position": "last"` on such a cube has exactly one legal occupant — the dimension already there — so every candidate is skipped and no result is produced. That is the honest answer, not a failure: the run exits normally and logs the skip count. Earlier versions asked per candidate whether *that candidate* had strings, let a numeric one through, and sent TM1 a reorder it then rejected.
+- **Targeting the locked slot evaluates nothing.** `"optimize_position": "last"` on such a cube has exactly one legal occupant (the dimension already there), so every candidate is skipped and no result is produced. That is the honest answer, not a failure: the run exits normally and logs the skip count. Earlier versions asked per candidate whether *that candidate* had strings, let a numeric one through, and sent TM1 a reorder it then rejected.
 - **Every other position works normally,** minus one candidate: the locked dimension is never swept out of its slot, so a locked cube's position sweep has N-2 candidates rather than N-1.
 
 A string-bearing dimension that is *not* in the last storage slot is not locked and is an ordinary candidate.
@@ -64,3 +64,5 @@ A string-bearing dimension that is *not* in the last storage slot is not locked 
 ```bash
 optimuspy optimize sales_position.json
 ```
+
+The repository includes [`samples/optimize_position.json`](../examples/optimize_position.json) as a starting point.

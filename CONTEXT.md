@@ -7,7 +7,7 @@ OptimusPy benchmarks TM1 cube dimension-storage orders to find the order that mi
 ### Memory measurement
 
 **RAM baseline**:
-The per-cube memory figure OptimusPy reads before and after each permutation to decide which order is best. Always held internally in **bytes**.
+The per-cube memory figure OptimusPy reads once at the start of a run (and once more on resume, to re-anchor); every other permutation's RAM is derived from the `%` the reorder returns. Always held internally in **bytes**.
 _Avoid_: "memory footprint", "size"
 
 **cube_memory_used**:

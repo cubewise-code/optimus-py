@@ -4,7 +4,7 @@ Constrain the greedy search by locking specific dimensions to specific positions
 
 ## When to use
 
-- A specific dimension is **always queried first** in your workload — lock it to position 0 to avoid testing orders where it isn't.
+- A specific dimension is **always queried first** in your workload, so you lock it to position 0 to avoid testing orders where it isn't.
 - A measure dimension that **must** stay at the last position (string elements force this anyway, but the explicit rule is documentation).
 - An **internal best-practice** says "Currency always goes last among non-string dims".
 
@@ -34,7 +34,7 @@ A `position` must be a JSON number, not a string: write `3`, not `"3"`. Both nam
 
 !!! warning "0-based here, 1-based in `optimize_position`"
 
-    `position` counts from **0**: `3` is the fourth slot. The separate [`optimize_position`](../modes/position-optimization.md) field counts from **1**, where `3` is the third slot. Each matches its own long-standing documentation, so neither is a defect — but if you use both fields in one config, convert between them. `"first"` and `"last"` mean the same thing in both.
+    `position` counts from **0**: `3` is the fourth slot. The separate [`optimize_position`](../modes/position-optimization.md) field counts from **1**, where `3` is the third slot. Each matches its own long-standing documentation, so neither is a defect, but if you use both fields in one config, convert between them. `"first"` and `"last"` mean the same thing in both.
 
 Positions count against the cube's **storage** order (`get_storage_dimension_order()`), not the presentation order shown in Architect.
 
@@ -42,27 +42,27 @@ Positions count against the cube's **storage** order (`get_storage_dimension_ord
 
 OptimusPy:
 
-1. Validates the rules against the cube's dimension list, before any TM1 work. A typo, an out-of-range position, a value that names no slot, two rules on one position or one dimension, or a collision with the string-element lock all fail fast. Every bad rule is reported at once, so a config is fixed in one pass.
-2. **Pre-applies** the rules: each named dimension is seated at its position, and the remaining dimensions keep their relative storage order in the slots that are left. This pre-applied order — not the cube's current order — is where the search starts.
+1. Validates the rules against the cube's storage order, right after reading it and before any reorder is sent. A typo, an out-of-range position, a value that names no slot, two rules on one position or one dimension, or a collision with the string-element lock all fail fast. Every bad rule is reported at once, so a config is fixed in one pass.
+2. **Pre-applies** the rules: each named dimension is seated at its position, and the remaining dimensions keep their relative storage order in the slots that are left. This pre-applied order (not the cube's current order) is where the search starts.
 3. Runs greedy on the remaining N - (number of ruled dims) positions. A ruled dimension is immovable and its slot is never a sweep target, exactly as for the locked dimension and for `dimensions_to_exclude`.
 4. Skips and logs any candidate order that would violate a rule. With pre-application in place the search does not generate one, so this is a backstop rather than the mechanism.
 
-The skip messages are logged at DEBUG level, which is off by default — run with `-v` to see them (see [Optimization Logging](../concepts/how-it-works.md#optimization-logging)). The result count reflects only the orders that were actually evaluated.
+The skip messages are logged at DEBUG level, which is off by default, so run with `-v` to see them (see [Optimization Logging](../concepts/how-it-works.md#optimization-logging)). The result count reflects only the orders that were actually evaluated.
 
 ## Interaction with `dimensions_to_exclude`
 
 | Field | Effect |
 |---|---|
-| `dimensions_to_exclude` | Removes the dimension from the swap pool — it stays in its **current** position. |
+| `dimensions_to_exclude` | Removes the dimension from the swap pool, so it stays in its **current** position. |
 | `dimension_position_rules` | Forces the dimension to a **specific** position (which may differ from the current). |
 
 Use `dimensions_to_exclude` when you want to leave a dimension where it is. Use `dimension_position_rules` when you want to enforce a specific layout.
 
-A dimension may not appear in both — one says leave it alone, the other says move it — and naming it twice fails at startup. The two fields can still be used together on *different* dimensions. Note that pre-application can shift an excluded dimension's index, because seating a ruled dimension moves everything after it along; the exclusion means the greedy never moves it, measured from the pre-applied order the search starts on.
+A dimension may not appear in both (one says leave it alone, the other says move it), and naming it twice fails at startup. The two fields can still be used together on *different* dimensions. Note that pre-application can shift an excluded dimension's index, because seating a ruled dimension moves everything after it along; the exclusion means the greedy never moves it, measured from the pre-applied order the search starts on.
 
 ## Interaction with the string-element constraint
 
-The [locked slot](../concepts/string-element-constraint.md) is a server constraint, so it wins over a rule, which is a preference. A rule that moves the locked dimension off the last slot — or hands that slot to another dimension — fails on startup:
+The [locked slot](../concepts/string-element-constraint.md) is a server constraint, so it wins over a rule, which is a preference. A rule that moves the locked dimension off the last slot (or hands that slot to another dimension) fails on startup:
 
 ```
 ERROR: Invalid dimension_position_rules for cube 'Sales':

@@ -11,7 +11,7 @@ Every successful run generates one HTML report. Depending on the `output` field 
 | Extension | Purpose |
 |---|---|
 | `.html` | Interactive report with podium + scatter chart |
-| `.csv` | One row per tested permutation, all metrics |
+| `.csv` | One row per tested permutation, all metrics, after four `#` comment lines and a blank line (skip them if you import the file) |
 | `.xlsx` | Same rows as the CSV on one sheet, with the original and best orders shaded |
 
 Files are named `results/{instance}/{instance}_{cube}_{YYYY-MM-DD_HH-MM-SS}.{ext}` so they sort chronologically.
@@ -20,21 +20,21 @@ Files are named `results/{instance}/{instance}_{cube}_{YYYY-MM-DD_HH-MM-SS}.{ext
 
 Open any `.html` file. Below the summary cards and the recommended dimension order, the report has three parts:
 
-### Podium
-
-Cards side by side: **Best Overall**, then **#1 Fastest Query** (when views were benchmarked), **#1 Fastest Process** (when processes were) and **#1 Lowest RAM**. Click a card to highlight its row in the table.
-
-![Report podium with the Best Overall, #1 Fastest Query and #1 Lowest RAM cards](../assets/images/optimuspy/report/report-podium.png)
-
 ### Scatter chart (Chart.js)
 
-Every tested permutation plotted on RAM (X) vs query time relative to the original order (Y). Hover any dot for the full order. The original order is marked in a contrasting color.
+Every tested permutation plotted on RAM (X) vs query time relative to the original order (Y). Hover any dot for the full order. The original order is marked in a contrasting color. One thing to bear in mind is that the chart library loads from a CDN, so this part of the report needs internet access; the podium and the table are self-contained.
 
 ![Scatter chart of every tested order, RAM against query time relative to the original, with the original order and the result marked](../assets/images/optimuspy/report/report-scatter.png)
 
+### Podium
+
+Cards side by side, above the table: **Best Overall**, then **#1 Fastest Query** (when views were benchmarked), **#1 Fastest Process** (when processes were) and **#1 Lowest RAM**. Click a card to highlight its row in the table. If no order qualified as Best Overall, there's no podium, and the log asks you to pick from the results.
+
+![Report podium with the Best Overall, #1 Fastest Query and #1 Lowest RAM cards](../assets/images/optimuspy/report/report-podium.png)
+
 ### Detail table
 
-Every permutation, sortable. Use this when you want to dig into the raw numbers — query time and process time with their ratio to the original, RAM and its reduction, reorder time, and the dimension order.
+Every permutation, sortable. Use this when you want to dig into the raw numbers: query time and process time with their ratio to the original, RAM and its reduction, reorder time, and the dimension order.
 
 ## Downloading CSV / XLSX
 
@@ -50,7 +50,7 @@ results/
     └── tm1srv01_Budget_2026-04-01_16-02-11.html
 ```
 
-Files are never auto-deleted — clean up old runs manually.
+Files are never auto-deleted, so clean up old runs by hand.
 
 ## Checkpoint files
 

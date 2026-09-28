@@ -72,7 +72,7 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
   - The Sync Order page copies storage orders from one instance to another.
   - It can also export them to `exports/` as JSON cube configs that `optimuspy set` applies.
 
-  See [Sync Order Page](docs/ui/sync-order-page.md) and [Exporting / Importing Orders](docs/advanced/exporting-importing-orders.md).
+  See [Sync Order Page](docs/ui/sync-order-page.md) and [Exporting & Importing Orders](docs/advanced/exporting-importing-orders.md).
 - **Settings page.** It adds, edits, tests and deletes the instances in `config/config.ini`, and adding the first instance creates the file. See [Settings Page](docs/ui/settings-page.md).
 - **TM1 v12 (PAoC / PAaaS)** alongside v11. VMM and VMT are raised during a run and put back afterwards on v11 only. See [Home](docs/index.md).
 - **`-v` / `--verbose`** logs the reason each skipped order was refused.

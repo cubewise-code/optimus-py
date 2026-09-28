@@ -1,7 +1,9 @@
 site_name: OptimusPy Documentation
 site_description: Find the ideal dimension order for IBM TM1/Planning Analytics cubes
 site_author: Cubewise CODE
-site_url: https://cubewise-code.github.io/optimus-py/
+# The React landing page owns the site root; the deploy workflow publishes the
+# MkDocs build under /docs/, so canonical URLs and the sitemap must say so too.
+site_url: https://cubewise-code.github.io/optimus-py/docs/
 site_dir: mkdocs_site
 
 repo_name: cubewise-code/optimus-py
@@ -21,6 +23,7 @@ exclude_docs: |
   plans/
   adr/
   guide/diagrams/src/
+  *.docx
 
 theme:
   name: material
@@ -50,7 +53,6 @@ theme:
     - navigation.tabs
     - navigation.tabs.sticky
     - navigation.sections
-    - navigation.path
     - navigation.top
     - navigation.footer
     - search.suggest
@@ -127,33 +129,34 @@ extra:
 
 nav:
   - Home: index.md
-  - What's New in v2: v2-features.md
+  - What's New in 2.0.0: v2-features.md
   - Getting Started:
       - Installation: getting-started/installation.md
-      - Quick Start: getting-started/quick-start.md
       - TM1 Connection: getting-started/tm1-connection.md
+      - Quick Start: getting-started/quick-start.md
   - User Guide:
       - Choose a Mode: guide/choose-a-mode.md
       - Your First Optimization: guide/first-optimization.md
       - What Happens During a Run: guide/during-a-run.md
       - Reading the Result: guide/reading-the-result.md
-      - Optimize DB Step by Step: guide/optimize-db-step-by-step.md
       - Taking an Order to Production: guide/taking-an-order-to-production.md
-  - UI:
+      - Optimize DB Step by Step: guide/optimize-db-step-by-step.md
+  - Web UI:
       - Overview: ui/overview.md
       - Optimize Page: ui/optimize-page.md
-      - Sync Order Page: ui/sync-order-page.md
       - Results Page: ui/results-page.md
-      - Jobs Page: ui/jobs-page.md
+      - Sync Order Page: ui/sync-order-page.md
+      - Optimize DB Page: ui/optimize-db-page.md
       - Settings Page: ui/settings-page.md
+      - Jobs Page: ui/jobs-page.md
   - Modes:
       - Optimize Mode: modes/optimize-mode.md
-      - Set Mode: modes/set-mode.md
-      - Scan Mode: modes/scan-mode.md
-      - Optimize DB Mode: modes/optimize-db.md
       - Predefined Orders: modes/predefined-orders.md
       - Position Optimization: modes/position-optimization.md
       - Dimension Optimization: modes/dimension-optimization.md
+      - Set Mode: modes/set-mode.md
+      - Scan Mode: modes/scan-mode.md
+      - Optimize DB Mode: modes/optimize-db.md
   - Concepts:
       - How It Works: concepts/how-it-works.md
       - Cardinality-Aware Greedy: concepts/cardinality-aware-greedy.md
@@ -163,18 +166,18 @@ nav:
   - Advanced:
       - CLI Reference: advanced/cli-reference.md
       - JSON Config Reference: advanced/json-config-reference.md
-      - Checkpoints & Resume: advanced/checkpoints-resume.md
-      - Multi-View / Multi-Process: advanced/multi-view-multi-process.md
       - Dimension Position Rules: advanced/dimension-position-rules.md
-      - Exporting / Importing Orders: advanced/exporting-importing-orders.md
-  - Requirements:
-      - Order Frame: requirements/order-frame.md
-      - Optimize DB: requirements/optimize-db.md
-      - Checkpoint & Resume: requirements/checkpoint-resume.md
-      - Dimension Position Rules: requirements/dimension-position-rules.md
-      - TM1 v12 Support: requirements/tm1-v12-support.md
+      - Multi-View / Multi-Process: advanced/multi-view-multi-process.md
+      - Checkpoints & Resume: advanced/checkpoints-resume.md
+      - Exporting & Importing Orders: advanced/exporting-importing-orders.md
   - Examples:
       - RAM-Only Optimization: examples/ram-only-optimization.md
       - View Benchmarking: examples/view-benchmarking.md
       - TI Process Benchmarking: examples/ti-process-benchmarking.md
       - PROD Promotion Workflow: examples/prod-promotion-workflow.md
+  - Design Notes:
+      - The Order Frame: design/order-frame.md
+      - The Optimize DB Pass: design/optimize-db.md
+      - Checkpoint Format and Recovery: design/checkpoint-resume.md
+      - Position Rules Validation: design/dimension-position-rules.md
+      - TM1 v11 and v12: design/tm1-v12-support.md

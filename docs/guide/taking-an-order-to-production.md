@@ -15,8 +15,10 @@ See the [Sync Order Page](../ui/sync-order-page.md) for every control on the pag
 
 ## With set (command line)
 
-Each exported file is a `set` config. On the production machine, run `optimuspy set exports/Sales.json`. `set` refuses an order that moves the locked slot and changes nothing in that case. See [Set Mode](../modes/set-mode.md) and [Exporting / Importing Orders](../advanced/exporting-importing-orders.md).
+Each exported file is a `set` config. On the production machine, run `optimuspy set exports/Sales.json`. `set` refuses an order that moves the locked slot and changes nothing in that case. See [Set Mode](../modes/set-mode.md) and [Exporting & Importing Orders](../advanced/exporting-importing-orders.md).
 
 For a worked example with a deployment loop and a rollback, see [PROD Promotion Workflow](../examples/prod-promotion-workflow.md).
 
-**Back to the start:** [Choose a Mode](choose-a-mode.md)
+That's the single-cube journey. If you'd rather shrink a whole instance first and then benchmark only the cubes that matter, the last page covers that.
+
+**Next:** [Optimize DB Step by Step →](optimize-db-step-by-step.md)

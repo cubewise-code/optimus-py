@@ -32,6 +32,6 @@ optimuspy optimize-db --restore-chores <plan id>      # re-enable chores a crash
 !!! note
     After an Optimize DB run, restart TM1 before you benchmark cubes with `optimize`.
 
-Every option is explained on [Optimize DB Mode](../modes/optimize-db.md).
+Every option is explained on [Optimize DB Mode](../modes/optimize-db.md), and every control of the page on the [Optimize DB Page](../ui/optimize-db-page.md).
 
-**Next:** [Taking an Order to Production →](taking-an-order-to-production.md)
+**Back to the start:** [Choose a Mode](choose-a-mode.md)

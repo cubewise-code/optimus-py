@@ -1,6 +1,6 @@
 # Settings Page
 
-Manage TM1 connections, browser theme, local cache, and saved cube configs — all without touching `config.ini` by hand.
+Manage TM1 connections, browser theme, local cache, and saved cube configs, all without touching `config.ini` by hand.
 
 ![Settings page with the TM1 Instances card showing the fields of an example instance](../assets/images/optimuspy/ui/settings-page.png)
 
@@ -19,23 +19,23 @@ If OptimusPy was launched with an explicit `--config PATH` (see [TM1 Connection]
 ### Editing fields
 
 - Click any value to edit it.
-- Click the **×** next to a field to delete that key from the section.
-- Click **Add Field** to add a new key/value pair (freeform — type any TM1py-supported parameter name).
+- Click the **×** next to a field to delete that key from the section. This one takes effect immediately, without Save.
+- Click **Add Field** to add a new key/value pair (freeform: type any TM1py-supported parameter name).
 - Use **Update Password (write-only)** to change the password without exposing the current value.
 
-Click **Save** to persist changes to `config.ini`.
+Click **Save** to persist the edited values and the new password to `config.ini`.
 
 ![Instance field rows, each with a delete (×) button, and the Add Field button below](../assets/images/optimuspy/ui/settings-field-rows.png)
 
 ### Test Connection
 
-Connects to the live TM1 server with the instance's saved `config.ini` fields — Save first to test an edit — and the password typed in **Update Password**, or else the one given in the Connect dialog. Returns server name and cube count on success, or a clear error toast on failure.
+Connects to the live TM1 server with the instance's saved `config.ini` fields (so Save first if you want to test an edit) and the password typed in **Update Password**, or else the one given in the Connect dialog. Returns the server name and cube count on success, or a clear error toast on failure.
 
 ![Test Connection success toast showing the server name and cube count](../assets/images/optimuspy/ui/settings-test-connection-toast.png)
 
 ### New Instance
 
-Click **+ New Instance** above the tabs. A modal asks for the instance name (no `]` characters, no leading/trailing whitespace). The new section appears as an empty tab where you add fields. If there is no `config.ini` yet — the executable ships without one — the first instance created here creates `config/config.ini`.
+Click **+ New Instance** above the tabs. A modal asks for the instance name (anything but empty or containing `]`; surrounding whitespace is trimmed). The new section appears as an empty tab where you add fields. If there is no `config.ini` yet (the executable ships without one), the first instance created here creates `config/config.ini`.
 
 ### Delete Instance
 
@@ -54,4 +54,4 @@ Click **Clear Cache** to wipe both, plus the in-memory state. Use this after ser
 
 ## Saved Cube Configs
 
-Lists every JSON config saved in `configs/` from the Optimize workflow. Each row shows cube name, instance, mode, and a **Delete** button. Useful for cleaning up experiments.
+Lists every JSON config saved in `configs/` from the Optimize workflow. Each row shows the cube, then its instance, mode (`greedy` or `predefined`) and file name, with a trash button to delete it. Useful for cleaning up experiments.

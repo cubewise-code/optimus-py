@@ -8,7 +8,7 @@ export const DOCS = {
   guide:         `${DOCS_BASE}/guide/choose-a-mode/`,
   firstRun:      `${DOCS_BASE}/guide/first-optimization/`,
   install:       `${DOCS_BASE}/getting-started/installation/`,
-  v12:           `${DOCS_BASE}/requirements/tm1-v12-support/`,
+  v12:           `${DOCS_BASE}/design/tm1-v12-support/`,
   connection:    `${DOCS_BASE}/getting-started/tm1-connection/`,
   howItWorks:    `${DOCS_BASE}/concepts/how-it-works/`,
   tradeoff:      `${DOCS_BASE}/concepts/ram-vs-query-tradeoff/`,
