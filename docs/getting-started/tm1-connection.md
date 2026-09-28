@@ -110,3 +110,5 @@ python -m optimuspy.ui --config /path/to/shared/config.ini
 OptimusPy then consumes that file **read-only** — it never writes to it, so both tools can safely read the same credentials without stepping on each other. Manage the file's contents (add instances, rotate passwords) in whichever tool owns it; in OptimusPy's UI the Settings page reflects this with a read-only banner and disabled edit controls (Test Connection still works).
 
 This only applies when `--config` is passed explicitly. Without the flag, OptimusPy falls back to its own default `config/config.ini`, which remains fully editable from the Settings page.
+
+If the file passed to `--config` does not exist, OptimusPy prints `ERROR: config.ini not found: <path>` and exits with code 1 before it connects.

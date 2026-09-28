@@ -2,7 +2,7 @@
 
 ## 2.0.0
 
-OptimusPy finds a better storage dimension order for your TM1 cubes and can apply it. In 2.0.0 you work either in a web UI or on the command line, where each cube is described in a JSON file you can keep and run again. It supports TM1 v11 and v12, and it ships as a Windows or Linux bundle that runs without Python.
+OptimusPy finds a better storage dimension order for your TM1 cubes and can apply it. In 2.0.0 you work either in a web UI or on the command line, where each cube is described in a JSON file you can keep and run again. It supports TM1 v11 and v12, and it ships as a Windows or Linux bundle that runs without Python. New to OptimusPy? Start with the [User Guide](docs/guide/choose-a-mode.md).
 
 ### Upgrading from 1.x
 
@@ -82,6 +82,7 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
 
 - **Command line.** The command is now `optimuspy <mode> <cube_config.json>` (or `python -m optimuspy`, or `python optimuspy.py` from a clone), and the 1.x flags are gone. See [CLI Reference](docs/advanced/cli-reference.md).
 - **Where `config.ini` lives.** It is read from `config/config.ini` in the folder you run from. A file passed with `--config` is read-only.
+- **Where the log is written.** OptimusPy writes `logs/optimuspy.log` in its install folder: the executable's folder for the bundle, the repository root for a clone. 1.x wrote `optimuspy.log` in the folder you ran from.
 - **Result files.** They go in a folder per instance, and the names no longer include the view or process. An HTML report is always written, and it replaces the 1.x `.png` chart.
 - **Python 3.9 or later.** You install with pip, which also installs the dependencies (TM1py 2.3.0 or later). matplotlib and seaborn are no longer needed.
 
