@@ -44,7 +44,7 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
     | `-t`, `--process` | `"processes"`, a list |
 
     Every field is listed in the [JSON Config Reference](docs/advanced/json-config-reference.md).
-4. **Look for results in a folder per instance.** Each run writes `results/<instance>/<instance>_<cube>_<timestamp>.html`, plus a `.csv` or `.xlsx` of the same name, relative to the folder you run from. 1.x wrote `results/<instance>_<cube>_<view>_<process>_<timestamp>` as `.csv` or `.xlsx`, plus a `.png` chart. See [Results Page](docs/ui/results-page.md).
+4. **Look for results in a folder per instance.** Each run writes `results/<instance>/<instance>_<cube>_<timestamp>.html`, plus a `.csv` or `.xlsx` of the same name, relative to the folder you run from (for the bundle, the executable's folder). 1.x wrote `results/<instance>_<cube>_<view>_<process>_<timestamp>` as `.csv` or `.xlsx`, plus a `.png` chart. See [Results Page](docs/ui/results-page.md).
 
 ### New
 
@@ -81,7 +81,7 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
 ### Changed
 
 - **Command line.** The command is now `optimuspy <mode> <cube_config.json>` (or `python -m optimuspy`, or `python optimuspy.py` from a clone), and the 1.x flags are gone. See [CLI Reference](docs/advanced/cli-reference.md).
-- **Where `config.ini` lives.** It is read from `config/config.ini` in the folder you run from. A file passed with `--config` is read-only.
+- **Where `config.ini` lives.** It is read from `config/config.ini` in the folder you run from (for the bundle, the executable's folder). A file passed with `--config` is read-only.
 - **Where the log is written.** OptimusPy writes `logs/optimuspy.log` in its install folder: the executable's folder for the bundle, the repository root for a clone. 1.x wrote `optimuspy.log` in the folder you ran from.
 - **Result files.** They go in a folder per instance, and the names no longer include the view or process. An HTML report is always written, and it replaces the 1.x `.png` chart.
 - **Python 3.9 or later.** You install with pip, which also installs the dependencies (TM1py 2.3.0 or later). matplotlib and seaborn are no longer needed.

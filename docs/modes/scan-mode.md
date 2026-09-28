@@ -32,7 +32,7 @@ Cubes accounting for up to 60% of total model RAM (12.43 GB), not yet optimized:
   Total: 3 cubes, 8.00 GB (64.4% of model RAM)
 ```
 
-By default, **already-optimized cubes** (where the visible dimension order differs from storage order) are excluded. Add `--include-optimized` to show them too.
+By default, **already-optimized cubes** (where the visible dimension order differs from storage order) are excluded. To see them, use the UI's Optimize page with **Include optimized** ticked.
 
 ## Generating config files
 

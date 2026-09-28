@@ -53,14 +53,12 @@ Requires `predefined_orders` with **exactly one** entry — the order to apply. 
 ```bash
 optimuspy scan --instance tm1srv01
 optimuspy scan --instance tm1srv01 --output configs/auto/
-optimuspy scan --instance tm1srv01 --include-optimized
 ```
 
 | Option | Description |
 |---|---|
 | `--instance <name>` | **Required.** Section name in `config.ini`. |
 | `--output <dir>` | Generate one JSON config per candidate cube into this directory. |
-| `--include-optimized` | Show cubes that already have a custom storage order. |
 | `--ram-percent <int>` | RAM threshold (default 60). Cubes accounting for up to this % of total model RAM are listed. |
 
 ## `optimize-db` mode
