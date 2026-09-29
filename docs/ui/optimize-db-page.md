@@ -4,6 +4,8 @@ Reorder every cube on an instance by leaf-element count, fewest first, within a 
 
 For what the pass does and why, see [Optimize DB Mode](../modes/optimize-db.md). For a run start to finish, see [Optimize DB Step by Step](../guide/optimize-db-step-by-step.md).
 
+![Optimize DB page with the How this mode behaves notes and the Run settings card for tm1srv01](../assets/images/optimuspy/ui/optimize-db-page.png)
+
 ## Run settings
 
 The card at the top sets the same options as the instructions JSON:
@@ -28,11 +30,13 @@ The first time you pick an instance after the page loads, the **Connect to Insta
 **Build plan** only reads from TM1: no reorder, no chore change. It writes the plan file to `results/<instance>/` and shows it on the page:
 
 - Stat cards with the memory of all cubes on the instance, the memory of the cubes to reorder, and the share of all cube memory the plan covers. That share is the number to read first, because it tells you how much of the model the run will and won't touch.
-- **In this plan**: one row per cube to reorder, with its memory and its new dimension order.
+- **Cubes to reorder**: one row per cube, in the order the run takes them, with its memory and its new dimension order.
 - **Skipped cubes**: every cube the plan leaves alone, with the reason (excluded, below the minimum size, string elements, already in the target order, and so on). See [Skip reasons](../modes/optimize-db.md#skip-reasons).
 - **Active chores**: the chores that are active right now. This is a snapshot for you to review; the run reads the live state again when it starts.
 
 If no cube qualifies, the page says so and there's nothing to run.
+
+![A built plan: the stat cards, two cubes to reorder with their new dimension orders, and six skipped cubes grouped by reason](../assets/images/optimuspy/ui/optimize-db-plan.png)
 
 ## Run plan
 

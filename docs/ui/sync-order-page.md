@@ -19,7 +19,7 @@ The drag order matters: the order in which you drop cubes into the Target panel 
     - **Current (Target)**: the cube's current storage order on the target instance
     - **Proposed (Source)**: the storage order from the source instance, with changes highlighted
 
-![Target card showing the current and proposed orders side by side; source and target are the same instance here, so the orders match](../assets/images/optimuspy/ui/sync-order-target-card.png)
+![Target card showing the current and proposed orders side by side; the target is a copy of the source here, so the orders match](../assets/images/optimuspy/ui/sync-order-target-card.png)
 
 3. Cubes that don't exist on the target are flagged with a warning and excluded from Apply. **Clear All** empties the target panel.
 

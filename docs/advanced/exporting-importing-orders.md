@@ -12,7 +12,7 @@ Open the [Sync Order page](../ui/sync-order-page.md):
 
 OptimusPy writes one JSON per cube into the exports folder, named after the cube. The folder is `exports/` by default, and the [Folders card](../ui/settings-page.md#folders) on Settings changes it; the examples on this page use the default. In the file name, characters other than letters, digits, `.`, `_` and `-` are dropped:
 
-![Sync Order page after Export to Folder, with the success toast](../assets/images/optimuspy/ui/sync-order-export.png)
+![Sync Order page after Export to Folder, with the toast naming the exports folder and the Apply All results below](../assets/images/optimuspy/ui/sync-order-export.png)
 
 That export wrote one file per cube:
 

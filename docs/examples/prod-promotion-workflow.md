@@ -38,7 +38,7 @@ The HTML report names the winning order. It's worth checking it makes sense, bec
 
 Export the winning orders from the Sync Order page with **Export to Folder**, as described in [Taking an Order to Production](../guide/taking-an-order-to-production.md). Connect the source to `tm1srv01_dev`, where you ran the benchmark.
 
-![Sync Order page after Export to Folder, with the success toast](../assets/images/optimuspy/ui/sync-order-export.png)
+![Sync Order page after Export to Folder, with the toast naming the exports folder and the Apply All results below](../assets/images/optimuspy/ui/sync-order-export.png)
 
 The export writes one `set` config per cube into `exports/`:
 

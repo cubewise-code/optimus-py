@@ -2,7 +2,7 @@
 
 Choose which `config.ini` OptimusPy reads, test your TM1 connections, and manage the browser theme, the local cache and saved cube configs. Settings doesn't edit a `config.ini`: you maintain the file where it lives, in a text editor or in the tool it belongs to.
 
-![Settings page with the TM1 Instances card: the file in use, the path field with Link and Copy, and the read-only fields of an example instance](../assets/images/optimuspy/ui/settings-page.png)
+![Settings page with a linked config.ini in use: the path field with Link, Copy and Use OptimusPy's own copy, and the read-only fields of an example instance](../assets/images/optimuspy/ui/settings-page.png)
 
 ## Appearance
 
@@ -56,6 +56,8 @@ Where the UI writes JSON files, one row each:
 Each row shows the folder in use, marked *(default)* when it's the default. Type a path and click **Change folder** to use another one; it's created at once, so a folder that can't be written is reported here rather than at the first save. **Use default**, shown when the folder isn't the default, goes back to it. The choice is saved in [`config/settings.ini`](../getting-started/settings.md) as `cube_configs_dir` and `exports_dir`.
 
 Files already saved stay in the old folder. After the cube configs folder changes, the list below shows the files in the new one.
+
+![Folders card with both folders at their defaults, and the Saved Cube Configs list below it with one saved config](../assets/images/optimuspy/ui/settings-folders.png)
 
 ## Saved Cube Configs
 
