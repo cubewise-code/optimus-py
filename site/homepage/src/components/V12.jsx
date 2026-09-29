@@ -68,7 +68,7 @@ function Diagram() {
 
       <div className="mt-4 flex items-center justify-center gap-2 rounded-lg bg-good/[0.08] px-3 py-2 text-sm text-good">
         <Check className="h-4 w-4" aria-hidden="true" />
-        Both converted to bytes, so every comparison is like for like
+        Two versions, same numbers: every comparison is like for like
       </div>
     </div>
   )
