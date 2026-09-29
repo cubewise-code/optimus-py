@@ -47,16 +47,18 @@ The executable ships without a `config.ini`. Create `config/config.ini` next to 
 
 ## Sidebar navigation
 
-![OptimusPy sidebar with all five pages](../assets/images/optimuspy/ui/sidebar-overview.png)
+![OptimusPy sidebar with Home, the five pages, and the Documentation, Website and GitHub links](../assets/images/optimuspy/ui/sidebar-overview.png)
 
 | Item | Purpose |
 |---|---|
 | **Instance switcher** | Pick the active TM1 connection. It is the instance the Optimize page works on; Sync Order and Optimize DB pick their own. |
+| **Home** | Connect to an instance, and read *Tips & Getting Started*: the steps of a run, the optimization modes and tips on dimension order. It's where the UI opens, and it stays reachable after you connect. |
 | **Optimize** | Scan candidates and run benchmarks for one or many cubes. |
 | **Results** | Browse generated HTML / CSV / XLSX reports. |
 | **Sync Order** | Promote dimension orders from a source instance to a target instance. |
 | **Optimize DB** | Reorder every cube on an instance by leaf-element count, fewest first, within a time limit. See the [Optimize DB Page](optimize-db-page.md). |
 | **Settings** | At the bottom of the sidebar: choose the `config.ini`, test connections, theme, and local cache. |
+| **Documentation**, **Website**, **GitHub** | Below Settings: this documentation, the OptimusPy landing page and the repository, each in a new tab. The Home page links the first two as well. |
 
 The sidebar collapses to icons on narrow screens, and folds away behind a menu button on a phone. While a job is running, the **Activity Monitor** appears below the page links and names it; click it to open the job's page. The [Jobs page](jobs-page.md) has no sidebar item: open it at `#/jobs`, for example `http://127.0.0.1:8765/#/jobs`.
 
@@ -81,6 +83,7 @@ If you change something on the TM1 server (e.g., delete string elements, rename 
 
 In sidebar order:
 
+- **Home**: instance tiles to connect, and the getting-started guide.
 - **[Optimize](optimize-page.md)**: the main workflow, scan, configure, run.
 - **[Results](results-page.md)**: generated HTML reports and raw data.
 - **[Sync Order](sync-order-page.md)**: drag-and-drop cross-instance promotion.

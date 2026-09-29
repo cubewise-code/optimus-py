@@ -1553,11 +1553,11 @@ const OptimusPy = (function () {
         const href = a.getAttribute("href");
         if (!href) return;
         const page = a.dataset.page;
-        a.classList.toggle("active", page === pageName || pageName === "nav" && page === "home");
+        a.classList.toggle("active", page === pageName);
       });
 
       // Update title
-      const titles = { home: "Optimize", nav: query.cube || "Navigation", results: "Results", jobs: "Jobs", settings: "Settings", transfer: "Sync Order", "optimize-db": "Optimize DB" };
+      const titles = { home: "Home", nav: query.cube || "Optimize", results: "Results", jobs: "Jobs", settings: "Settings", transfer: "Sync Order", "optimize-db": "Optimize DB" };
       document.title = `OptimusPy — ${titles[pageName] || "Dashboard"}`;
 
       // Mount
@@ -1575,35 +1575,30 @@ const OptimusPy = (function () {
     _ramThreshold: 60,
     _includeOptimized: false,
 
+    // Instance tiles and the getting-started guide; reachable from the sidebar
+    // at any time, connected or not.
     mount() {
       const page = $("#page-home");
       page.innerHTML = "";
 
-      if (!state.connected) {
-        this._renderDisconnected(page);
-      } else {
-        // Connected — redirect to the navigation split-panel view
-        Router.navigate("#/nav");
-      }
-    },
-
-    // ---- Not connected: instance tiles + collapsible help ----
-    _renderDisconnected(page) {
       page.appendChild(el("div", { className: "page-header" },
         el("h1", { className: "page-title" }, "OptimusPy"),
-        el("p", { className: "page-subtitle" }, "Connect to a TM1 instance to get started"),
+        el("p", { className: "page-subtitle" }, state.connected
+          ? `Connected to ${state.activeInstance}. Open it on the Optimize page, or connect to another instance`
+          : "Connect to a TM1 instance to get started"),
       ));
 
       if (state.instances.length > 0) {
         const tilesGrid = el("div", { className: "instance-tiles" });
         state.instances.forEach(name => {
+          const active = state.connected && name === state.activeInstance;
           const tile = el("button", {
             className: "instance-tile",
-            onClick: () => Sidebar._promptConnect(name),
+            onClick: () => active ? Router.navigate("#/nav") : Sidebar._promptConnect(name),
           },
             el("div", { className: "instance-tile-icon", html: '<svg aria-hidden="true" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>' }),
             el("div", { className: "instance-tile-name" }, name),
-            el("div", { className: "instance-tile-hint" }, "Click to connect"),
+            el("div", { className: "instance-tile-hint" }, active ? "Connected: open Optimize" : "Click to connect"),
           );
           tilesGrid.appendChild(tile);
         });
@@ -1616,7 +1611,13 @@ const OptimusPy = (function () {
         ));
       }
 
-      // Collapsible help section
+      page.appendChild(el("div", { className: "flex gap-2 mt-4 flex-wrap" },
+        el("a", { className: "btn btn-secondary btn-sm", href: "https://cubewise-code.github.io/optimus-py/docs/", target: "_blank", rel: "noopener noreferrer" },
+          el("span", { html: Icons.externalLink }), "Documentation"),
+        el("a", { className: "btn btn-secondary btn-sm", href: "https://cubewise-code.github.io/optimus-py/", target: "_blank", rel: "noopener noreferrer" },
+          el("span", { html: Icons.externalLink }), "Website"),
+      ));
+
       page.appendChild(this._buildCollapsibleHelp());
     },
 
@@ -1634,9 +1635,9 @@ const OptimusPy = (function () {
       const section = el("div", { className: "collapsible-help" });
       const toggle = el("button", { className: "collapsible-help-toggle" },
         el("span", null, "Tips & Getting Started"),
-        el("span", { className: "collapsible-help-chevron", html: Icons.chevronRight }),
+        el("span", { className: "collapsible-help-chevron", html: Icons.chevronRight, style: "transform:rotate(90deg)" }),
       );
-      const content = el("div", { className: "collapsible-help-content hidden" });
+      const content = el("div", { className: "collapsible-help-content" });
       content.appendChild(this._buildGuideContent());
       toggle.addEventListener("click", () => {
         content.classList.toggle("hidden");
