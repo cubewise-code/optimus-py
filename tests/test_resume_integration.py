@@ -12,14 +12,32 @@ import pytest
 
 from optimuspy.checkpoint import CheckpointManager
 from optimuspy.core import _recover_pending_order
-from optimuspy.execution_mode import ExecutionMode
-from optimuspy.executors import MainExecutor, OriginalOrderExecutor, PredefinedOrderExecutor
+from optimuspy.executors import (MainExecutor, OriginalOrderExecutor,
+                                 PredefinedOrderExecutor)
+from optimuspy.order_frame import OrderFrame
 from optimuspy.results import ExecutionContext, OptimusResult
 
 
 # --------------------------------------------------------------------------- #
 # FakeTM1 — models cube RAM as a function of the current storage order and can
 # simulate a dropped connection on the Nth reorder.
+#
+# This one is deferred, not blessed. Recovery reads the cube back after a crash
+# (get_storage_dimension_order, metrics.by_cube) from OUTSIDE the executor, so
+# there is no seam to supply numbers through the way install_offline_measurements
+# does for a sweep. Its live counterpart is test_live_resume_drop.py, which drives
+# the same two branches against a real server.
+#
+# It is the only fake outside the optimize_db suite that models a cube. A grep for
+# "Fake" finds the rest, all predating the offline/live split and none of them a
+# precedent either: test_optimize_db_executor.py carries six, fenced off
+# there and scheduled to retire with that module's own live coverage;
+# test_inflight_status.py and test_ram_reanchor.py each carry a two-method stub of
+# update_storage_dimension_order, because both test behaviour BELOW the
+# _measure_permutation seam — a reorder that raises, and the one absolute re-anchor
+# taken around a reorder. Nothing should be added to that list: a test that needs a
+# server gets a real TM1Service behind @pytest.mark.live, and a test that needs
+# measurements gets install_offline_measurements.
 # --------------------------------------------------------------------------- #
 class _FakeCubes:
     def __init__(self, tm1):
@@ -126,7 +144,8 @@ def test_predefined_resume_after_drop_completes_and_recovers(tmp_path):
 
     def factory(context, tm1, mgr):
         return PredefinedOrderExecutor(
-            tm1, "C", [], [], dims, 1, True, orders, context, checkpoint_manager=mgr)
+            tm1, "C", [], [], dims, 1, True, orders, context, checkpoint_manager=mgr,
+            order_frame=OrderFrame(dims, True))
 
     # 1) uninterrupted reference
     ctx = ExecutionContext()
@@ -173,21 +192,23 @@ def test_predefined_resume_after_drop_completes_and_recovers(tmp_path):
 # --------------------------------------------------------------------------- #
 # Greedy Fold A — drop mid-fold, then resume; best is unchanged.
 # --------------------------------------------------------------------------- #
-def _fold_a_factory(dims, card, string_dims):
+def _fold_a_factory(dims, card, last_slot_locked):
+    frame = OrderFrame(dims, last_slot_locked)
+
     def factory(context, tm1, mgr):
         return MainExecutor(
-            tm1, "C", [], [], dims, 1, False, context, fast=False,
-            checkpoint_manager=mgr, cardinality=card, string_dims=string_dims)
+            tm1, "C", [], [], dims, 1, last_slot_locked, context, fast=False,
+            checkpoint_manager=mgr, cardinality=card, order_frame=frame)
     return factory
 
 
 def test_fold_a_resume_after_drop_matches_uninterrupted_best(tmp_path):
     dims = ["A", "B", "C", "D", "E", "M"]
     card = {"A": 100, "B": 105, "C": 110, "D": 115, "E": 120, "M": 3}
-    strings = ["M"]  # only a string dim is locked last
+    locked = True  # the storage-last dim "M" has string elements
     ram_of = (lambda o: 100.0 - 10 * list(o).index("E")
               + list(o).index("M") + 0.5 * list(o).index("A"))
-    factory = _fold_a_factory(dims, card, strings)
+    factory = _fold_a_factory(dims, card, locked)
 
     # 1) uninterrupted reference
     ctx = ExecutionContext()
@@ -235,7 +256,8 @@ def test_landed_recovery_does_not_reapply_and_backcalcs(tmp_path):
 
     def factory(context, tm1, mgr):
         return PredefinedOrderExecutor(
-            tm1, "C", [], [], dims, 1, True, orders, context, checkpoint_manager=mgr)
+            tm1, "C", [], [], dims, 1, True, orders, context, checkpoint_manager=mgr,
+            order_frame=OrderFrame(dims, True))
 
     # Build a checkpoint: original + orders[0] completed, orders[1] pending.
     mgr = CheckpointManager("C", "inst", "fp", tmp_path / "run")

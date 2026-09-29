@@ -2,18 +2,33 @@ import logging
 import random
 import time
 from itertools import chain
-from typing import List, Dict
+from typing import Dict, List, NamedTuple, Optional
 
 from TM1py import TM1Service, Process
 
 from optimuspy import tau
 from optimuspy.execution_mode import ExecutionMode
 from optimuspy.metrics import read_cube_memory_bytes
+from optimuspy.order_frame import REASON_NOT_A_PERMUTATION
 from optimuspy.results import ExecutionContext, PermutationResult
 
 
 class OptimizationCancelled(Exception):
     pass
+
+
+class Measurement(NamedTuple):
+    """What applying one candidate order to the cube produced.
+
+    The server's own report, nothing derived: `ram_percentage_change` is what
+    `update_storage_dimension_order` returned, and `ram_usage` is an absolute
+    byte reading taken only when one was asked for.
+    """
+    ram_percentage_change: float
+    reorder_duration: float
+    query_times_by_view: dict
+    process_times_by_process: Optional[dict] = None
+    ram_usage: Optional[float] = None
 
 
 def swap(order: list, i1, i2) -> List[str]:
@@ -30,21 +45,28 @@ def swap_random(order: list) -> List[str]:
 
 class OptipyzerExecutor:
     def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], process_names: List[str],
-                 displayed_dimension_order: List[str],
-                 executions: int, measure_dimension_only_numeric: bool, context: ExecutionContext,
+                 storage_dimension_order: List[str],
+                 executions: int, last_slot_locked: bool, context: ExecutionContext,
                  checkpoint_manager=None, process_parameters: dict = None, cancel_event=None,
-                 is_v12: bool = False):
+                 is_v12: bool = False, order_frame=None):
         self.tm1 = tm1
         self.cube_name = cube_name
         self.view_names = view_names
         self.process_names = process_names
-        self.dimensions = displayed_dimension_order
+        # The cube's authoritative order (get_storage_dimension_order). Executors
+        # permute THIS; the presentation order is display-only.
+        self.dimensions = storage_dimension_order
         self.executions = executions
-        self.measure_dimension_only_numeric = measure_dimension_only_numeric
+        # True when the dimension in the last storage slot has string elements:
+        # that slot is locked and its dimension never moves.
+        self.last_slot_locked = last_slot_locked
+        # The one authority on which candidate orders are allowed (optimuspy.order_frame).
+        self.order_frame = order_frame
+        # Refusals by reason code, for the run summary.
+        self.skipped_orders = {}
         self.is_v12 = is_v12
         self.mode = None
         self.include_process = bool(process_names)
-        self.cube_dim_number = len(self.dimensions)
         self.context = context
         self.checkpoint_manager = checkpoint_manager
         self.process_parameters = process_parameters or {}
@@ -164,39 +186,63 @@ class OptipyzerExecutor:
             reanchor = True
             self._reanchor_needed = False
 
-        reorder_start = time.time()
-        ram_percentage_change = self.tm1.cubes.update_storage_dimension_order(self.cube_name, permutation)
-        reorder_duration = time.time() - reorder_start
-        query_times_by_view = self._determine_query_permutation_result()
-
-        process_times_by_process = None
-        if self.include_process:
-            process_times_by_process = self._determine_process_permutation_result()
-
-        ram_usage = None
-        if retrieve_ram:
-            ram_usage = self._retrieve_ram_usage()
+        measurement = self._measure_permutation(permutation, retrieve_ram)
 
         permutation_result = PermutationResult(
             self.context, self.mode, self.cube_name, self.view_names, self.process_names,
-            permutation, query_times_by_view, process_times_by_process, ram_usage,
-            ram_percentage_change, reorder_duration, reanchor=reanchor)
+            permutation, measurement.query_times_by_view,
+            measurement.process_times_by_process, measurement.ram_usage,
+            measurement.ram_percentage_change, measurement.reorder_duration,
+            reanchor=reanchor)
 
         logging.info(f"{progress_label} - Result: {permutation_result.stats_summary()}")
 
         return permutation_result
+
+    def _measure_permutation(self, permutation: List[str], retrieve_ram: bool) -> Measurement:
+        """Apply the order to the cube and measure it — the only TM1 call in a sweep.
+
+        Everything `_evaluate_permutation` does around this call is arithmetic and
+        bookkeeping: the pending write, the reanchor decision, the %-chain that
+        turns the server's percentage into a RAM figure, the run artifact, the
+        progress log. Keeping the server behind one method is what lets an offline
+        test drive a real fold and get real PermutationResults back — it supplies
+        the numbers a server would have reported and nothing else is stood in for.
+        """
+        reorder_start = time.time()
+        ram_percentage_change = self.tm1.cubes.update_storage_dimension_order(
+            self.cube_name, permutation)
+        reorder_duration = time.time() - reorder_start
+
+        query_times_by_view = self._determine_query_permutation_result()
+        process_times_by_process = (
+            self._determine_process_permutation_result() if self.include_process else None)
+        ram_usage = self._retrieve_ram_usage() if retrieve_ram else None
+
+        return Measurement(ram_percentage_change, reorder_duration,
+                           query_times_by_view, process_times_by_process, ram_usage)
 
     def _retrieve_ram_usage(self):
         # RAM baseline in bytes via MetricService (cube_memory_used), version-agnostic.
         # v11 keeps the read-retry loop; v12 fails fast (see read_cube_memory_bytes).
         return read_cube_memory_bytes(self.tm1, self.cube_name, self.is_v12)
 
-    def _has_string_elements(self, dimension_name: str) -> bool:
-        hierarchy_name = "Leaves" if self.tm1.hierarchies.exists(
-            dimension_name=dimension_name, hierarchy_name="Leaves") else dimension_name
-        elements = self.tm1.elements.get_element_types(
-            dimension_name=dimension_name, hierarchy_name=hierarchy_name, skip_consolidations=True)
-        return any(etype != "Numeric" for etype in elements.values())
+    def _frame_refuses(self, permutation) -> bool:
+        """Ask the order frame whether this candidate may be evaluated.
+
+        Logs the reason at DEBUG and counts the refusal by code for the run
+        summary. A malformed order is a different animal — the greedy builds every
+        candidate by swapping within the cube's own dimensions, so one can only
+        mean a bug in the sweep, and skipping it silently would hide that.
+        """
+        verdict = self.order_frame.admits(permutation)
+        if verdict.admissible:
+            return False
+        if verdict.code == REASON_NOT_A_PERMUTATION:
+            raise RuntimeError(f"Generated an invalid candidate order: {verdict.reason}")
+        self.skipped_orders[verdict.code] = self.skipped_orders.get(verdict.code, 0) + 1
+        logging.debug(f"Skipping order — {verdict.reason}")
+        return True
 
     def clear_cube_cache(self):
         process = Process(name="", prolog_procedure=f"DebugUtility(125 ,0 ,0 ,'{self.cube_name}' ,'' ,'');")
@@ -338,12 +384,12 @@ class OptipyzerExecutor:
 class OriginalOrderExecutor(OptipyzerExecutor):
     def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], process_names: List[str],
                  dimensions: List[str], executions: int,
-                 measure_dimension_only_numeric: bool, original_dimension_order: List[str],
+                 last_slot_locked: bool, original_dimension_order: List[str],
                  context: ExecutionContext, checkpoint_manager=None, process_parameters: dict = None,
-                 cancel_event=None, is_v12: bool = False):
+                 cancel_event=None, is_v12: bool = False, order_frame=None):
         super().__init__(tm1, cube_name, view_names, process_names, dimensions, executions,
-                         measure_dimension_only_numeric, context, checkpoint_manager, process_parameters,
-                         cancel_event, is_v12=is_v12)
+                         last_slot_locked, context, checkpoint_manager, process_parameters,
+                         cancel_event, is_v12=is_v12, order_frame=order_frame)
         self.mode = ExecutionMode.ORIGINAL_ORDER
         self.original_dimension_order = original_dimension_order
 
@@ -357,57 +403,30 @@ class OriginalOrderExecutor(OptipyzerExecutor):
 
 
 class MainExecutor(OptipyzerExecutor):
+    """The greedy search: Fold A (place each position) or Fold B (refine a seed).
+
+    It is the only order source that honours the user preferences, and it does so
+    entirely through its order frame — dimensions_to_exclude, orders_to_ignore and
+    dimension_position_rules are the frame's, not the executor's. Keeping a second
+    copy here is how they came to be enforced seven different ways.
+    """
+
     def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], process_names: List[str],
-                 dimensions: List[str], executions: int, measure_dimension_only_numeric: bool,
+                 dimensions: List[str], executions: int, last_slot_locked: bool,
                  context: ExecutionContext, fast: bool = False,
-                 dimensions_to_exclude: List[str] = None,
-                 orders_to_ignore: List[List[str]] = None,
                  checkpoint_manager=None, process_parameters: dict = None,
-                 dimension_position_rules: list = None, cancel_event=None, is_v12: bool = False,
-                 cardinality: Dict[str, int] = None, string_dims: List[str] = None):
+                 cancel_event=None, is_v12: bool = False,
+                 cardinality: Dict[str, int] = None, order_frame=None):
         super().__init__(tm1, cube_name, view_names, process_names, dimensions, executions,
-                         measure_dimension_only_numeric, context, checkpoint_manager, process_parameters,
-                         cancel_event, is_v12=is_v12)
+                         last_slot_locked, context, checkpoint_manager, process_parameters,
+                         cancel_event, is_v12=is_v12, order_frame=order_frame)
         self.mode = ExecutionMode.ITERATIONS
         self.fast = fast
-        self.dimensions_to_exclude = dimensions_to_exclude or []
-        self.orders_to_ignore = orders_to_ignore or []
-        self.dimension_position_rules = dimension_position_rules or []
         self.cardinality = cardinality or {}
-        self.string_dims = set(string_dims or [])
-
-    def _violates_position_rules(self, permutation: List[str]) -> bool:
-        for rule in self.dimension_position_rules:
-            dim_name = rule['dimension']
-            pos = rule['position']
-            if dim_name not in permutation:
-                continue
-            actual_index = permutation.index(dim_name)
-            if pos == 'first' and actual_index == 0:
-                return True
-            elif pos == 'last' and actual_index == len(permutation) - 1:
-                return True
-            else:
-                try:
-                    if actual_index == int(pos) - 1:
-                        return True
-                except (ValueError, TypeError):
-                    pass
-        return False
-
-    def _string_last_skip(self, dim, target_position):
-        """Skip swapping a string-bearing dim into the last position (forced order)."""
-        last = target_position + 1 == self.cube_dim_number
-        return last and dim in self.string_dims
 
     def _greedy_skip_permutation(self, permutation):
-        if permutation in self.orders_to_ignore:
-            logging.debug(f"Skipping ignored order: {permutation}")
-            return True
-        if self._violates_position_rules(permutation):
-            logging.debug(f"Skipping order due to position rule violation: {permutation}")
-            return True
-        return False
+        """One call covers the lock, the ignored orders and the position rules."""
+        return self._frame_refuses(permutation)
 
     def execute(self, resume_state: dict = None) -> List[PermutationResult]:
         if self.fast:
@@ -415,28 +434,18 @@ class MainExecutor(OptipyzerExecutor):
         return self._run_fold_a(resume_state)
 
     def _run_fold_a(self, resume_state: dict = None) -> List[PermutationResult]:
-        dimensions = self.dimensions[:]
-        resulting_order = self.dimensions[:]
+        # Pre-application: a dimension named by a position rule is seated at its
+        # slot before the search starts, so the fold begins from the pre-applied
+        # order rather than the storage order.
+        resulting_order = self.order_frame.pre_applied_order()
         permutation_results = []
-        dimension_pool = [d for d in self.dimensions if d not in self.dimensions_to_exclude]
-        mid = int(len(dimension_pool) / 2)
-        if not self.measure_dimension_only_numeric:
-            # Lock the string-bearing dim to the last slot using the authoritative
-            # string_dims set — NOT presentation-order [-1], which need not be the
-            # string dim on an already-optimized cube. Move it last if it isn't,
-            # then freeze it: never a swap candidate (out of the pool) and its slot
-            # is never a sweep target (out of the iterated range). Fall back to [-1]
-            # only if metadata flags no string dim while the measure is non-numeric.
-            # TM1 permits at most one such dim, but a list is handled defensively.
-            string_last = [d for d in self.dimensions if d in self.string_dims] or [self.dimensions[-1]]
-            for sd in string_last:
-                if sd in dimension_pool:
-                    dimension_pool.remove(sd)
-                if sd in dimensions:
-                    dimensions.remove(sd)
-                if resulting_order[-1] != sd:
-                    resulting_order.remove(sd)
-                    resulting_order.append(sd)
+        # The frame decides what may move: everything except the excluded dims
+        # (frozen where they are) and the locked dim (which never moves at all).
+        # Nothing is relocated to satisfy the lock — a candidate that would move
+        # the locked dim is simply never generated, and would be refused anyway.
+        dimension_pool = self.order_frame.movable_dimensions()
+        # From the full storage order, not from the pool: see tau.midpoint.
+        mid = tau.midpoint(len(self.dimensions))
         has_views, has_processes = bool(self.view_names), bool(self.process_names)
 
         # Result representing the current resulting_order. It carries the "keep the
@@ -447,6 +456,14 @@ class MainExecutor(OptipyzerExecutor):
 
         placed_positions = []
         executor_state = resume_state.get("executor_state", {}) if resume_state else {}
+        if "fold_a_state" not in executor_state and resulting_order != list(self.dimensions):
+            # Pre-application moved something, so the measured original order is
+            # no longer the order the fold is standing on. Measure the starting
+            # point, as fold B measures its seed: without it every position's
+            # "keep what is here" option carries a RAM figure for a different order.
+            current_result = self._evaluate_permutation(
+                resulting_order, total_permutations=None)
+            permutation_results.append(current_result)
         if "fold_a_state" in executor_state:
             fs = executor_state["fold_a_state"]
             resulting_order = fs["resulting_order"]
@@ -458,12 +475,14 @@ class MainExecutor(OptipyzerExecutor):
                 self._original_order_result)
             logging.info(f"Resuming Fold A — {len(placed_positions)} positions already locked")
 
-        for target_position in chain(*zip(reversed(range(len(dimensions))), range(len(dimensions)))):
+        position_count = len(self.dimensions)
+        for target_position in chain(*zip(reversed(range(position_count)), range(position_count))):
             if target_position == mid:
                 break
             if target_position in placed_positions:
                 continue
-            # Positions held by an excluded (non-pool) dim are frozen — never sweep into them.
+            # Slots held by a dim that cannot move — an excluded one, or the locked
+            # one — are never a sweep target.
             if resulting_order[target_position] not in dimension_pool:
                 continue
 
@@ -488,7 +507,6 @@ class MainExecutor(OptipyzerExecutor):
 
             results = self._sweep_into_position(
                 resulting_order, target_position, candidates, None,
-                skip_candidate=self._string_last_skip,
                 skip_permutation=self._greedy_skip_permutation,
                 checkpoint_cb=checkpoint_cb)
             permutation_results.extend(results)
@@ -505,30 +523,34 @@ class MainExecutor(OptipyzerExecutor):
         return permutation_results
 
     def _seed_order(self):
-        """Cardinality-ascending seed with string dims last.
+        """Cardinality-ascending seed over the slots that are free to hold anything.
 
-        Only a *string*-bearing dimension is forced to the last slot — that is
-        TM1's sole storage-order constraint (CellPutS/string writes target the
-        last dimension, so a string dim cannot leave it). A numeric measure has
-        no such constraint and is placed purely by cardinality like any other
-        dimension: a small/degenerate measure belongs at the FRONT for RAM
-        (small-sparse first; the 90/10 rule reserves the last slot for the
-        largest-dense dim). This mirrors _compute_suggested_order, which likewise
-        locks only string dims last.
+        A numeric measure has no storage constraint and is placed purely by
+        cardinality like any other dimension: a small/degenerate measure belongs at
+        the FRONT for RAM (small-sparse first; the 90/10 rule reserves the last
+        slot for the largest-dense dim). Only the *locked* slot is special, and
+        only because TM1 rejects any write that moves the dimension out of it.
 
-        Dimensions in dimensions_to_exclude are frozen at their original index;
-        only the movable dims are re-ordered, into the movable positions.
+        The seed starts from the **pre-applied** order, so a dimension named by a
+        position rule is already at its slot. Reserved slots keep whatever sits in
+        them there — an excluded dim (frozen where it is by user preference), a
+        pinned dim (seated by its rule) and the locked dim (which never moves).
+        The rest are filled with the movable dims in ascending cardinality.
+
+        Note a string-bearing dimension that is NOT in the locked slot is movable
+        and is seeded by cardinality like anything else. Dimensions are shared
+        between cubes, so one can carry string elements from another cube's use
+        without being this cube's measure; the constraint is on the slot, not the
+        dimension.
         """
-        excluded = set(self.dimensions_to_exclude)
-        result = list(self.dimensions)
-        movable_positions = [i for i, d in enumerate(self.dimensions) if d not in excluded]
-        movable = [d for d in self.dimensions if d not in excluded]
-        non_string = [d for d in movable if d not in self.string_dims]
-        string_last = [d for d in movable if d in self.string_dims]
-        non_string.sort(key=lambda d: self.cardinality.get(d, 0))
-        ordered_movable = non_string + string_last
-        for pos, dim in zip(movable_positions, ordered_movable):
-            result[pos] = dim
+        reserved = self.order_frame.reserved_positions()
+        free_positions = [i for i in range(len(self.dimensions)) if i not in reserved]
+        movable = sorted(self.order_frame.movable_dimensions(),
+                         key=lambda d: self.cardinality.get(d, 0))
+
+        result = self.order_frame.pre_applied_order()
+        for position, dim in zip(free_positions, movable):
+            result[position] = dim
         return result
 
     def _run_fold_b(self, resume_state: dict = None) -> List[PermutationResult]:
@@ -546,7 +568,7 @@ class MainExecutor(OptipyzerExecutor):
 
         resulting_order = self._seed_order()
         permutation_results = []
-        mid = int(len(resulting_order) / 2)
+        mid = tau.midpoint(len(self.dimensions))
 
         start_pass = 0
         executor_state = resume_state.get("executor_state", {}) if resume_state else {}
@@ -563,15 +585,14 @@ class MainExecutor(OptipyzerExecutor):
         for pass_index in range(start_pass, tau.FOLD_B_MAX_PASSES):
             improved = False
             ordered = [(d, self.cardinality.get(d, 0)) for d in resulting_order]
-            # A string-bearing dim is locked to its (seeded-last) slot — moving it
-            # off last breaks CellPutS — and an excluded dim is frozen. Neither is
-            # ever a refine target, and no other dim may be swept INTO their slots.
+            # The locked dim and the excluded dims are the ones that cannot move:
+            # neither is ever a refine target, and no other dim may be swept INTO
+            # their slots.
+            movable = set(self.order_frame.movable_dimensions())
             refine = [d for d in tau.fold_b_refine_order(ordered, tau_split)
-                      if d not in self.string_dims
-                      and d not in self.dimensions_to_exclude]
+                      if d in movable]
             reserved_positions = {i for i, d in enumerate(resulting_order)
-                                  if d in self.dimensions_to_exclude
-                                  or d in self.string_dims}
+                                  if d not in movable}
             for dim in refine:
                 current_idx = resulting_order.index(dim)
                 # Judge this dim's move — and prune its position window — by the
@@ -641,12 +662,12 @@ class MainExecutor(OptipyzerExecutor):
 class PredefinedOrderExecutor(OptipyzerExecutor):
     def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], process_names: List[str],
                  dimensions: List[str], executions: int,
-                 measure_dimension_only_numeric: bool, predefined_orders: List[List[str]],
+                 last_slot_locked: bool, predefined_orders: List[List[str]],
                  context: ExecutionContext, checkpoint_manager=None, process_parameters: dict = None,
-                 cancel_event=None, is_v12: bool = False):
+                 cancel_event=None, is_v12: bool = False, order_frame=None):
         super().__init__(tm1, cube_name, view_names, process_names, dimensions, executions,
-                         measure_dimension_only_numeric, context, checkpoint_manager, process_parameters,
-                         cancel_event, is_v12=is_v12)
+                         last_slot_locked, context, checkpoint_manager, process_parameters,
+                         cancel_event, is_v12=is_v12, order_frame=order_frame)
         self.mode = ExecutionMode.ITERATIONS
         self.predefined_orders = predefined_orders
 
@@ -677,6 +698,12 @@ class PredefinedOrderExecutor(OptipyzerExecutor):
                     })
                 continue
 
+            # Tier 2: a named order that moves the locked dimension is skipped
+            # with a reason and the run continues to the next one.
+            if self._frame_refuses(order):
+                completed_indices.add(idx)
+                continue
+
             self._check_cancelled()
             result = self._evaluate_permutation(order, total_permutations=total)
             results.append(result)
@@ -697,20 +724,20 @@ class PositionOptimizerExecutor(OptipyzerExecutor):
     """Find the best dimension for a given position."""
 
     def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], process_names: List[str],
-                 dimensions: List[str], executions: int, measure_dimension_only_numeric: bool,
+                 dimensions: List[str], executions: int, last_slot_locked: bool,
                  target_position: int, context: ExecutionContext,
                  dimensions_to_exclude: List[str] = None, checkpoint_manager=None,
-                 process_parameters: dict = None, cancel_event=None, is_v12: bool = False):
+                 process_parameters: dict = None, cancel_event=None, is_v12: bool = False,
+                 order_frame=None):
         super().__init__(tm1, cube_name, view_names, process_names, dimensions, executions,
-                         measure_dimension_only_numeric, context, checkpoint_manager, process_parameters,
-                         cancel_event, is_v12=is_v12)
+                         last_slot_locked, context, checkpoint_manager, process_parameters,
+                         cancel_event, is_v12=is_v12, order_frame=order_frame)
         self.mode = ExecutionMode.ITERATIONS
         self.target_position = target_position
         self.dimensions_to_exclude = dimensions_to_exclude or []
 
     def execute(self, resume_state: dict = None) -> List[PermutationResult]:
         current_order = self.dimensions[:]
-        is_last = (self.target_position == len(current_order) - 1)
 
         completed_dimensions = set()
         executor_state = resume_state.get("executor_state", {}) if resume_state else {}
@@ -726,12 +753,7 @@ class PositionOptimizerExecutor(OptipyzerExecutor):
         total = len([d for d in candidates if d not in completed_dimensions])
 
         def skip_candidate(dim, target_position):
-            if dim in completed_dimensions:
-                return True
-            if is_last and self._has_string_elements(dim):
-                logging.info(f"Skip '{dim}' — has string elements, can't be last")
-                return True
-            return False
+            return dim in completed_dimensions
 
         def checkpoint_cb(dim, results):
             completed_dimensions.add(dim)
@@ -740,29 +762,32 @@ class PositionOptimizerExecutor(OptipyzerExecutor):
                 last_applied_order=list(results[-1].dimension_order),
                 executor_state={"position_state": {"completed_dimensions": sorted(completed_dimensions)}})
 
+        # The frame replaces the per-candidate get_element_types round-trip that
+        # used to run inside this sweep: the lock is one fact about the cube,
+        # decided once, not a question to re-ask the server per candidate.
         return self._sweep_into_position(
             current_order, self.target_position, candidates, total_permutations=total,
-            skip_candidate=skip_candidate, checkpoint_cb=checkpoint_cb)
+            skip_candidate=skip_candidate, skip_permutation=self._frame_refuses,
+            checkpoint_cb=checkpoint_cb)
 
 
 class DimensionOptimizerExecutor(OptipyzerExecutor):
     """Find the best position for a given dimension."""
 
     def __init__(self, tm1: TM1Service, cube_name: str, view_names: List[str], process_names: List[str],
-                 dimensions: List[str], executions: int, measure_dimension_only_numeric: bool,
+                 dimensions: List[str], executions: int, last_slot_locked: bool,
                  target_dimension: str, context: ExecutionContext, checkpoint_manager=None,
-                 process_parameters: dict = None, cancel_event=None, is_v12: bool = False):
+                 process_parameters: dict = None, cancel_event=None, is_v12: bool = False,
+                 order_frame=None):
         super().__init__(tm1, cube_name, view_names, process_names, dimensions, executions,
-                         measure_dimension_only_numeric, context, checkpoint_manager, process_parameters,
-                         cancel_event, is_v12=is_v12)
+                         last_slot_locked, context, checkpoint_manager, process_parameters,
+                         cancel_event, is_v12=is_v12, order_frame=order_frame)
         self.mode = ExecutionMode.ITERATIONS
         self.target_dimension = target_dimension
 
     def execute(self, resume_state: dict = None) -> List[PermutationResult]:
         current_order = self.dimensions[:]
         current_idx = current_order.index(self.target_dimension)
-        has_strings = self._has_string_elements(self.target_dimension)
-        last_pos = len(current_order) - 1
 
         completed_positions = set()
         executor_state = resume_state.get("executor_state", {}) if resume_state else {}
@@ -770,16 +795,18 @@ class DimensionOptimizerExecutor(OptipyzerExecutor):
             completed_positions = set(executor_state["dimension_state"]["completed_positions"])
             logging.info(f"Resuming dimension optimizer: {len(completed_positions)} positions already tested")
 
+        # A slot that cannot hold anything else — the locked one — is not a
+        # candidate. The frame still guards every generated order, which is what
+        # catches the case where the TARGET dimension is itself the locked one:
+        # every move of it is refused and the sweep evaluates nothing.
+        reserved = self.order_frame.reserved_positions()
         candidate_positions = [
             p for p in range(len(current_order))
             if p != current_idx
             and p not in completed_positions
-            and not (p == last_pos and has_strings)
+            and p not in reserved
         ]
-        total = last_pos if not has_strings else last_pos - 1
-
-        def skip_permutation(_permutation):
-            return False
+        total = len(candidate_positions)
 
         def checkpoint_cb(position, results):
             completed_positions.add(position)
@@ -790,5 +817,5 @@ class DimensionOptimizerExecutor(OptipyzerExecutor):
 
         return self._sweep_across_positions(
             current_order, self.target_dimension, candidate_positions,
-            total_permutations=total, skip_permutation=skip_permutation,
+            total_permutations=total, skip_permutation=self._frame_refuses,
             checkpoint_cb=checkpoint_cb)

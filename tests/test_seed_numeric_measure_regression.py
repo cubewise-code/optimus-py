@@ -39,8 +39,10 @@ CARD = {
     "LO_Plan_Full": 313,
     "PDT_MosaicSKU_DoubleView_Component": 6228,
 }
-# Presentation order: measure (VAR_RPT_Value) last, per the TM1 build convention.
-PRESENTATION_ORDER = [
+# The cube's storage order, which here is also its build order — measure
+# (VAR_RPT_Value) last, per the TM1 convention. Executors permute the storage
+# order, so this is what the seed is computed from.
+STORAGE_ORDER = [
     "MU_Country", "VAR_RPT_Layers_Weekly", "HFM_ParentEntity", "CURR_TopLines",
     "EntityType", "TIME_Months", "GTM_Plan_Full", "SCENARIO_All",
     "VAR_LocalTopLines", "TIME_Weeks_Continuous", "CUST_Plan_Full", "LO_Plan_Full",
@@ -49,9 +51,9 @@ PRESENTATION_ORDER = [
 
 
 def test_seed_does_not_force_numeric_measure_last():
-    # All dimensions are numeric-only, so measure_only_numeric=True (the flag is
+    # All dimensions are numeric-only, so last_slot_locked=False (the flag is
     # derived from the storage-order last dim, PDT, which is numeric).
-    ex = make_main_executor(PRESENTATION_ORDER, CARD, fast=True, measure_only_numeric=True)
+    ex = make_main_executor(STORAGE_ORDER, CARD, fast=True, last_slot_locked=False)
 
     seed = ex._seed_order()
 
@@ -63,4 +65,4 @@ def test_seed_does_not_force_numeric_measure_last():
     assert seed[0] == "VAR_RPT_Value", (
         f"1-leaf measure must lead; got {seed[0]!r}. Full seed: {seed}")
     # The corrected seed is exactly pure cardinality-ascending (no string dims here).
-    assert seed == sorted(PRESENTATION_ORDER, key=CARD.get), f"seed not cardinality-ascending: {seed}"
+    assert seed == sorted(STORAGE_ORDER, key=CARD.get), f"seed not cardinality-ascending: {seed}"

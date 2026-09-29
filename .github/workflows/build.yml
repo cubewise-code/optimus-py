@@ -2,8 +2,12 @@ name: Build Executable
 
 on:
   push:
+    # `optimuspy2dot0` builds so the v2 executable can be tested before the
+    # merge; only master publishes a release. Remove it after the v2 merge.
     branches:
       - master
+      - optimuspy2dot0
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -30,22 +34,70 @@ jobs:
       - name: Build executable
         run: pyinstaller optimuspy.spec
 
+      - name: Smoke-test the executable
+        shell: pwsh
+        run: |
+          # Output is redirected here, as it is when a TI process runs the executable.
+          dist\optimuspy.exe --help > help.txt
+          if ($LASTEXITCODE -ne 0) { Get-Content help.txt; throw "optimuspy.exe --help exited $LASTEXITCODE" }
+          $ui = Start-Process dist\optimuspy.exe -ArgumentList "ui", "--port", "8799" -PassThru -RedirectStandardOutput ui.txt -RedirectStandardError ui-err.txt
+          try {
+            $served = $false
+            foreach ($i in 1..30) {
+              try {
+                $page = Invoke-WebRequest http://127.0.0.1:8799/ -UseBasicParsing -TimeoutSec 2
+                if ($page.StatusCode -eq 200 -and $page.Content -match "<title>OptimusPy</title>") { $served = $true; break }
+              } catch { Start-Sleep -Seconds 1 }
+            }
+            if (-not $served) { Get-Content ui.txt, ui-err.txt; throw "optimuspy.exe ui did not serve its page" }
+          } finally {
+            Stop-Process -Id $ui.Id -Force
+          }
+
+      - name: Assemble the bundle
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force bundle/optimuspy/config, bundle/optimuspy/samples | Out-Null
+          Copy-Item dist\optimuspy.exe bundle/optimuspy/
+          Copy-Item config\config.ini.example bundle/optimuspy/config/
+          Copy-Item config\settings.ini.example bundle/optimuspy/config/
+          Copy-Item samples\*.json bundle/optimuspy/samples/
+          Compress-Archive -Path bundle/optimuspy -DestinationPath optimuspy-windows.zip
+
+      - name: Upload the bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: optimuspy-windows
+          path: bundle/
+
       - name: Get short SHA
         id: sha
         run: echo "short=$(git rev-parse --short HEAD)" >> $env:GITHUB_OUTPUT
 
       - name: Create Release
+        if: github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ steps.sha.outputs.short }}
           name: Build ${{ steps.sha.outputs.short }}
           body: "Automated build from commit ${{ github.sha }}"
-          files: dist/optimuspy.exe
+          files: optimuspy-windows.zip
 
   build-linux:
-    name: Build on Linux
+    name: Build on Linux (${{ matrix.arch }})
     needs: build-windows
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86-64
+            runner: ubuntu-latest
+            bundle: optimuspy-linux
+          # ARM servers, and Linux VMs on Apple Silicon Macs.
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            bundle: optimuspy-linux-arm64
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -64,17 +116,43 @@ jobs:
       - name: Build executable
         run: pyinstaller optimuspy.spec
 
-      - name: Rename binary
-        run: mv dist/optimuspy dist/optimuspy-linux
+      - name: Smoke-test the executable
+        run: |
+          # Output is redirected here, as it is when a scheduler runs the executable.
+          ./dist/optimuspy --help > help.txt || { cat help.txt; exit 1; }
+          ./dist/optimuspy ui --port 8799 > ui.txt 2>&1 &
+          ui=$!
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:8799/ | grep -q "<title>OptimusPy</title>"; then served=1; break; fi
+            sleep 1
+          done
+          kill $ui
+          [ -n "$served" ] || { cat ui.txt; echo "optimuspy ui did not serve its page"; exit 1; }
+
+      - name: Assemble the bundle
+        run: |
+          mkdir -p bundle/optimuspy/config bundle/optimuspy/samples
+          cp dist/optimuspy bundle/optimuspy/
+          cp config/config.ini.example bundle/optimuspy/config/
+          cp config/settings.ini.example bundle/optimuspy/config/
+          cp samples/*.json bundle/optimuspy/samples/
+          tar -czf ${{ matrix.bundle }}.tar.gz -C bundle optimuspy
+
+      - name: Upload the bundle
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.bundle }}
+          path: bundle/
 
       - name: Get short SHA
         id: sha
         run: echo "short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Upload to Release
+        if: github.ref == 'refs/heads/master'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ steps.sha.outputs.short }}
           name: Build ${{ steps.sha.outputs.short }}
           body: "Automated build from commit ${{ github.sha }}"
-          files: dist/optimuspy-linux
+          files: ${{ matrix.bundle }}.tar.gz

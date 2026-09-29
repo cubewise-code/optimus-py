@@ -1,0 +1,12 @@
+{
+  "instance": "tm1srv01",
+  "time_limit_hours": 10.0,
+  "order": "desc",
+  "exclude_cubes": ["Staging *", "Audit Trail"],
+  "min_cube_mb": 50.0,
+  "string_policy": "pin_last",
+  "include_optimized": false,
+  "revert_on_regression": true,
+  "disable_active_chores": true,
+  "max_consecutive_failures": 3
+}

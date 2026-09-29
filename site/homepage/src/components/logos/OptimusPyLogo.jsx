@@ -1,5 +1,6 @@
 // OptimusPy Logo Component — ported from docs/assets/images/optimuspy/logo.svg
-// Dark theme palette: cyan #22d3ee + violet #a78bfa
+// Light theme: logo blue and amber, a touch darker for contrast on off-white.
+// viewBox is cropped to the artwork so the height prop sizes the visible mark.
 // Source classes: cls-1 (cyan letters O,p,t,i,m,u,s), cls-2 (orange→violet letters P,y),
 // cls-3/cls-4 (figure-8 marks with linearGradients — preserved as-is)
 
@@ -13,7 +14,7 @@ export function OptimusPyLogo({ className = "", height = 40 }) {
     <svg
       className={className}
       height={height}
-      viewBox="0 0 2877.17 1138.16"
+      viewBox="150 120 2600 635"
       xmlns="http://www.w3.org/2000/svg"
     >
       <defs>
@@ -33,7 +34,7 @@ export function OptimusPyLogo({ className = "", height = 40 }) {
       </defs>
 
       {/* Wordmark "Optimus" letters (cls-1 → cyan #22d3ee) */}
-      <g fill="#22d3ee">
+      <g fill="#0a8fd1">
         <path d="M1041.09,496.61c0,86.06-70.29,155.45-157.25,155.45-89.67,0-160.86-68.49-160.86-155,0-43.71,17.57-84.26,50.46-115.35,28.84-27,68-41.9,112.2-41.9C974.4,339.81,1041.09,406.94,1041.09,496.61Zm-243.76-.45c0,49.56,37.39,88.31,85.15,88.31,46.86,0,84.71-38.75,84.71-87,0-51.37-36-90.12-84.26-90.12C833.82,407.39,797.33,445.24,797.33,496.16Z"/>
         <path d="M1128.05,437.58v19.83c16.22-19.38,36-27.94,64.88-27.94a113.43,113.43,0,0,1,55.87,14.42c35.15,20.27,53.62,54.52,53.62,99.58,0,68-41.45,110.84-107.24,110.84-28.39,0-50.46-8.56-67.13-26.14v110h-68.49V437.58Zm0,106.79c0,33.79,19.37,55.87,49.11,55.87,30.19,0,52.27-23.43,52.27-55.42,0-33.8-21.18-58.58-50-58.58C1149.22,486.24,1128.05,510.12,1128.05,544.37Z"/>
         <path d="M1399.29,575.91c0,9.91,3.61,12.61,16.67,13.52h7.21V646.2h-52.71c-29.29-.9-40.11-13.07-39.66-43.26V493h-21.17V436.23h21.17V384.86h68.49v51.37h23.88V493h-23.88Z"/>
@@ -44,7 +45,7 @@ export function OptimusPyLogo({ className = "", height = 40 }) {
       </g>
 
       {/* Wordmark "Py" letters (cls-2 → violet #a78bfa) */}
-      <g fill="#a78bfa">
+      <g fill="#f29d1f">
         <path d="M2355.41,646.2h-73V345.66H2385.6c71.19,0,111.74,36,111.74,98.68,0,63.08-41.9,104.08-107.24,104.08h-34.69Zm20.27-157.7c30.19,0,47.77-15.32,47.77-41.46,0-24.78-17.13-41.45-42.81-41.45h-25.23V488.5Z"/>
         <path d="M2660.45,437.58h72.09L2618.54,739H2545.1l37.4-96.88L2510,437.58h72.55l36,109.49Z"/>
       </g>

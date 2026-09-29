@@ -1,24 +1,28 @@
 import Navigation from './components/Navigation'
 import Hero from './components/Hero'
-import WhatIsOptimusPy from './components/WhatIsOptimusPy'
-import WebUIShowcase from './components/WebUIShowcase'
-import AlgorithmShowcase from './components/AlgorithmShowcase'
-import ModesCarousel from './components/ModesCarousel'
+import WhyOrder from './components/WhyOrder'
 import HowItWorks from './components/HowItWorks'
+import Modes from './components/Modes'
+import OptimizeDb from './components/OptimizeDb'
+import V12 from './components/V12'
+import WebUI from './components/WebUI'
+import FeatureExplorer from './components/FeatureExplorer'
 import GetStarted from './components/GetStarted'
 import Footer from './components/Footer'
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-bg-primary text-text-primary overflow-x-hidden">
+    <div className="min-h-screen bg-canvas text-ink overflow-x-hidden">
       <Navigation />
       <main>
         <Hero />
-        <WhatIsOptimusPy />
-        <WebUIShowcase />
-        <AlgorithmShowcase />
-        <ModesCarousel />
+        <V12 />
+        <WebUI />
+        <OptimizeDb />
+        <WhyOrder />
         <HowItWorks />
+        <Modes />
+        <FeatureExplorer />
         <GetStarted />
       </main>
       <Footer />

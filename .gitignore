@@ -1,28 +1,60 @@
-.idea/
-dist/
-.venv/
-build/
+# Local working files — never committed, never shared.
+#
+# Anything worth keeping but not worth releasing goes here: scratch scripts,
+# run artifacts, debugging notebooks, superseded plans, client configs. One
+# entry, true in advance. This directory exists so that no future scratch file
+# needs its own line in this file — the pattern that preceded it accumulated a
+# dozen individually-named paths, each added only after the file had already
+# appeared, and a commit once swept in sixteen files in the gap before the next
+# line was written.
+.local/
+
+# Python
 __pycache__/
 *.pyc
-results/
-*.log
-config/config.ini
 *.egg-info/
+.venv/
+build/
+dist/
+
+# Tooling caches
+.pytest_cache/
+.ruff_cache/
+.idea/
 .claude/
 .serena/
-configs/
-test.py
+.impeccable/
+.superpowers/
 CLAUDE.md
 
-# v11/v12 parity validation snapshots (run artifacts; logs already covered by *.log)
-parity.json
-v11_before.json
-v11_after.json
+# Editor and OS droppings. .DS_Store is caught by most developers' global
+# ignore file; it is repeated here so the repo does not depend on that.
+.DS_Store
+*.swp
+*.swo
 
-# mkdocs build output
+# Credentials. The only file here that is dangerous rather than merely untidy.
+config/config.ini
+# The installation's settings. The repo ships config/settings.ini.example instead.
+config/settings.ini
+
+# Runtime output directories the product itself creates, relative to the working
+# directory: results/ (core.py RESULT_PATH), cube-configs/ and exports/ (the ui.py
+# defaults for saved cube configs and Sync Order exports; Settings can move both)
+# and logs/ (core.py log path). They are working state, not scratch, so they stay
+# where the code expects them rather than moving under .local/.
+results/
+cube-configs/
+exports/
+logs/
+*.log
+
+# mkdocs build output. Note this is NOT ./site — site/homepage is the tracked
+# React landing page, and mkdocs is configured with site_dir: mkdocs_site to
+# keep the two apart.
 mkdocs_site/
 
-# Internal planning (not deployed to public docs)
+# Internal planning, not part of the published documentation set.
 docs/superpowers/
 docs/plans/
 docs/*.docx

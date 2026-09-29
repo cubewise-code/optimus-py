@@ -10,7 +10,7 @@ src_dir = Path("src").resolve()
 optimuspy_imports = collect_submodules('optimuspy')
 
 a = Analysis(
-    ['__main__.py'],
+    [str(src_dir / 'optimuspy' / '__main__.py')],
     pathex=[str(src_dir)],
     binaries=[],
     datas=[

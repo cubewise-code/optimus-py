@@ -1,0 +1,165 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "How Greedy and Fast mode choose the order",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "hidden"
+    }
+  },
+  "lanes": [
+    {
+      "id": "greedy",
+      "label": "Greedy (default): fill slots from the outside in"
+    },
+    {
+      "id": "fast",
+      "label": "Fast mode: start sorted, fix the close calls"
+    }
+  ],
+  "mainPath": [
+    "pins",
+    "slot",
+    "candidates",
+    "keep",
+    "result"
+  ],
+  "nodes": [
+    {
+      "id": "pins",
+      "lane": "greedy",
+      "col": 0,
+      "type": "frontend",
+      "label": "Current order",
+      "sublabel": "rules applied",
+      "tag": "locked slot kept"
+    },
+    {
+      "id": "slot",
+      "lane": "greedy",
+      "col": 1,
+      "type": "backend",
+      "label": "Next slot",
+      "sublabel": "last, first, 2nd last"
+    },
+    {
+      "id": "candidates",
+      "lane": "greedy",
+      "col": 2,
+      "type": "database",
+      "label": "Try likely dims",
+      "sublabel": "similar size only",
+      "width": 108
+    },
+    {
+      "id": "keep",
+      "lane": "greedy",
+      "col": 3,
+      "type": "security",
+      "label": "Keep the best",
+      "sublabel": "repeat to the middle",
+      "width": 116
+    },
+    {
+      "id": "seed",
+      "lane": "fast",
+      "col": 1,
+      "type": "backend",
+      "label": "Sort by size",
+      "sublabel": "fewest leaves first"
+    },
+    {
+      "id": "close",
+      "lane": "fast",
+      "col": 2,
+      "type": "database",
+      "label": "Close calls",
+      "sublabel": "dims of similar size"
+    },
+    {
+      "id": "move",
+      "lane": "fast",
+      "col": 3,
+      "type": "security",
+      "label": "Move if better",
+      "sublabel": "up to 2 rounds",
+      "width": 108
+    },
+    {
+      "id": "result",
+      "lane": "fast",
+      "col": 4,
+      "type": "external",
+      "label": "Best order",
+      "sublabel": "then picked as usual"
+    }
+  ],
+  "edges": [
+    {
+      "from": "pins",
+      "to": "slot",
+      "variant": "emphasis"
+    },
+    {
+      "from": "slot",
+      "to": "candidates"
+    },
+    {
+      "from": "candidates",
+      "to": "keep"
+    },
+    {
+      "from": "keep",
+      "to": "result",
+      "variant": "emphasis"
+    },
+    {
+      "from": "pins",
+      "to": "seed",
+      "label": "fast: true",
+      "role": "branch",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "from": "seed",
+      "to": "close"
+    },
+    {
+      "from": "close",
+      "to": "move"
+    },
+    {
+      "from": "move",
+      "to": "result",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Which measure decides a slot",
+      "items": [
+        "Back half of the order: memory",
+        "Front half: query time if you gave views, else TI time, else memory"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "What never moves",
+      "items": [
+        "A last dimension with string elements (the locked slot)",
+        "Dimensions you excluded or pinned with position rules; ignored orders are skipped"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Greedy or Fast?",
+      "items": [
+        "Greedy tests more orders and is the default",
+        "Fast tests fewer and finishes sooner; good for a first look at a large cube"
+      ]
+    }
+  ]
+}

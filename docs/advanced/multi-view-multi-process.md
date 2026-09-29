@@ -16,7 +16,7 @@ A single view samples one query pattern. The optimal dimension order for "drill 
 }
 ```
 
-Each view runs `executions` times per iteration. The composite query time is the **median of per-view medians** — robust against an outlier view that happens to be slow on a particular order.
+Each view runs `executions` times per iteration. The composite query time is the **median of per-view medians**, which keeps one outlier view that happens to be slow on a particular order from dragging the whole score.
 
 !!! tip "View naming"
     By convention, prefix benchmark views with `Optimus_` so they're easy to identify in the cube's view list and exclude from end-user navigation.
@@ -34,7 +34,7 @@ Some cubes are written to by long-running ETLs. The dimension order can change E
 }
 ```
 
-Each process runs `executions` times per iteration via `tm1.processes.execute_process_with_return`. Failed runs (any process error) abort the iteration with a clear log message.
+Each process runs `executions` times per iteration through TM1py's `execute_with_return`, after clearing the cube cache. A process that doesn't complete successfully ends the run: OptimusPy logs the TM1 status, restores the original order on a best-effort basis and keeps the checkpoint, so once the process is fixed the same command resumes from where it stopped.
 
 ## process_parameters
 
@@ -53,7 +53,7 @@ Most TI processes take parameters (year, month, scenario, etc.). Specify them pe
 }
 ```
 
-Parameter names and values are passed verbatim to TM1. Mismatched parameters fail fast with the TM1 error message.
+Parameter names and values are passed verbatim to TM1, so a parameter the process doesn't declare fails on the first execution with TM1's error. One thing to bear in mind is that the outer key has to match the process name exactly: a key that matches no process in `processes` isn't an error, it's simply ignored, and the process runs with its default parameters.
 
 ## Combined view + process benchmarking
 
@@ -71,13 +71,13 @@ Parameter names and values are passed verbatim to TM1. Mismatched parameters fai
 }
 ```
 
-Per-iteration cost: `executions × (n_views + n_processes)`. With the example above: `5 × (2 + 1) = 15` operations per iteration. With ~30 greedy iterations on an 8-dim cube, that's 450 operations total — plan for the run time accordingly.
+Per-iteration cost: `executions × (n_views + n_processes)`. With the example above: `5 × (2 + 1) = 15` operations per iteration, on top of the reorder itself. The number of greedy iterations depends on the cube's cardinality profile (the more dimensions of similar size, the more orderings get tested), so a good habit is to look at how long the first few iterations take and extrapolate from there.
 
 ## Choosing executions
 
 | executions | Use case |
 |---|---|
-| `1` | Smoke test — confirm the config works |
-| `3` | Quick triage — rough relative ranking |
-| `5` | Default — good balance for most cubes |
-| `10+` | Production decision — high confidence on close races |
+| `1` | Smoke test, to confirm the config works |
+| `3` | Quick triage, a rough relative ranking |
+| `5` | Default, a good balance for most cubes |
+| `10+` | Production decision, high confidence on close races |

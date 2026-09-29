@@ -7,6 +7,7 @@ competes in the greedy pick and appears in the report but is measured only once.
 """
 from optimuspy.execution_mode import ExecutionMode
 from optimuspy.executors import PredefinedOrderExecutor
+from optimuspy.order_frame import OrderFrame
 from optimuspy.results import ExecutionContext, PermutationResult
 from tests.test_fold_a import make_main_executor
 
@@ -32,13 +33,13 @@ def test_register_recovered_stores_and_disarms_reanchor():
     assert ex._reanchor_needed is False
 
 
-def test_sweep_injects_recovered_without_reapplying(scripted):
+def test_sweep_injects_recovered_without_reapplying(measure_orders):
     dims = ["A", "B", "C", "M"]
     card = {"A": 10, "B": 20, "C": 30, "M": 1}
     ex = make_main_executor(dims, card)
     log = []
     ram_of = lambda o: 100.0 - list(o).index("C")  # arbitrary, deterministic
-    scripted(ex, ram_of, log)
+    measure_orders(ex, ram_of, log)
     ex.context.set_initial_ram(ram_of(tuple(dims)))
 
     # candidate sweep at position 0 over dims B and C:
@@ -58,15 +59,16 @@ def test_sweep_injects_recovered_without_reapplying(scripted):
     assert ["B", "A", "C", "M"] in log
 
 
-def test_predefined_injects_recovered_without_reapplying(scripted):
+def test_predefined_injects_recovered_without_reapplying(measure_orders):
     orders = [["A", "B"], ["B", "A"]]
     ex = PredefinedOrderExecutor(
         tm1=None, cube_name="C", view_names=[], process_names=[],
-        dimensions=["A", "B"], executions=1, measure_dimension_only_numeric=True,
-        predefined_orders=orders, context=ExecutionContext())
+        dimensions=["A", "B"], executions=1, last_slot_locked=False,
+        predefined_orders=orders, context=ExecutionContext(),
+        order_frame=OrderFrame(["A", "B"], False))
     log = []
     ram_of = lambda o: 100.0
-    scripted(ex, ram_of, log)
+    measure_orders(ex, ram_of, log)
     ex.context.set_initial_ram(100.0)
 
     rec = _result(["B", "A"], ex.context, 0.0)

@@ -32,7 +32,6 @@ dependencies = [
     "mdxpy>=0.2",
     "xlsxwriter",
     "pandas",
-    "Jinja2",
 ]
 
 [project.optional-dependencies]
@@ -44,7 +43,13 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
-addopts = "--import-mode=importlib"
+# The default run is offline: no TM1 connection, no network, nothing to
+# configure. Live tests are opt-in — `pytest -m live --instance tm1srv01` — so
+# CI and a fresh clone both get a suite that passes with no server.
+addopts = "--import-mode=importlib -m 'not live'"
+markers = [
+    "live: needs a real TM1Service against tm1srv01 (v11) or tm1srv02 (v12); deselected by default",
+]
 
 [project.urls]
 Repository = "https://github.com/cubewise-code/optimus-py"

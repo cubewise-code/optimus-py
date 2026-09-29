@@ -52,6 +52,19 @@ def front_frontier(unplaced: List[Tuple[str, int]], tau: float) -> List[str]:
     return [name for name, card in unplaced if not decides_after(card, minimum, tau)]
 
 
+def midpoint(dimension_count: int) -> int:
+    """The front/back split of a cube's order, shared by both folds.
+
+    Always derived from the FULL storage order, never from a subset such as the
+    movable dimensions. The split is a property of the cube's shape, not of how
+    much of that shape a given run happens to be searching — ADR-0002 keys
+    pruning strength to the metric that owns a position, and a position's metric
+    must not change because the user excluded a dimension somewhere else in the
+    order, or because the last slot is locked.
+    """
+    return dimension_count // 2
+
+
 def ranking_for_position(target_position: int, mid: int,
                          has_views: bool, has_processes: bool) -> str:
     """Which metric ranks a position: 'ram' | 'query' | 'process'.

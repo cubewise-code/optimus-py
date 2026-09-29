@@ -8,6 +8,21 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Landing page (light). Values live in src/index.css so opacity modifiers work.
+        'canvas':     'rgb(var(--canvas) / <alpha-value>)',
+        'surface':    'rgb(var(--surface) / <alpha-value>)',
+        'sunken':     'rgb(var(--sunken) / <alpha-value>)',
+        'ink':        'rgb(var(--ink) / <alpha-value>)',
+        'ink-2':      'rgb(var(--ink-2) / <alpha-value>)',
+        'ink-3':      'rgb(var(--ink-3) / <alpha-value>)',
+        'brand':      'rgb(var(--brand) / <alpha-value>)',
+        'brand-soft': 'rgb(var(--brand-soft) / <alpha-value>)',
+        'navy':       'rgb(var(--navy) / <alpha-value>)',
+        'amber':      'rgb(var(--amber) / <alpha-value>)',
+        'amber-soft': 'rgb(var(--amber-soft) / <alpha-value>)',
+        'good':       'rgb(var(--good) / <alpha-value>)',
+        'bad':        'rgb(var(--bad) / <alpha-value>)',
+        // Dark app palette, used by the UI mock that exports docs screenshots.
         'bg-primary':   '#0a0a1a',
         'bg-secondary': '#12122a',
         'bg-tertiary':  '#1a1a3a',
@@ -22,6 +37,7 @@ export default {
       },
       fontFamily: {
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+        mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       animation: {
         'fade-in':       'fadeIn 0.6s ease-out forwards',

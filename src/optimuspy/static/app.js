@@ -1,8 +1,7 @@
 /* ============================================================
    OptimusPy Dashboard — app.js
    Single IIFE module: API, Router, Toast, Modal, Theme, Table,
-   TransferList, DimensionConfigurator, StreamManager, Sidebar,
-   BatchManager, and 6 page modules.
+   DimensionConfigurator, StreamManager, Sidebar and the page modules.
    ============================================================ */
 
 const OptimusPy = (function () {
@@ -15,10 +14,10 @@ const OptimusPy = (function () {
     // Connection
     instances: [],
     activeInstance: null,
-    password: null,
     connected: false,
     serverName: null,
-    configReadOnly: false,
+    // The config.ini in use: { config_path, source, own_copy_exists, error }
+    config: {},
 
     // Scan
     scanData: null,
@@ -110,6 +109,49 @@ const OptimusPy = (function () {
     const s = Math.floor(seconds % 60);
     return m > 0 ? `${m}m ${s}s` : `${s}s`;
   }
+
+  // ---- Jobs: where each kind lives in the UI, and how its state reads ----
+  // Single-cube jobs belong to their cube's Optimize tab; the instance-wide pass
+  // and the order sync have pages of their own. A job's label is its cube, its
+  // plan id (Optimize DB) or its cube count (a sync).
+  const JOB_KINDS = {
+    "optimize-db": { page: "#/optimize-db", title: "Optimize DB" },
+    transfer: { page: "#/transfer", title: "Sync Order" },
+  };
+  function jobLink(job) {
+    const kind = JOB_KINDS[job.mode];
+    return kind ? kind.page : `#/cube/${encodeURIComponent(job.label)}?tab=optimize`;
+  }
+  function jobTitle(job) {
+    const kind = JOB_KINDS[job.mode];
+    return kind ? kind.title : "Optimizing";
+  }
+  const JOB_STATUS_BADGES = { running: "badge-info", completed: "badge-success", cancelled: "badge-warning", failed: "badge-error" };
+  function jobStatusBadge(status) {
+    return el("span", { className: `badge ${JOB_STATUS_BADGES[status] || "badge-neutral"}` }, status);
+  }
+
+  // How long a job has been running, counted from when the server started it,
+  // so leaving the page and coming back does not reset it. start() replaces
+  // whatever the timer was showing; stop() is safe to call at any time.
+  function createElapsedTimer() {
+    let interval = null;
+    return {
+      start(target, startedAtSeconds) {
+        this.stop();
+        const tick = () => {
+          const s = Math.max(0, Math.floor(Date.now() / 1000 - startedAtSeconds));
+          target.textContent = [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60]
+            .map(n => String(n).padStart(2, "0")).join(":");
+        };
+        tick();
+        interval = setInterval(tick, 1000);
+      },
+      stop() {
+        if (interval !== null) { clearInterval(interval); interval = null; }
+      },
+    };
+  }
   // ---- Scan cache (localStorage, keyed by instance) ----
   const ScanCache = {
     _key(instance) { return `op-scan-${instance}`; },
@@ -163,6 +205,18 @@ const OptimusPy = (function () {
     },
   };
 
+  // Scan results and cube intelligence, in localStorage and in memory.
+  function clearCaches() {
+    try {
+      Object.keys(localStorage).forEach(k => {
+        if (k.startsWith("op-scan-") || k.startsWith("op-intel-")) localStorage.removeItem(k);
+      });
+    } catch { /* storage unavailable */ }
+    state.scanData = null;
+    state.scanTimestamp = null;
+    state.cubeMetadata = {};
+  }
+
   function escapeHtml(str) {
     const d = document.createElement("div");
     d.textContent = str;
@@ -181,12 +235,12 @@ const OptimusPy = (function () {
       }
       const res = await fetch(url, opts);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      if (!res.ok) throw Object.assign(new Error(data.error || `HTTP ${res.status}`), { status: res.status, data });
       return data;
     },
     getInstances() { return this._fetch("GET", "/api/instances"); },
     getInstance(name) { return this._fetch("GET", `/api/instance/${encodeURIComponent(name)}`); },
-    updateInstance(name, params) { return this._fetch("POST", `/api/instance/${encodeURIComponent(name)}`, { params }); },
+    setConfigSource(body) { return this._fetch("POST", "/api/config-source", body); },
     connect(instance, password) { return this._fetch("POST", "/api/connect", { instance, password }); },
     scan(instance, password, ramPercent, includeOptimized) {
       return this._fetch("POST", "/api/scan", { instance, password, ram_percent: ramPercent, include_optimized: includeOptimized });
@@ -202,18 +256,15 @@ const OptimusPy = (function () {
     saveConfig(config, filename) { return this._fetch("POST", "/api/config", { config, filename }); },
     deleteConfig(filename) { return this._fetch("DELETE", `/api/config/${encodeURIComponent(filename)}`); },
     getSavedCubes() { return this._fetch("GET", "/api/saved-cubes"); },
+    getFolders() { return this._fetch("GET", "/api/folders"); },
+    setFolder(body) { return this._fetch("POST", "/api/folders", body); },
     validate(config, mode) { return this._fetch("POST", "/api/validate", { config, mode }); },
     startJob(mode, cubeConfig, password) {
       return this._fetch("POST", "/api/job/start", { mode, cube_config: cubeConfig, password });
     },
-    getJob(id) { return this._fetch("GET", `/api/job/${id}`); },
     cancelJob(id) { return this._fetch("POST", `/api/job/${id}/cancel`); },
     getJobs() { return this._fetch("GET", "/api/jobs"); },
-    getResults() { return this._fetch("GET", "/api/results"); },
-    getStatus() { return this._fetch("GET", "/api/status"); },
-    createInstance(name, params) { return this._fetch("POST", "/api/instances", { name, params }); },
-    deleteInstance(name) { return this._fetch("DELETE", `/api/instance/${encodeURIComponent(name)}`); },
-    deleteInstanceField(name, key) { return this._fetch("DELETE", `/api/instance/${encodeURIComponent(name)}/field/${encodeURIComponent(key)}`); },
+    getReports() { return this._fetch("GET", "/api/reports"); },
     transferScan(instance, password, ramPercent) {
       return this._fetch("POST", "/api/transfer/scan", { instance, password, ram_percent: ramPercent });
     },
@@ -225,6 +276,74 @@ const OptimusPy = (function () {
     },
     transferExport(instance, orders) {
       return this._fetch("POST", "/api/transfer/export", { instance, orders });
+    },
+    optimizeDbPlan(instance, password, options) {
+      return this._fetch("POST", "/api/optimize-db/plan", Object.assign({ instance, password }, options));
+    },
+    optimizeDbRun(instance, password, planId) {
+      return this._fetch("POST", "/api/optimize-db/run", { instance, password, plan_id: planId });
+    },
+    optimizeDbRuns() { return this._fetch("POST", "/api/optimize-db/runs", {}); },
+    optimizeDbRunState(planId) { return this._fetch("GET", `/api/optimize-db/run/${encodeURIComponent(planId)}`); },
+    optimizeDbReport(planId) { return this._fetch("POST", "/api/optimize-db/report", { plan_id: planId }); },
+    optimizeDbRestoreChores(instance, password, planId) {
+      return this._fetch("POST", "/api/optimize-db/restore-chores", { instance, password, plan_id: planId });
+    },
+  };
+
+  // ==================================================================
+  // Credentials — the password typed for each instance this session
+  // ==================================================================
+  // The server never sends a stored password to the page, so a password is only
+  // ever what the user typed. A remembered null means "use config.ini". An entry
+  // is kept only once a connection with it has succeeded.
+  const Credentials = {
+    _typed: new Map(),
+
+    get(instance) {
+      return this._typed.has(instance) ? this._typed.get(instance) : null;
+    },
+
+    clear() {
+      this._typed.clear();
+    },
+
+    ensure(instance) {
+      if (this._typed.has(instance)) return Promise.resolve(true);
+      return new Promise(resolve => {
+        const body = el("div");
+        body.appendChild(el("p", { className: "text-sm text-secondary mb-4" },
+          `Connect to "${instance}". Enter the password if it is not stored in config.ini.`));
+        const group = el("div", { className: "form-group" });
+        group.appendChild(el("label", { className: "form-label" }, "Password (optional)"));
+        const input = el("input", { type: "password", className: "form-input", placeholder: "Leave blank to use config.ini" });
+        group.appendChild(input);
+        body.appendChild(group);
+
+        const connectBtn = el("button", { className: "btn btn-primary" }, "Connect");
+        const cancelBtn = el("button", { className: "btn btn-secondary", onClick: () => Modal.close() }, "Cancel");
+        const submit = async () => {
+          connectBtn.disabled = true;
+          connectBtn.textContent = "Connecting...";
+          const password = input.value || null;
+          try {
+            await Api.connect(instance, password);
+            this._typed.set(instance, password);
+            resolve(true);
+            Modal.close();
+          } catch (err) {
+            Toast.error(err.message);
+            connectBtn.disabled = false;
+            connectBtn.textContent = "Connect";
+          }
+        };
+        connectBtn.addEventListener("click", submit);
+        input.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); submit(); } });
+
+        Modal.open({ title: "Connect to Instance", body, size: "sm", footer: [cancelBtn, connectBtn],
+          onClose: () => resolve(false) });
+        setTimeout(() => input.focus(), 100);
+      });
     },
   };
 
@@ -312,7 +431,9 @@ const OptimusPy = (function () {
       });
     },
 
-    open({ title, body, footer, size = "md" }) {
+    open({ title, body, footer, size = "md", onClose = null }) {
+      this._settle();
+      this._onClose = onClose;
       this._previousFocus = document.activeElement;
       const titleId = "modal-title-id";
       const m = el("div", { className: `modal ${size}` },
@@ -357,6 +478,14 @@ const OptimusPy = (function () {
         this._previousFocus.focus();
         this._previousFocus = null;
       }
+      this._settle();
+    },
+
+    // Tell whoever opened the current modal that it has gone — exactly once.
+    _settle() {
+      const onClose = this._onClose;
+      this._onClose = null;
+      if (onClose) onClose();
     },
   };
 
@@ -455,9 +584,13 @@ const OptimusPy = (function () {
     function doSort() {
       if (!_sortCol) return;
       const col = columns.find(c => c.key === _sortCol);
+      // Sort by the underlying value: a column's value() is formatted for display
+      // ("10,000", "1.2 GB", a locale date) and does not order correctly as text.
+      const sortKey = row => col.sortValue ? col.sortValue(row)
+        : (col.key in row ? row[col.key] : (col.value ? col.value(row) : undefined));
       _filtered.sort((a, b) => {
-        let va = col.sortValue ? col.sortValue(a) : (col.value ? col.value(a) : a[col.key]);
-        let vb = col.sortValue ? col.sortValue(b) : (col.value ? col.value(b) : b[col.key]);
+        let va = sortKey(a);
+        let vb = sortKey(b);
         if (va == null) va = "";
         if (vb == null) vb = "";
         let cmp = typeof va === "number" ? va - vb : String(va).localeCompare(String(vb));
@@ -517,148 +650,43 @@ const OptimusPy = (function () {
   }
 
   // ==================================================================
-  // TransferList factory
+  // Terminal — the log view of a job stream
   // ==================================================================
-  function createTransferList({ available, selected, labelKey = "name", searchable = true, onChange }) {
-    let _avail = available.filter(a => !selected.includes(a));
-    let _sel = [...selected];
-    let _availFilter = "";
-    let _selFilter = "";
-    let _availSelected = new Set();
-    let _selSelected = new Set();
+  // Lines are coloured by the record's level, appended in one batch per animation
+  // frame, capped at TERMINAL_MAX_LINES (oldest dropped first), and scrolled to
+  // the bottom only while the reader is already there.
+  const TERMINAL_MAX_LINES = 2000;
+  const LOG_LEVEL_CLASSES = { ERROR: "log-error", CRITICAL: "log-error", WARNING: "log-warning" };
 
-    const container = el("div", { className: "transfer-list" });
+  function createTerminal() {
+    const view = el("div", { className: "terminal" });
+    let pending = [];
+    let scheduled = false;
 
-    function filteredAvail() {
-      return _availFilter ? _avail.filter(i => i.toLowerCase().includes(_availFilter)) : _avail;
-    }
-    function filteredSel() {
-      return _selFilter ? _sel.filter(i => i.toLowerCase().includes(_selFilter)) : _sel;
-    }
-
-    function render() {
-      container.innerHTML = "";
-
-      // Left pane
-      const leftPane = el("div", { className: "transfer-pane" });
-      leftPane.appendChild(el("div", { className: "transfer-pane-header" },
-        el("span", null, "Available"),
-        el("span", { className: "transfer-pane-count" }, `${_avail.length}`),
-      ));
-      if (searchable) {
-        const sw = el("div", { className: "transfer-search" });
-        const si = el("input", { type: "text", placeholder: "Filter..." });
-        si.value = _availFilter;
-        si.addEventListener("input", () => { _availFilter = si.value.toLowerCase(); render(); });
-        sw.appendChild(si);
-        leftPane.appendChild(sw);
-      }
-      const leftItems = el("div", { className: "transfer-items" });
-      const fa = filteredAvail();
-      if (fa.length === 0) {
-        leftItems.appendChild(el("div", { className: "transfer-item-empty" }, _avail.length === 0 ? "None available" : "No matches"));
-      } else {
-        fa.forEach(item => {
-          const d = el("div", {
-            className: `transfer-item${_availSelected.has(item) ? " selected" : ""}`,
-            onClick: () => { toggleSet(_availSelected, item); render(); }
-          }, item);
-          leftItems.appendChild(d);
-        });
-      }
-      leftPane.appendChild(leftItems);
-
-      // Center arrows
-      const actions = el("div", { className: "transfer-actions" });
-      const addBtn = el("button", { className: "transfer-btn", title: "Add selected", "aria-label": "Add selected", html: Icons.chevronRight, onClick: moveRight });
-      const removeBtn = el("button", { className: "transfer-btn", title: "Remove selected", "aria-label": "Remove selected", html: Icons.chevronLeft, onClick: moveLeft });
-      actions.appendChild(addBtn);
-      actions.appendChild(removeBtn);
-
-      // Right pane
-      const rightPane = el("div", { className: "transfer-pane" });
-      rightPane.appendChild(el("div", { className: "transfer-pane-header" },
-        el("span", null, "Selected"),
-        el("span", { className: "transfer-pane-count" }, `${_sel.length}`),
-      ));
-      if (searchable) {
-        const sw = el("div", { className: "transfer-search" });
-        const si = el("input", { type: "text", placeholder: "Filter..." });
-        si.value = _selFilter;
-        si.addEventListener("input", () => { _selFilter = si.value.toLowerCase(); render(); });
-        sw.appendChild(si);
-        rightPane.appendChild(sw);
-      }
-      const rightItems = el("div", { className: "transfer-items" });
-      const fs = filteredSel();
-      if (fs.length === 0) {
-        rightItems.appendChild(el("div", { className: "transfer-item-empty" }, _sel.length === 0 ? "None selected" : "No matches"));
-      } else {
-        fs.forEach(item => {
-          const d = el("div", {
-            className: `transfer-item${_selSelected.has(item) ? " selected" : ""}`,
-            onClick: () => { toggleSet(_selSelected, item); render(); }
-          }, item);
-          rightItems.appendChild(d);
-        });
-      }
-      rightPane.appendChild(rightItems);
-
-      container.appendChild(leftPane);
-      container.appendChild(actions);
-      container.appendChild(rightPane);
+    function line(log) {
+      const text = log && log.message != null ? String(log.message) : String(log);
+      const cls = LOG_LEVEL_CLASSES[log && log.level];
+      return el("div", { className: "terminal-line" }, cls ? el("span", { className: cls }, text) : text);
     }
 
-    function toggleSet(set, item) {
-      if (set.has(item)) set.delete(item); else set.add(item);
+    function flush() {
+      scheduled = false;
+      const pinned = view.scrollHeight - view.scrollTop - view.clientHeight < 24;
+      const batch = document.createDocumentFragment();
+      pending.forEach(log => batch.appendChild(line(log)));
+      pending = [];
+      view.appendChild(batch);
+      while (view.childElementCount > TERMINAL_MAX_LINES) view.firstElementChild.remove();
+      if (pinned) view.scrollTop = view.scrollHeight;
     }
-
-    function moveRight() {
-      if (_availSelected.size === 0) return;
-      _availSelected.forEach(item => {
-        _avail = _avail.filter(a => a !== item);
-        _sel.push(item);
-      });
-      _availSelected.clear();
-      if (onChange) onChange(_sel);
-      render();
-    }
-
-    function moveLeft() {
-      if (_selSelected.size === 0) return;
-      _selSelected.forEach(item => {
-        _sel = _sel.filter(s => s !== item);
-        _avail.push(item);
-        _avail.sort();
-      });
-      _selSelected.clear();
-      if (onChange) onChange(_sel);
-      render();
-    }
-
-    render();
 
     return {
-      el: container,
-      getSelected() { return [..._sel]; },
-      setItems(avail, sel) {
-        _sel = [...sel];
-        _avail = avail.filter(a => !_sel.includes(a));
-        _availSelected.clear();
-        _selSelected.clear();
-        render();
+      el: view,
+      append(log) {
+        pending.push(log);
+        if (pending.length > TERMINAL_MAX_LINES) pending.splice(0, pending.length - TERMINAL_MAX_LINES);
+        if (!scheduled) { scheduled = true; requestAnimationFrame(flush); }
       },
-      reset() {
-        _avail = [...available];
-        _sel = [];
-        _availFilter = "";
-        _selFilter = "";
-        _availSelected.clear();
-        _selSelected.clear();
-        render();
-        if (onChange) onChange();
-      },
-      destroy() { container.remove(); },
     };
   }
 
@@ -900,6 +928,13 @@ const OptimusPy = (function () {
       });
     }
 
+    // A rule's slot as the page shows it: numbered from 1, like the Overview table.
+    function _positionLabel(position) {
+      if (position === "first") return "First";
+      if (position === "last") return "Last";
+      return `Position ${position + 1}`;
+    }
+
     // ── Modal: add a dimension position rule ──
     function _showPositionRuleModal() {
       const includedDims = _dims.filter(d => d.included).map(d => d.name);
@@ -912,11 +947,13 @@ const OptimusPy = (function () {
       });
       body.appendChild(dimSelect);
 
-      body.appendChild(el("label", { className: "form-label mb-1" }, "Never in Position"));
+      // Slots are numbered from 1 here, like the Overview table; the config
+      // counts from 0, so the option's value is one less than its label.
+      body.appendChild(el("label", { className: "form-label mb-1" }, "Lock to Position"));
       const posSelect = el("select", { className: "form-input mb-3" });
       posSelect.appendChild(el("option", { value: "first" }, "First"));
-      for (let i = 2; i < includedDims.length; i++) {
-        posSelect.appendChild(el("option", { value: String(i) }, `Position ${i}`));
+      for (let i = 1; i < _dims.length - 1; i++) {
+        posSelect.appendChild(el("option", { value: String(i) }, `Position ${i + 1}`));
       }
       posSelect.appendChild(el("option", { value: "last" }, "Last"));
       body.appendChild(posSelect);
@@ -928,13 +965,20 @@ const OptimusPy = (function () {
           el("button", { className: "btn btn-ghost", onClick: () => Modal.close() }, "Cancel"),
           el("button", { className: "btn btn-primary", onClick: () => {
             const dim = dimSelect.value;
-            const pos = posSelect.value;
-            const exists = _positionRules.some(r => r.dimension === dim && r.position === pos);
-            if (!exists) {
-              _positionRules.push({ dimension: dim, position: pos });
-              fire();
-              render();
+            // "first" and "last" are names; any other slot must be a JSON number.
+            const pos = ["first", "last"].includes(posSelect.value) ? posSelect.value : Number(posSelect.value);
+            // One rule per dimension and one per slot: the run refuses anything else.
+            if (_positionRules.some(r => r.dimension === dim)) {
+              Toast.error(`${dim} already has a position rule`);
+              return;
             }
+            if (_positionRules.some(r => r.position === pos)) {
+              Toast.error(`${_positionLabel(pos)} is already taken by another rule`);
+              return;
+            }
+            _positionRules.push({ dimension: dim, position: pos });
+            fire();
+            render();
             Modal.close();
           }}, "Add Rule"),
         ],
@@ -951,14 +995,12 @@ const OptimusPy = (function () {
 
       // Dimension position rules section
       container.appendChild(el("div", { className: "section-divider mt-4" }, "Dimension Position Rules (optional)"));
-      container.appendChild(el("div", { className: "form-hint mb-2" }, "Prevent specific dimensions from being placed in certain positions"));
+      container.appendChild(el("div", { className: "form-hint mb-2" }, "Lock specific dimensions to a position; the search moves only the others"));
 
       const rulesList = el("div");
       _positionRules.forEach((rule, ri) => {
         const row = el("div", { className: "selection-row" });
-        const label = rule.position === "first" ? "Never First"
-                    : rule.position === "last" ? "Never Last"
-                    : `Never Position ${rule.position}`;
+        const label = `Locked ${_positionLabel(rule.position)}`;
         const nameSpan = el("span", { className: "selection-row-name" });
         nameSpan.appendChild(el("span", { className: "badge" }, rule.dimension));
         nameSpan.appendChild(document.createTextNode(` \u2014 ${label}`));
@@ -1187,63 +1229,51 @@ const OptimusPy = (function () {
   // StreamManager — holds EventSource connections across navigations
   // ==================================================================
   const StreamManager = {
-    _streams: {},   // jobId → { es: EventSource, logs: [], status, subscribers: [cb] }
+    _streams: {},   // jobId → { es, logs, lastId, status, subscribers }
+
+    _entry(jobId) {
+      if (!this._streams[jobId]) {
+        this._streams[jobId] = { es: null, logs: [], lastId: 0, status: "unknown", subscribers: [] };
+      }
+      return this._streams[jobId];
+    },
 
     connect(jobId) {
-      if (this._streams[jobId]?.es) return;
-      const entry = this._streams[jobId] || { es: null, logs: [], status: "running", subscribers: [] };
-      this._streams[jobId] = entry;
-
-      const es = new EventSource(`/api/job/${jobId}/stream`);
+      const entry = this._entry(jobId);
+      if (entry.es) return;
+      if (entry.status === "unknown") entry.status = "running";
+      // Continue after the last event already received, so reopening a stream
+      // neither repeats nor loses lines. EventSource resumes the same way when it
+      // reconnects by itself.
+      const es = new EventSource(`/api/job/${jobId}/stream?after=${entry.lastId}`);
       entry.es = es;
-
-      es.addEventListener("log", e => {
-        const data = JSON.parse(e.data);
+      const notify = (event, data) => entry.subscribers.forEach(cb => cb(event, data));
+      const on = (event, handle) => es.addEventListener(event, e => {
+        entry.lastId = Number(e.lastEventId) || entry.lastId;
+        handle(JSON.parse(e.data));
+      });
+      on("log", data => {
         entry.logs.push(data);
-        entry.subscribers.forEach(cb => cb("log", data));
+        if (entry.logs.length > TERMINAL_MAX_LINES) entry.logs.shift();
+        notify("log", data);
       });
-      es.addEventListener("progress", e => {
-        const data = JSON.parse(e.data);
-        entry.subscribers.forEach(cb => cb("progress", data));
-      });
-      es.addEventListener("complete", e => {
-        const data = JSON.parse(e.data);
-        entry.status = "completed";
-        entry.subscribers.forEach(cb => cb("complete", data));
+      on("progress", data => notify("progress", data));
+      ["complete", "error_event", "cancelled"].forEach(event => on(event, data => {
+        entry.status = event === "complete" ? (data.status || "completed")
+          : event === "cancelled" ? "cancelled" : "failed";
         es.close();
         entry.es = null;
-      });
-      es.addEventListener("error_event", e => {
-        const data = JSON.parse(e.data);
-        entry.status = "failed";
-        entry.subscribers.forEach(cb => cb("error_event", data));
-        es.close();
-        entry.es = null;
-      });
-      es.addEventListener("cancelled", e => {
-        const data = JSON.parse(e.data);
-        entry.status = "cancelled";
-        entry.subscribers.forEach(cb => cb("cancelled", data));
-        es.close();
-        entry.es = null;
-      });
+        notify(event, data);
+      }));
       es.onerror = () => {
-        // SSE auto-reconnect or close
-        if (es.readyState === EventSource.CLOSED) {
-          entry.es = null;
-        }
+        if (es.readyState === EventSource.CLOSED) entry.es = null;
       };
     },
 
     subscribe(jobId, callback) {
-      if (!this._streams[jobId]) {
-        this._streams[jobId] = { es: null, logs: [], status: "unknown", subscribers: [] };
-      }
-      this._streams[jobId].subscribers.push(callback);
-      return () => {
-        const s = this._streams[jobId];
-        if (s) s.subscribers = s.subscribers.filter(cb => cb !== callback);
-      };
+      const entry = this._entry(jobId);
+      entry.subscribers.push(callback);
+      return () => { entry.subscribers = entry.subscribers.filter(cb => cb !== callback); };
     },
 
     getLogs(jobId) {
@@ -1252,43 +1282,6 @@ const OptimusPy = (function () {
 
     getStatus(jobId) {
       return this._streams[jobId]?.status || "unknown";
-    },
-  };
-
-  // ==================================================================
-  // BatchManager — sequential multi-cube optimization
-  // ==================================================================
-  const BatchManager = {
-    _queue: [],
-    _running: false,
-
-    enqueue(configs) {
-      // configs: [{ mode, cubeConfig, password }]
-      this._queue.push(...configs);
-      if (!this._running) this._processNext();
-    },
-
-    async _processNext() {
-      if (this._queue.length === 0) { this._running = false; return; }
-      this._running = true;
-      const item = this._queue.shift();
-      try {
-        const resp = await Api.startJob(item.mode, item.cubeConfig, item.password);
-        StreamManager.connect(resp.job_id);
-        // Wait for completion before processing next
-        const unsub = StreamManager.subscribe(resp.job_id, (event) => {
-          if (event === "complete" || event === "error_event" || event === "cancelled") {
-            unsub();
-            Sidebar.updateActivityMonitor();
-            this._processNext();
-          }
-        });
-        Toast.info(`Started optimization for ${item.cubeConfig.cube}`);
-        Sidebar.updateActivityMonitor();
-      } catch (err) {
-        Toast.error(`Failed to start job for ${item.cubeConfig.cube}: ${err.message}`);
-        this._processNext();
-      }
     },
   };
 
@@ -1367,7 +1360,7 @@ const OptimusPy = (function () {
       try {
         const data = await Api.getInstances();
         state.instances = data.instances || [];
-        state.configReadOnly = data.read_only || false;
+        state.config = data;
         this.renderInstanceSwitcher();
       } catch (err) {
         Toast.error("Failed to load instances: " + err.message);
@@ -1409,64 +1402,33 @@ const OptimusPy = (function () {
       });
     },
 
-    _promptConnect(instanceName) {
-      const body = el("div");
-      body.appendChild(el("p", { className: "text-sm text-secondary mb-4" },
-        `Connect to "${instanceName}". Enter password if it's not stored in config.ini.`));
-      const pwGroup = el("div", { className: "form-group" });
-      pwGroup.appendChild(el("label", { className: "form-label" }, "Password (optional)"));
-      const pwInput = el("input", { type: "password", className: "form-input", placeholder: "Leave blank to use config.ini" });
-      pwGroup.appendChild(pwInput);
-      body.appendChild(pwGroup);
-
-      const connectBtn = el("button", { className: "btn btn-primary" }, "Connect");
-      const cancelBtn = el("button", { className: "btn btn-secondary", onClick: () => Modal.close() }, "Cancel");
-
-      connectBtn.addEventListener("click", async () => {
-        connectBtn.disabled = true;
-        connectBtn.textContent = "Connecting...";
-        try {
-          const pw = pwInput.value || null;
-          const resp = await Api.connect(instanceName, pw);
-          state.activeInstance = instanceName;
-          state.password = pw;
-          state.connected = true;
-          state.serverName = resp.server_name;
-          // Reset cached data from previous instance, restore scan cache if available
-          state.cubeMetadata = {};
-          state.cubeViews = {};
-          state.processes = [];
-          const cached = ScanCache.load(instanceName);
-          if (cached) {
-            state.scanData = cached.data;
-            state.scanTimestamp = cached.ts;
-          } else {
-            state.scanData = null;
-            state.scanTimestamp = null;
-          }
-          Modal.close();
-          this.renderInstanceSwitcher();
-          Sidebar.loadSavedCubes();
-          Sidebar.updateActivityMonitor();
-          Toast.success(`Connected to ${resp.server_name}`);
-          // Navigate to the split-panel navigation page
-          Router.navigate("#/nav");
-        } catch (err) {
-          Toast.error(err.message);
-          connectBtn.disabled = false;
-          connectBtn.textContent = "Connect";
+    async _promptConnect(instanceName) {
+      if (!(await Credentials.ensure(instanceName))) return;
+      try {
+        const resp = await Api.connect(instanceName, Credentials.get(instanceName));
+        state.activeInstance = instanceName;
+        state.connected = true;
+        state.serverName = resp.server_name;
+        // Reset cached data from previous instance, restore scan cache if available
+        state.cubeMetadata = {};
+        state.cubeViews = {};
+        state.processes = [];
+        const cached = ScanCache.load(instanceName);
+        if (cached) {
+          state.scanData = cached.data;
+          state.scanTimestamp = cached.ts;
+        } else {
+          state.scanData = null;
+          state.scanTimestamp = null;
         }
-      });
-
-      Modal.open({
-        title: "Connect to Instance",
-        body,
-        size: "sm",
-        footer: [cancelBtn, connectBtn],
-      });
-
-      // Focus password input
-      setTimeout(() => pwInput.focus(), 100);
+        this.renderInstanceSwitcher();
+        Sidebar.loadSavedCubes();
+        Sidebar.updateActivityMonitor();
+        Toast.success(`Connected to ${resp.server_name}`);
+        Router.navigate("#/nav");
+      } catch (err) {
+        Toast.error(err.message);
+      }
     },
 
     async loadSavedCubes() {
@@ -1485,35 +1447,41 @@ const OptimusPy = (function () {
       if (nav) nav.innerHTML = "";
     },
 
+    // While a job runs, the monitor asks the server again every few seconds, so
+    // it clears when the job ends even if no page is following that job.
+    _activityPoll: null,
+
     async updateActivityMonitor() {
       const container = $("#sidebarActivity");
+      clearTimeout(this._activityPoll);
+      this._activityPoll = null;
       try {
         const data = await Api.getJobs();
         const jobs = data.jobs || [];
         const running = jobs.find(j => j.status === "running");
         if (running) {
           container.innerHTML = "";
-          const cubeName = running.cube_name || running.cube_config?.cube || "Unknown";
-          const bar = el("div", { className: "activity-bar" },
+          container.appendChild(el("div", { className: "activity-bar" },
             el("div", { className: "activity-pulse" }),
             el("div", { className: "activity-label" },
-              el("div", { className: "activity-title" }, "Optimizing"),
-              el("div", { className: "activity-subtitle" }, cubeName),
+              el("div", { className: "activity-title" }, jobTitle(running)),
+              el("div", { className: "activity-subtitle" }, running.label),
             ),
             el("div", { className: "activity-spinner" }),
-          );
-          container.appendChild(bar);
+          ));
           container.classList.remove("hidden");
-          container.onclick = () => {
-            window.location.hash = `#/cube/${encodeURIComponent(cubeName)}?tab=optimize`;
-          };
+          container.onclick = () => Router.navigate(jobLink(running));
+          this._activityPoll = setTimeout(() => this.updateActivityMonitor(), 5000);
         } else {
           container.classList.add("hidden");
           container.innerHTML = "";
           container.onclick = null;
         }
       } catch {
-        // Non-critical
+        // Non-critical; a monitor still showing a job tries again.
+        if (!container.classList.contains("hidden")) {
+          this._activityPoll = setTimeout(() => this.updateActivityMonitor(), 5000);
+        }
       }
     },
   };
@@ -1571,6 +1539,12 @@ const OptimusPy = (function () {
         return;
       }
 
+      // Route: #/results?… → #/reports?…: the Reports page answers to both
+      if (segments[0] === "results") {
+        window.location.replace(`#/reports${queryStr ? `?${queryStr}` : ""}`);
+        return;
+      }
+
       // Route: #/nav?cube=X&tab=Y
       if (segments[0] === "nav") {
         pageName = "nav";
@@ -1596,11 +1570,11 @@ const OptimusPy = (function () {
         const href = a.getAttribute("href");
         if (!href) return;
         const page = a.dataset.page;
-        a.classList.toggle("active", page === pageName || pageName === "nav" && page === "home");
+        a.classList.toggle("active", page === pageName);
       });
 
       // Update title
-      const titles = { home: "Optimize", nav: query.cube || "Navigation", results: "Results", jobs: "Jobs", settings: "Settings", transfer: "Sync Order" };
+      const titles = { home: "Home", nav: query.cube || "Optimize", reports: "Reports", jobs: "Jobs", settings: "Settings", transfer: "Sync Order", "optimize-db": "Optimize DB" };
       document.title = `OptimusPy — ${titles[pageName] || "Dashboard"}`;
 
       // Mount
@@ -1618,35 +1592,30 @@ const OptimusPy = (function () {
     _ramThreshold: 60,
     _includeOptimized: false,
 
+    // Instance tiles and the getting-started guide; reachable from the sidebar
+    // at any time, connected or not.
     mount() {
       const page = $("#page-home");
       page.innerHTML = "";
 
-      if (!state.connected) {
-        this._renderDisconnected(page);
-      } else {
-        // Connected — redirect to the navigation split-panel view
-        Router.navigate("#/nav");
-      }
-    },
-
-    // ---- Not connected: instance tiles + collapsible help ----
-    _renderDisconnected(page) {
       page.appendChild(el("div", { className: "page-header" },
         el("h1", { className: "page-title" }, "OptimusPy"),
-        el("p", { className: "page-subtitle" }, "Connect to a TM1 instance to get started"),
+        el("p", { className: "page-subtitle" }, state.connected
+          ? `Connected to ${state.activeInstance}. Open it on the Optimize page, or connect to another instance`
+          : "Connect to a TM1 instance to get started"),
       ));
 
       if (state.instances.length > 0) {
         const tilesGrid = el("div", { className: "instance-tiles" });
         state.instances.forEach(name => {
+          const active = state.connected && name === state.activeInstance;
           const tile = el("button", {
             className: "instance-tile",
-            onClick: () => Sidebar._promptConnect(name),
+            onClick: () => active ? Router.navigate("#/nav") : Sidebar._promptConnect(name),
           },
             el("div", { className: "instance-tile-icon", html: '<svg aria-hidden="true" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>' }),
             el("div", { className: "instance-tile-name" }, name),
-            el("div", { className: "instance-tile-hint" }, "Click to connect"),
+            el("div", { className: "instance-tile-hint" }, active ? "Connected: open Optimize" : "Click to connect"),
           );
           tilesGrid.appendChild(tile);
         });
@@ -1659,178 +1628,14 @@ const OptimusPy = (function () {
         ));
       }
 
-      // Collapsible help section
+      page.appendChild(el("div", { className: "flex gap-2 mt-4 flex-wrap" },
+        el("a", { className: "btn btn-secondary btn-sm", href: "https://cubewise-code.github.io/optimus-py/docs/", target: "_blank", rel: "noopener noreferrer" },
+          el("span", { html: Icons.externalLink }), "Documentation"),
+        el("a", { className: "btn btn-secondary btn-sm", href: "https://cubewise-code.github.io/optimus-py/", target: "_blank", rel: "noopener noreferrer" },
+          el("span", { html: Icons.externalLink }), "Website"),
+      ));
+
       page.appendChild(this._buildCollapsibleHelp());
-    },
-
-    // ---- Connected: auto-scan cube cards ----
-    _renderConnected(page) {
-      // Header with instance info + rescan
-      const header = el("div", { className: "page-header", style: "display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px" });
-      header.appendChild(el("div", null,
-        el("h1", { className: "page-title" }, state.serverName || state.activeInstance),
-        el("p", { className: "page-subtitle" }, `${state.activeInstance} — ${state.savedCubes.length} saved cube${state.savedCubes.length !== 1 ? "s" : ""}`),
-      ));
-      const headerActions = el("div", { className: "flex gap-2 items-center" });
-      const helpBtn = el("button", {
-        className: "btn btn-ghost btn-sm",
-        "aria-label": "Tips & help",
-        onClick: () => this._showHelpDrawer(),
-      }, el("span", { html: Icons.info }), "Help");
-      headerActions.appendChild(helpBtn);
-      header.appendChild(headerActions);
-      page.appendChild(header);
-
-      // Filter bar
-      const filterBar = el("div", { className: "cube-filter-bar" });
-      // RAM threshold slider
-      const ramGroup = el("div", { className: "cube-filter-group" });
-      ramGroup.appendChild(el("label", { className: "cube-filter-label" }, "RAM Threshold"));
-      const ramRow = el("div", { className: "flex items-center gap-2" });
-      const ramSlider = el("input", { type: "range", min: "0", max: "100", value: String(this._ramThreshold), style: "width:120px" });
-      const ramValue = el("span", { className: "cube-filter-value" }, this._ramThreshold + "%");
-      ramSlider.addEventListener("input", () => {
-        this._ramThreshold = parseInt(ramSlider.value);
-        ramValue.textContent = this._ramThreshold + "%";
-      });
-      // Don't auto-scan on slider change — user clicks Rescan when ready
-      ramRow.appendChild(ramSlider);
-      ramRow.appendChild(ramValue);
-      ramGroup.appendChild(ramRow);
-      filterBar.appendChild(ramGroup);
-      // Include optimized toggle
-      const optLabel = el("label", { className: "cube-filter-group checkbox-label", style: "cursor:pointer" });
-      const optCb = el("input", { type: "checkbox" });
-      optCb.checked = this._includeOptimized;
-      optCb.addEventListener("change", () => { this._includeOptimized = optCb.checked; });
-      optLabel.appendChild(optCb);
-      optLabel.appendChild(document.createTextNode(" Include optimized"));
-      filterBar.appendChild(optLabel);
-      // Rescan button
-      const rescanBtn = el("button", { className: "btn btn-ghost btn-sm", id: "home-rescan-btn", onClick: () => this._rescan(page) },
-        el("span", { html: Icons.refresh }), "Rescan");
-      filterBar.appendChild(rescanBtn);
-      page.appendChild(filterBar);
-
-      // Cubes container
-      const cubesContainer = el("div", { id: "home-cubes-container" });
-      page.appendChild(cubesContainer);
-
-      // Auto-scan if no data yet, otherwise render existing
-      if (state.scanData) {
-        this._renderCubeCards(cubesContainer);
-      } else {
-        this._autoScan(cubesContainer);
-      }
-    },
-
-    async _autoScan(container) {
-      this._showScanLoading(container);
-      try {
-        const data = await Api.scan(state.activeInstance, state.password, this._ramThreshold, this._includeOptimized);
-        state.scanData = data;
-        Sidebar.renderScannedCubes();
-        container.innerHTML = "";
-        this._renderCubeCards(container);
-      } catch (err) {
-        container.innerHTML = "";
-        container.appendChild(el("div", { className: "empty-state" },
-          el("div", { className: "empty-state-title" }, "Scan failed"),
-          el("div", { className: "empty-state-text" }, err.message),
-          el("div", { className: "empty-state-action" },
-            el("button", { className: "btn btn-primary", onClick: () => this._autoScan(container) }, "Retry")),
-        ));
-      }
-    },
-
-    async _rescan(page) {
-      const container = page.querySelector("#home-cubes-container") || $("#home-cubes-container");
-      if (!container) return;
-      const btn = page.querySelector("#home-rescan-btn") || $("#home-rescan-btn");
-      if (btn) { btn.disabled = true; }
-      this._showScanLoading(container);
-      try {
-        const data = await Api.scan(state.activeInstance, state.password, this._ramThreshold, this._includeOptimized);
-        state.scanData = data;
-        Sidebar.renderScannedCubes();
-        container.innerHTML = "";
-        this._renderCubeCards(container);
-        Toast.success(`Found ${data.candidates?.length || 0} cubes`);
-      } catch (err) {
-        container.innerHTML = "";
-        container.appendChild(el("div", { className: "empty-state" },
-          el("div", { className: "empty-state-title" }, "Scan failed"),
-          el("div", { className: "empty-state-text" }, err.message),
-        ));
-        Toast.error("Scan failed: " + err.message);
-      } finally {
-        if (btn) { btn.disabled = false; }
-      }
-    },
-
-    _showScanLoading(container) {
-      container.innerHTML = "";
-      const loading = el("div", { className: "cube-cards-loading" });
-      loading.appendChild(el("div", { className: "flex items-center gap-3 mb-4" },
-        el("div", { className: "activity-spinner", style: "width:16px;height:16px;border-width:2px" }),
-        el("span", { className: "text-sm text-secondary" }, "Scanning instance — fetching cube RAM data and dimension metadata..."),
-      ));
-      // Skeleton cards
-      for (let i = 0; i < 6; i++) {
-        loading.appendChild(el("div", { className: "cube-card-skeleton" }));
-      }
-      container.appendChild(loading);
-    },
-
-    _renderCubeCards(container) {
-      const cubes = state.scanData?.candidates || [];
-      if (cubes.length === 0) {
-        container.appendChild(el("div", { className: "empty-state" },
-          el("div", { className: "empty-state-title" }, "No cubes found"),
-          el("div", { className: "empty-state-text" }, "Try lowering the RAM threshold or enabling 'Include optimized'."),
-        ));
-        return;
-      }
-
-      // Summary line
-      const totalRam = cubes.reduce((sum, c) => sum + (c.ram_gb || 0), 0);
-      container.appendChild(el("div", { className: "cube-cards-summary" },
-        `${cubes.length} cube${cubes.length !== 1 ? "s" : ""} — ${totalRam.toFixed(2)} GB total RAM`
-      ));
-
-      const grid = el("div", { className: "cube-cards-grid" });
-      const maxRam = Math.max(...cubes.map(c => c.ram_gb || 0), 0.01);
-      cubes.forEach(c => {
-        const card = el("button", {
-          className: "cube-card",
-          onClick: () => Router.navigate(`#/cube/${encodeURIComponent(c.cube_name)}`),
-        });
-        // Top row: name + badges
-        const top = el("div", { className: "cube-card-top" });
-        top.appendChild(el("span", { className: "cube-card-name" }, c.cube_name));
-        const badges = el("span", { className: "cube-card-badges" });
-        if (c.already_optimized) badges.appendChild(el("span", { className: "badge badge-success" }, "optimized"));
-        if (c.last_dim_has_strings) badges.appendChild(el("span", { className: "badge badge-warning" }, "strings"));
-        top.appendChild(badges);
-        card.appendChild(top);
-        // RAM bar
-        const barWrap = el("div", { className: "cube-card-bar-wrap" });
-        const barFill = el("div", { className: "cube-card-bar-fill" });
-        const pct = Math.max((c.ram_gb || 0) / maxRam * 100, 2);
-        barFill.style.width = pct + "%";
-        // Color: green < 33%, amber 33-66%, red > 66% of max
-        barFill.classList.add(pct > 66 ? "high" : pct > 33 ? "mid" : "low");
-        barWrap.appendChild(barFill);
-        card.appendChild(barWrap);
-        // Bottom row: stats
-        const bottom = el("div", { className: "cube-card-stats" });
-        bottom.appendChild(el("span", null, `${(c.ram_gb || 0).toFixed(2)} GB`));
-        bottom.appendChild(el("span", null, `${(c.pct_of_total || 0).toFixed(1)}% of model`));
-        bottom.appendChild(el("span", null, `${c.dim_count || 0} dims`));
-        card.appendChild(bottom);
-        grid.appendChild(card);
-      });
-      container.appendChild(grid);
     },
 
     // ---- Help: show tips in a modal instead of inline ----
@@ -1847,9 +1652,9 @@ const OptimusPy = (function () {
       const section = el("div", { className: "collapsible-help" });
       const toggle = el("button", { className: "collapsible-help-toggle" },
         el("span", null, "Tips & Getting Started"),
-        el("span", { className: "collapsible-help-chevron", html: Icons.chevronRight }),
+        el("span", { className: "collapsible-help-chevron", html: Icons.chevronRight, style: "transform:rotate(90deg)" }),
       );
-      const content = el("div", { className: "collapsible-help-content hidden" });
+      const content = el("div", { className: "collapsible-help-content" });
       content.appendChild(this._buildGuideContent());
       toggle.addEventListener("click", () => {
         content.classList.toggle("hidden");
@@ -1870,10 +1675,10 @@ const OptimusPy = (function () {
 
       const steps = [
         { n: "1", title: "Connect", desc: "Select a TM1 instance from the sidebar and enter your password if needed." },
-        { n: "2", title: "Scan", desc: "Go to Cubes and scan the instance. OptimusPy identifies cubes that may benefit from reordering based on RAM usage." },
+        { n: "2", title: "Scan", desc: "The cube list on the left scans the instance and ranks cubes by RAM. Use the RAM threshold and Rescan to change what it shows." },
         { n: "3", title: "Configure", desc: "Select a cube, choose an optimization mode (Greedy, Predefined, Position, or Dimension), pick views to benchmark, and set the number of executions per permutation." },
         { n: "4", title: "Optimize", desc: "Start the optimization. OptimusPy will test dimension orderings, measuring RAM and query time for each. You can stop the process at any time." },
-        { n: "5", title: "Review", desc: "Check the Results tab for CSV/HTML reports showing all tested permutations and the recommended order." },
+        { n: "5", title: "Review", desc: "Open the cube's report from the Reports tab: every order tested and the recommended one, with the CSV or XLSX data beside it." },
       ];
       steps.forEach(s => {
         const row = el("div", { style: "display:flex;gap:10px;margin-bottom:10px" });
@@ -1983,7 +1788,7 @@ const OptimusPy = (function () {
       }
 
       const cubeName = params.cubeName || query.cube || null;
-      const tab = query.tab || null;
+      const tab = query.tab === "results" ? "reports" : (query.tab || null);
 
       // If same cube, just update workspace tab
       if (cubeName && cubeName === this._selectedCube && tab) {
@@ -2089,7 +1894,7 @@ const OptimusPy = (function () {
         body.appendChild(el("div", { className: "cube-card-skeleton", style: "height:52px;margin-bottom:4px" }));
       }
       try {
-        const data = await Api.scan(state.activeInstance, state.password, this._ramThreshold, this._includeOptimized);
+        const data = await Api.scan(state.activeInstance, Credentials.get(state.activeInstance), this._ramThreshold, this._includeOptimized);
         state.scanData = data;
         state.scanTimestamp = Date.now();
         ScanCache.save(state.activeInstance, data);
@@ -2241,7 +2046,7 @@ const OptimusPy = (function () {
 
       // Tabs bar
       const tabsEl = el("div", { className: "tabs", role: "tablist", "aria-label": "Cube workspace tabs" });
-      const tabNames = ["overview", "configure", "optimize", "results"];
+      const tabNames = ["overview", "configure", "optimize", "reports"];
       tabNames.forEach((t, idx) => {
         const label = t.charAt(0).toUpperCase() + t.slice(1);
         const isActive = t === tab;
@@ -2273,15 +2078,23 @@ const OptimusPy = (function () {
         tabsEl.appendChild(tabBtn);
       });
 
-      // Check for results availability and add "View Results" action
-      const hasResults = this._cubeHasResults(this._selectedCube);
+      // "View Prior Reports" starts disabled and is enabled once the cube turns
+      // out to have runs on the connected instance.
+      const cubeName = this._selectedCube;
       const actionsRow = el("div", { className: "flex items-center gap-2 mb-4", style: "margin-top:-4px" });
-      const viewResultsBtn = el("button", {
-        className: `btn btn-ghost btn-sm${hasResults ? "" : " disabled"}`,
-        disabled: !hasResults,
-        onClick: () => { if (hasResults) Router.navigate(`#/results?cube=${encodeURIComponent(this._selectedCube)}`); },
-      }, el("span", { html: Icons.externalLink }), "View Prior Results");
-      actionsRow.appendChild(viewResultsBtn);
+      const viewReportsBtn = el("button", {
+        className: "btn btn-ghost btn-sm disabled",
+        disabled: true,
+        onClick: () => Router.navigate(`#/reports?cube=${encodeURIComponent(cubeName)}`),
+      }, el("span", { html: Icons.externalLink }), "View Prior Reports");
+      actionsRow.appendChild(viewReportsBtn);
+      Api.getReports().then(data => {
+        const instance = (data.instances || []).find(i => i.name === state.activeInstance);
+        if (instance && instance.cubes.some(c => c.cube === cubeName)) {
+          viewReportsBtn.disabled = false;
+          viewReportsBtn.classList.remove("disabled");
+        }
+      }).catch(() => { /* the button stays disabled */ });
 
       // Help button
       const helpBtn = el("button", { className: "btn btn-ghost btn-sm", onClick: () => HomePage._showHelpDrawer() },
@@ -2307,15 +2120,9 @@ const OptimusPy = (function () {
           ));
         }); break;
         case "optimize": CubeWorkspace._renderOptimize(tabPane); break;
-        case "results": CubeWorkspace._renderResults(tabPane); break;
+        case "reports": CubeWorkspace._renderReports(tabPane); break;
       }
       container.appendChild(tabPane);
-    },
-
-    _cubeHasResults(cubeName) {
-      // Check if there are result files for this cube in the results API cache
-      // We'll do a quick check — if scanData has the cube or savedCubes has it
-      return state.savedCubes.some(sc => sc.cube === cubeName);
     },
 
     // ---- Panel visibility ----
@@ -2332,298 +2139,24 @@ const OptimusPy = (function () {
     },
 
     unmount() {
+      CubeWorkspace._releaseJobView();
       this._selectedCube = null;
     },
   };
 
   // ==================================================================
-  // Page: Cubes (scan + table) — legacy, kept for direct URL access
-  // ==================================================================
-  const CubesPage = {
-    _table: null,
-
-    mount() {
-      const page = $("#page-cubes");
-      page.innerHTML = "";
-
-      page.appendChild(el("div", { className: "page-header" },
-        el("h1", { className: "page-title" }, "Cubes"),
-        el("p", { className: "page-subtitle" }, "Scan your TM1 instance and explore cube dimensions"),
-      ));
-
-      if (!state.connected) {
-        page.appendChild(el("div", { className: "empty-state" },
-          el("div", { className: "empty-state-title" }, "Not connected"),
-          el("div", { className: "empty-state-text" }, "Connect to a TM1 instance first."),
-          el("div", { className: "empty-state-action" },
-            el("button", { className: "btn btn-primary", onClick: () => Router.navigate("#/home") }, "Go to Home")),
-        ));
-        return;
-      }
-
-      // Scan controls
-      const controls = el("div", { className: "card mb-4" });
-      const controlsInner = el("div", { className: "flex items-center gap-4", style: "flex-wrap:wrap" });
-
-      // RAM threshold
-      const ramGroup = el("div", { className: "form-group", style: "margin-bottom:0;flex:1;min-width:200px" });
-      ramGroup.appendChild(el("label", { className: "form-label" }, "RAM Threshold %"));
-      const ramRow = el("div", { className: "flex items-center gap-2" });
-      const ramSlider = el("input", { type: "range", min: "0", max: "100", value: "60", style: "flex:1" });
-      const ramValue = el("span", { className: "text-sm font-medium", style: "width:36px;text-align:right" }, "60%");
-      ramSlider.addEventListener("input", () => { ramValue.textContent = ramSlider.value + "%"; });
-      ramRow.appendChild(ramSlider);
-      ramRow.appendChild(ramValue);
-      ramGroup.appendChild(ramRow);
-      controlsInner.appendChild(ramGroup);
-
-      // Include optimized
-      const optLabel = el("label", { className: "checkbox-label" });
-      const optCb = el("input", { type: "checkbox" });
-      optLabel.appendChild(optCb);
-      optLabel.appendChild(document.createTextNode("Include optimized"));
-      controlsInner.appendChild(optLabel);
-
-      // Scan button
-      const scanBtn = el("button", { className: "btn btn-primary" },
-        el("span", { html: Icons.search }), "Scan");
-      scanBtn.addEventListener("click", async () => {
-        scanBtn.disabled = true;
-        scanBtn.innerHTML = Icons.refresh + " Scanning...";
-        // Show loading skeleton while scan runs
-        const existingTable = page.querySelector(".table-wrapper");
-        if (existingTable) existingTable.remove();
-        const existingEmpty = page.querySelector(".empty-state");
-        if (existingEmpty) existingEmpty.remove();
-        const loadingEl = el("div", { className: "card", id: "scan-loading" });
-        loadingEl.appendChild(el("div", { className: "flex items-center gap-3 mb-4" },
-          el("div", { className: "status-dot running", style: "width:8px;height:8px;border-radius:50%;background:var(--success);animation:pulse 1.5s ease-in-out infinite" }),
-          el("span", { className: "text-sm font-medium" }, "Scanning instance — fetching RAM data, dimension metadata, and storage orders..."),
-        ));
-        for (let i = 0; i < 5; i++) {
-          loadingEl.appendChild(el("div", { className: "skeleton skeleton-text", style: `width:${80 - i * 10}%;margin-bottom:8px` }));
-        }
-        page.appendChild(loadingEl);
-        try {
-          const data = await Api.scan(state.activeInstance, state.password, parseInt(ramSlider.value), optCb.checked);
-          state.scanData = data;
-          const lEl = page.querySelector("#scan-loading");
-          if (lEl) lEl.remove();
-          this._renderTable(page);
-          Sidebar.renderScannedCubes();
-          Toast.success(`Found ${data.candidates?.length || 0} cubes`);
-        } catch (err) {
-          const lEl = page.querySelector("#scan-loading");
-          if (lEl) lEl.remove();
-          Toast.error("Scan failed: " + err.message);
-        } finally {
-          scanBtn.disabled = false;
-          scanBtn.innerHTML = Icons.search + " Scan";
-        }
-      });
-      controlsInner.appendChild(scanBtn);
-
-      controls.appendChild(controlsInner);
-      page.appendChild(controls);
-
-      // Table placeholder
-      if (state.scanData) {
-        this._renderTable(page);
-      } else {
-        page.appendChild(el("div", { className: "empty-state" },
-          el("div", { className: "empty-state-title" }, "No scan data"),
-          el("div", { className: "empty-state-text" }, "Click Scan to discover cubes in your TM1 instance."),
-        ));
-      }
-    },
-
-    _renderTable(page) {
-      // Remove old table
-      const existing = page.querySelector(".table-wrapper");
-      if (existing) existing.remove();
-      const existingEmpty = page.querySelector(".empty-state");
-      if (existingEmpty) existingEmpty.remove();
-
-      const cubes = state.scanData?.candidates || [];
-
-      this._table = createTable({
-        columns: [
-          { key: "index", label: "#", sortable: false, render: (_, i) => i + 1, align: "right" },
-          { key: "cube_name", label: "Cube Name", render: r => {
-            const wrap = el("span", { className: "flex items-center gap-2" });
-            wrap.appendChild(el("span", { className: "font-medium" }, r.cube_name));
-            if (r.already_optimized) wrap.appendChild(el("span", { className: "badge badge-success" }, "optimized"));
-            return wrap;
-          }},
-          { key: "dim_count", label: "Dims", align: "right", value: r => r.dim_count || 0 },
-          { key: "dims_detail", label: "Dimensions", sortable: false, render: r => {
-            const dims = r.dimension_order || [];
-            if (dims.length === 0) return "—";
-            const wrap = el("div", { className: "flex gap-1", style: "flex-wrap:wrap" });
-            dims.forEach(name => {
-              wrap.appendChild(el("span", { className: "badge badge-neutral", style: "font-size:10px" }, name));
-            });
-            if (r.last_dim_has_strings) {
-              wrap.appendChild(el("span", {
-                className: "badge badge-neutral",
-                style: "font-size:10px;border-left:2px solid var(--warning);color:var(--warning)",
-                html: Icons.alertTriangle + " strings in last dim"
-              }));
-            }
-            return wrap;
-          }},
-          { key: "ram_gb", label: "RAM (GB)", align: "right", sortValue: r => r.ram_gb || 0,
-            render: r => r.ram_gb != null ? r.ram_gb.toFixed(2) : "—" },
-          { key: "pct_of_total", label: "% of Total", align: "right", sortValue: r => r.pct_of_total || 0,
-            render: r => r.pct_of_total != null ? r.pct_of_total.toFixed(1) + "%" : "—" },
-        ],
-        data: cubes,
-        onRowClick: (row) => {
-          Router.navigate(`#/cube/${encodeURIComponent(row.cube_name)}`);
-        },
-        emptyMessage: "No cubes found",
-      });
-
-      page.appendChild(this._table.el);
-    },
-
-    unmount() {
-      if (this._table) { this._table.destroy(); this._table = null; }
-    },
-  };
-
-  // ==================================================================
-  // Page: CubeWorkspace (4 tabs: Overview, Configure, Optimize, Results)
+  // Page: CubeWorkspace (4 tabs: Overview, Configure, Optimize, Reports)
   // ==================================================================
   const CubeWorkspace = {
     _cubeName: null,
     _activeTab: "overview",
     _dimConfigurator: null,
-    _viewsTransfer: null,
-    _processesTransfer: null,
     _jobId: null,
     _unsubStream: null,
-    _timer: null,
-    _timerStart: null,
+    _timer: createElapsedTimer(),
     _tabCache: {},     // tab name → DOM container (cached rendered tabs)
     _tabsEl: null,     // tabs bar element
     _contentEl: null,  // tab content wrapper
-
-    mount(params, query) {
-      const newCube = params.cubeName;
-      const newTab = query.tab || "overview";
-
-      // If same cube: just switch tab (don't re-render page chrome)
-      if (this._cubeName === newCube && this._contentEl) {
-        this._switchTab(newTab);
-        return;
-      }
-
-      // Different cube or first mount: full render
-      this._cubeName = newCube;
-      this._activeTab = newTab;
-      this._tabCache = {};
-
-      const page = $("#page-cube-workspace");
-      page.innerHTML = "";
-
-      // Breadcrumb
-      page.appendChild(el("div", { className: "breadcrumb" },
-        el("a", { href: "#/cubes" }, "Cubes"),
-        el("span", { className: "separator" }, "/"),
-        el("span", { className: "current" }, this._cubeName),
-      ));
-
-      page.appendChild(el("h1", { className: "page-title mb-4" }, this._cubeName));
-
-      // Tabs bar
-      this._tabsEl = el("div", { className: "tabs", role: "tablist", "aria-label": "Cube workspace tabs" });
-      const tabNames = ["overview", "configure", "optimize", "results"];
-      tabNames.forEach((t, idx) => {
-        const label = t.charAt(0).toUpperCase() + t.slice(1);
-        const isActive = t === this._activeTab;
-        const tab = el("button", {
-          className: `tab${isActive ? " active" : ""}`,
-          role: "tab",
-          "aria-selected": isActive ? "true" : "false",
-          tabindex: isActive ? "0" : "-1",
-          id: `tab-${t}`,
-          "aria-controls": `tabpanel-${t}`,
-          dataset: { tab: t },
-          onClick: () => {
-            this._switchTab(t);
-            history.replaceState(null, "", `#/cube/${encodeURIComponent(this._cubeName)}?tab=${t}`);
-          },
-          onKeydown: (e) => {
-            let newIdx = idx;
-            if (e.key === "ArrowRight") newIdx = (idx + 1) % tabNames.length;
-            else if (e.key === "ArrowLeft") newIdx = (idx - 1 + tabNames.length) % tabNames.length;
-            else if (e.key === "Home") newIdx = 0;
-            else if (e.key === "End") newIdx = tabNames.length - 1;
-            else return;
-            e.preventDefault();
-            const target = this._tabsEl.querySelector(`[data-tab="${tabNames[newIdx]}"]`);
-            if (target) { target.click(); target.focus(); }
-          },
-        }, label);
-        this._tabsEl.appendChild(tab);
-      });
-      page.appendChild(this._tabsEl);
-
-      // Tab content container
-      this._contentEl = el("div", { id: "cube-tab-content" });
-      page.appendChild(this._contentEl);
-
-      // Render initial tab
-      this._renderTab(this._activeTab);
-    },
-
-    _switchTab(tabName) {
-      if (tabName === this._activeTab && this._tabCache[tabName]) return;
-      this._activeTab = tabName;
-
-      // Update tab bar active + ARIA states
-      if (this._tabsEl) {
-        this._tabsEl.querySelectorAll(".tab").forEach(t => {
-          const isActive = t.dataset.tab === tabName;
-          t.classList.toggle("active", isActive);
-          t.setAttribute("aria-selected", String(isActive));
-          t.setAttribute("tabindex", isActive ? "0" : "-1");
-        });
-      }
-
-      // Hide all cached tabs
-      Object.values(this._tabCache).forEach(c => { c.style.display = "none"; });
-
-      // Show cached tab or render new one
-      if (this._tabCache[tabName]) {
-        this._tabCache[tabName].style.display = "";
-        // Re-trigger optimize tab refresh when switching to it
-        if (tabName === "optimize") this._refreshOptimize();
-      } else {
-        this._renderTab(tabName);
-      }
-
-      document.title = `OptimusPy — ${this._cubeName}`;
-    },
-
-    _renderTab(tabName) {
-      const container = el("div", { className: "tab-pane", role: "tabpanel", id: `tabpanel-${tabName}`, "aria-labelledby": `tab-${tabName}`, dataset: { tabPane: tabName } });
-      this._tabCache[tabName] = container;
-      this._contentEl.appendChild(container);
-      switch (tabName) {
-        case "overview": this._renderOverview(container); break;
-        case "configure": this._renderConfigure(container).catch(err => {
-          container.innerHTML = "";
-          container.appendChild(el("div", { className: "empty-state" },
-            el("div", { className: "empty-state-title" }, "Failed to load configuration"),
-            el("div", { className: "empty-state-text" }, err.message),
-          ));
-        }); break;
-        case "optimize": this._renderOptimize(container); break;
-        case "results": this._renderResults(container); break;
-      }
-    },
 
     // ---- Overview Tab ----
     _renderOverview(container) {
@@ -2976,7 +2509,7 @@ const OptimusPy = (function () {
           await Api.saveConfig(config, filename);
           Sidebar.loadSavedCubes();
 
-          const resp = await Api.startJob("optimize", config, state.password);
+          const resp = await Api.startJob("optimize", config, Credentials.get(state.activeInstance));
           this._jobId = resp.job_id;
           StreamManager.connect(resp.job_id);
           Sidebar.updateActivityMonitor();
@@ -2997,9 +2530,9 @@ const OptimusPy = (function () {
         const config = buildConfig();
         try {
           const filename = `${config.cube}_${config.instance}.json`;
-          await Api.saveConfig(config, filename);
+          const resp = await Api.saveConfig(config, filename);
           Sidebar.loadSavedCubes();
-          Toast.success("Config saved");
+          Toast.success(`Config saved to ${resp.path}`);
         } catch (err) {
           Toast.error(err.message);
         }
@@ -3085,7 +2618,7 @@ const OptimusPy = (function () {
       if (!state.cubeViews[this._cubeName]) {
         container.appendChild(el("div", { className: "text-xs text-tertiary", id: "views-loading" }, "Loading views..."));
         try {
-          const data = await Api.getViews(state.activeInstance, state.password, this._cubeName);
+          const data = await Api.getViews(state.activeInstance, Credentials.get(state.activeInstance), this._cubeName);
           state.cubeViews[this._cubeName] = data.views || [];
         } catch (err) {
           state.cubeViews[this._cubeName] = [];
@@ -3200,7 +2733,7 @@ const OptimusPy = (function () {
     async _loadProcesses(container, paramsContainer) {
       if (state.processes.length === 0) {
         try {
-          const data = await Api.getProcesses(state.activeInstance, state.password);
+          const data = await Api.getProcesses(state.activeInstance, Credentials.get(state.activeInstance));
           state.processes = data.processes || [];
         } catch {
           state.processes = [];
@@ -3292,7 +2825,7 @@ const OptimusPy = (function () {
               Modal.close();
               // Fetch params for this process
               try {
-                const data = await Api.getProcessParameters(state.activeInstance, state.password, procName);
+                const data = await Api.getProcessParameters(state.activeInstance, Credentials.get(state.activeInstance), procName);
                 const params = (data.parameters || []).map(p => ({ name: p.name, value: p.value || "" }));
                 this._selectedProcesses.push({ name: procName, params });
               } catch {
@@ -3315,6 +2848,7 @@ const OptimusPy = (function () {
 
     // ---- Optimize Tab ----
     _renderOptimize(container) {
+      this._releaseJobView();
       // Status bar
       const statusBar = el("div", { className: "terminal-status" });
       const statusDot = el("span", { className: "status-dot" });
@@ -3335,27 +2869,30 @@ const OptimusPy = (function () {
       container.appendChild(statusBar);
 
       // Terminal
-      const terminal = el("div", { className: "terminal", id: "optimize-terminal" });
-      container.appendChild(terminal);
+      const terminal = createTerminal();
+      container.appendChild(terminal.el);
 
       // Determine job for this cube
-      this._findActiveJob().then(jobId => {
-        if (!jobId) {
-          terminal.appendChild(el("div", { className: "terminal-line text-tertiary" }, "No active optimization. Configure and start from the Configure tab."));
+      this._findActiveJob().then(job => {
+        this._jobId = job ? job.job_id : null;
+        if (!job) {
+          terminal.el.appendChild(el("div", { className: "terminal-line text-tertiary" }, "No active optimization. Configure and start from the Configure tab."));
           return;
         }
 
-        this._jobId = jobId;
-        const existingLogs = StreamManager.getLogs(jobId);
-        existingLogs.forEach(log => appendLog(terminal, log));
+        StreamManager.getLogs(job.job_id).forEach(log => terminal.append(log));
 
-        const sseStatus = StreamManager.getStatus(jobId);
+        // This tab's stream manager only knows the jobs this tab has streamed. For
+        // any other job — one started in another tab, or before a reload — the
+        // server's status decides; connecting replays the whole log from the start.
+        const streamed = StreamManager.getStatus(job.job_id);
+        const sseStatus = streamed === "unknown" ? job.status : streamed;
         if (sseStatus === "running") {
           statusDot.classList.add("running");
           statusText.textContent = "Running";
           stopBtn.style.display = "";
-          this._startTimer(timerEl);
-          StreamManager.connect(jobId);
+          this._timer.start(timerEl, job.started_at);
+          StreamManager.connect(job.job_id);
         } else if (sseStatus === "completed") {
           statusDot.classList.add("completed");
           statusText.textContent = "Completed";
@@ -3366,118 +2903,91 @@ const OptimusPy = (function () {
           statusDot.classList.add("failed");
           statusText.textContent = "Cancelled";
         }
+        // A finished job this tab never streamed: connect once to replay its log.
+        // The server sends the log, then the final event, then closes the stream.
+        // The status above is already drawn, so the final event is not announced.
+        const replaying = streamed === "unknown" && sseStatus !== "running";
+        if (replaying) StreamManager.connect(job.job_id);
 
-        this._unsubStream = StreamManager.subscribe(jobId, (event, data) => {
+        this._unsubStream = StreamManager.subscribe(job.job_id, (event, data) => {
           if (event === "log") {
-            appendLog(terminal, data);
-            terminal.scrollTop = terminal.scrollHeight;
+            terminal.append(data);
+          } else if (replaying) {
+            return;
           } else if (event === "complete") {
-            statusDot.className = "status-dot completed";
-            statusText.textContent = "Completed";
+            // A run that fails without raising still ends with "complete"; its
+            // status says whether it succeeded.
+            const ok = data.status === "completed";
+            statusDot.className = `status-dot ${ok ? "completed" : "failed"}`;
+            statusText.textContent = ok ? "Completed" : "Failed";
             stopBtn.style.display = "none";
-            this._stopTimer();
+            this._timer.stop();
             Sidebar.updateActivityMonitor();
-            Toast.success("Optimization completed!");
+            if (ok) Toast.success("Optimization completed!");
+            else Toast.error("Optimization failed — see the log above");
           } else if (event === "error_event") {
             statusDot.className = "status-dot failed";
             statusText.textContent = "Failed";
             stopBtn.style.display = "none";
-            this._stopTimer();
+            this._timer.stop();
             Sidebar.updateActivityMonitor();
             Toast.error("Optimization failed: " + (data.error || "Unknown error"));
           } else if (event === "cancelled") {
             statusDot.className = "status-dot failed";
             statusText.textContent = "Cancelled";
             stopBtn.style.display = "none";
-            this._stopTimer();
+            this._timer.stop();
             Sidebar.updateActivityMonitor();
             Toast.info("Optimization cancelled");
           }
         });
       });
+    },
 
-      function appendLog(term, logData) {
-        const line = el("div", { className: "terminal-line" });
-        const msg = logData.message || logData;
-        const text = typeof msg === "string" ? msg : JSON.stringify(msg);
+    // Stop following the job on the Optimize tab. Called before the tab is drawn
+    // again and when the cube page is left, so no stream subscriber or timer
+    // outlives the view it draws into.
+    _releaseJobView() {
+      if (this._unsubStream) { this._unsubStream(); this._unsubStream = null; }
+      this._timer.stop();
+    },
 
-        // Color log levels
-        if (text.includes("ERROR") || text.includes("error")) {
-          line.innerHTML = `<span class="log-error">${escapeHtml(text)}</span>`;
-        } else if (text.includes("WARNING") || text.includes("warning")) {
-          line.innerHTML = `<span class="log-warning">${escapeHtml(text)}</span>`;
-        } else if (text.includes("SUCCESS") || text.includes("Best result") || text.includes("completed")) {
-          line.innerHTML = `<span class="log-success">${escapeHtml(text)}</span>`;
-        } else {
-          line.textContent = text;
-        }
-        term.appendChild(line);
+    // The job this cube's Optimize tab shows: the one running on it, else its most
+    // recent. Asked of the server each time — an id kept from another cube would
+    // show that cube's log here.
+    async _findActiveJob() {
+      try {
+        const data = await Api.getJobs();
+        const mine = (data.jobs || []).filter(j => !JOB_KINDS[j.mode] && j.label === this._cubeName);
+        return mine.find(j => j.status === "running") || mine[0] || null;
+      } catch {
+        return null;
       }
     },
 
-    async _findActiveJob() {
-      if (this._jobId) return this._jobId;
+    // ---- Reports Tab (per-cube): this cube's runs on the connected instance ----
+    async _renderReports(container) {
+      container.appendChild(el("div", { className: "text-secondary text-sm" }, "Loading reports..."));
       try {
-        const data = await Api.getJobs();
-        const jobs = data.jobs || [];
-        // Find running job for this cube
-        const running = jobs.find(j => j.status === "running" && (j.cube_name || j.cube_config?.cube) === this._cubeName);
-        if (running) return running.job_id;
-        // Find most recent job for this cube
-        const recent = jobs.filter(j => (j.cube_name || j.cube_config?.cube) === this._cubeName);
-        if (recent.length > 0) return recent[0].job_id;
-      } catch { /* */ }
-      return null;
-    },
-
-    _startTimer(timerEl) {
-      this._timerStart = Date.now();
-      this._timer = setInterval(() => {
-        const elapsed = Math.floor((Date.now() - this._timerStart) / 1000);
-        const m = String(Math.floor(elapsed / 60)).padStart(2, "0");
-        const s = String(elapsed % 60).padStart(2, "0");
-        timerEl.textContent = `${m}:${s}`;
-      }, 1000);
-    },
-
-    _stopTimer() {
-      if (this._timer) { clearInterval(this._timer); this._timer = null; }
-    },
-
-    // ---- Results Tab (per-cube) ----
-    async _renderResults(container) {
-      container.appendChild(el("div", { className: "text-secondary text-sm" }, "Loading results..."));
-      try {
-        const data = await Api.getResults();
-        const results = (data.results || []).filter(r => r.cube === this._cubeName);
+        const data = await Api.getReports();
+        const instance = (data.instances || []).find(i => i.name === state.activeInstance);
+        const group = instance && instance.cubes.find(c => c.cube === this._cubeName);
         container.innerHTML = "";
 
-        if (results.length === 0) {
+        if (!group) {
           container.appendChild(el("div", { className: "empty-state" },
-            el("div", { className: "empty-state-title" }, "No results yet"),
-            el("div", { className: "empty-state-text" }, "Run an optimization to see results here."),
+            el("div", { className: "empty-state-title" }, "No reports yet"),
+            el("div", { className: "empty-state-text" }, "Run an optimization of this cube to get its report here."),
           ));
           return;
         }
 
-        const tbl = createTable({
-          columns: [
-            { key: "instance", label: "Instance", render: r => el("span", { className: "text-secondary text-sm" }, r.instance || "—") },
-            { key: "filename", label: "File", render: r => el("span", { className: "font-medium" }, (r.filename || "").split("/").pop()) },
-            { key: "type", label: "Type", render: r => el("span", { className: "badge badge-neutral" }, r.type.toUpperCase()) },
-            { key: "size", label: "Size", align: "right", value: r => formatBytes(r.size) },
-            { key: "modified", label: "Date", value: r => formatDate(r.modified) },
-            { key: "actions", label: "", sortable: false, render: r => {
-              return el("a", { href: `/api/result/${encodeURIComponent(r.filename)}`, target: "_blank", className: "btn btn-ghost btn-sm", html: Icons.externalLink + " Open" });
-            }},
-          ],
-          data: results,
-          filterable: false,
-        });
-        container.appendChild(tbl.el);
+        const runs = el("div", { className: "report-runs card" });
+        group.runs.forEach(run => runs.appendChild(buildRunRow(run)));
+        container.appendChild(runs);
       } catch (err) {
         container.innerHTML = "";
-        container.appendChild(el("div", { className: "text-secondary" }, "Failed to load results: " + err.message));
+        container.appendChild(el("div", { className: "text-secondary" }, "Failed to load reports: " + err.message));
       }
     },
 
@@ -3491,7 +3001,7 @@ const OptimusPy = (function () {
         return cached.data;
       }
       // 3. Fetch from API and cache
-      const data = await Api.getCubeIntelligence(state.activeInstance, state.password, this._cubeName);
+      const data = await Api.getCubeIntelligence(state.activeInstance, Credentials.get(state.activeInstance), this._cubeName);
       state.cubeMetadata[this._cubeName] = data;
       IntelCache.save(state.activeInstance, this._cubeName, data);
       return data;
@@ -3500,80 +3010,234 @@ const OptimusPy = (function () {
     async _prefetchViews() {
       if (state.cubeViews[this._cubeName]) return state.cubeViews[this._cubeName];
       try {
-        const data = await Api.getViews(state.activeInstance, state.password, this._cubeName);
+        const data = await Api.getViews(state.activeInstance, Credentials.get(state.activeInstance), this._cubeName);
         state.cubeViews[this._cubeName] = data.views || [];
       } catch (_) {
         state.cubeViews[this._cubeName] = [];
       }
       return state.cubeViews[this._cubeName];
     },
-
-    _refreshOptimize() {
-      // When switching back to optimize tab, scroll terminal to bottom
-      const terminal = this._tabCache.optimize?.querySelector("#optimize-terminal");
-      if (terminal) terminal.scrollTop = terminal.scrollHeight;
-    },
-
-    unmount() {
-      if (this._unsubStream) { this._unsubStream(); this._unsubStream = null; }
-      this._stopTimer();
-      this._dimConfigurator = null;
-      this._viewsTransfer = null;
-      this._selectedProcesses = [];
-      this._updatePreview = null;
-      this._tabCache = {};
-      this._tabsEl = null;
-      this._contentEl = null;
-    },
   };
 
   // ==================================================================
-  // Page: Results (global)
+  // Page: Reports — every run's report and data files, by instance, cube and run
   // ==================================================================
-  const ResultsPage = {
-    mount() {
-      const page = $("#page-results");
+  const RUN_KIND_LABELS = { cube: "Optimize", optimize_db: "Optimize DB", plan_only: "Plan only" };
+
+  function resultUrl(filename) {
+    return `/api/result/${encodeURIComponent(filename)}`;
+  }
+
+  // Opens an Optimize DB run's report in a new tab, having the server build it
+  // first when the run has none. The tab is opened before the request, while the
+  // click still counts, so the browser doesn't treat it as a pop-up.
+  async function openOptimizeDbReport(planId) {
+    const tab = window.open("", "_blank");
+    try {
+      const resp = await Api.optimizeDbReport(planId);
+      if (tab) tab.location.href = resultUrl(resp.filename);
+      else window.open(resultUrl(resp.filename), "_blank");
+      return resp.filename;
+    } catch (err) {
+      if (tab) tab.close();
+      Toast.error(err.message);
+      return null;
+    }
+  }
+
+  function dataFileLabel(file) {
+    const name = file.filename.split("/").pop();
+    if (name.startsWith("optdb_plan_")) return "Plan data";
+    if (name.startsWith("optdb_run_")) return "Run data";
+    return (file.type || "file").toUpperCase();
+  }
+
+  // One run: when it ran and what it was, its report as the main action and its
+  // data files as small links. The Reports page and the Optimize page's
+  // Reports tab both show runs this way.
+  function buildRunRow(run) {
+    const row = el("div", { className: "report-run" });
+    row.appendChild(el("div", { className: "report-run-when" }, run.started ? formatDate(run.started) : "—"));
+
+    const kind = el("div", { className: "report-run-kind" },
+      el("span", { className: "badge badge-neutral" }, RUN_KIND_LABELS[run.kind] || run.kind));
+    if (run.kind === "optimize_db" && run.status) kind.appendChild(optdbStatusBadge(run.status));
+    row.appendChild(kind);
+
+    const actions = el("div", { className: "report-run-actions" });
+    if (run.report) {
+      actions.appendChild(el("a", {
+        href: resultUrl(run.report.filename), target: "_blank", className: "btn btn-primary btn-sm",
+        html: Icons.externalLink + " Open report",
+      }));
+    } else if (run.kind === "optimize_db") {
+      const build = el("button", { className: "btn btn-secondary btn-sm" }, "Build report");
+      build.addEventListener("click", async () => {
+        build.disabled = true;
+        const filename = await openOptimizeDbReport(run.id);
+        if (filename) row.replaceWith(buildRunRow(Object.assign({}, run, { report: { filename } })));
+        else build.disabled = false;
+      });
+      actions.appendChild(build);
+    } else {
+      actions.appendChild(el("span", { className: "text-xs text-tertiary" },
+        run.kind === "plan_only" ? "Never run, so no report" : "No report"));
+    }
+    (run.data || []).forEach(file => actions.appendChild(el("a", {
+      href: resultUrl(file.filename), target: "_blank", className: "report-data-link",
+      title: `${file.filename.split("/").pop()} · ${formatBytes(file.size)}`,
+    }, dataFileLabel(file))));
+    row.appendChild(actions);
+    return row;
+  }
+
+  const ReportsPage = {
+    _tree: null,
+    _filter: "",
+    // Groups opened this session, as "<instance>/<group>" keys.
+    _expanded: new Set(),
+
+    mount(params, query) {
+      const page = $("#page-reports");
       page.innerHTML = "";
 
       page.appendChild(el("div", { className: "page-header" },
-        el("h1", { className: "page-title" }, "Results"),
-        el("p", { className: "page-subtitle" }, "All optimization results across cubes"),
+        el("h1", { className: "page-title" }, "Reports"),
+        el("p", { className: "page-subtitle" }, "Every run's report and data files, by instance, cube and run"),
       ));
 
-      this._loadResults(page);
+      const filter = el("input", {
+        type: "text", className: "form-input reports-filter", value: this._filter,
+        placeholder: "Filter by instance or cube", "aria-label": "Filter by instance or cube",
+      });
+      const list = el("div", { className: "reports-list" });
+      filter.addEventListener("input", () => { this._filter = filter.value; this._render(list); });
+      page.appendChild(filter);
+      page.appendChild(list);
+
+      this._load(list, query.cube || null);
     },
 
-    async _loadResults(page) {
+    async _load(list, focusCube) {
+      list.appendChild(el("div", { className: "text-secondary text-sm" }, "Loading reports\u2026"));
       try {
-        const data = await Api.getResults();
-        const results = data.results || [];
-
-        if (results.length === 0) {
-          page.appendChild(el("div", { className: "empty-state" },
-            el("div", { className: "empty-state-title" }, "No results"),
-            el("div", { className: "empty-state-text" }, "Run cube optimizations to see results here."),
-          ));
-          return;
-        }
-
-        const tbl = createTable({
-          columns: [
-            { key: "instance", label: "Instance", render: r => el("span", { className: "text-secondary text-sm" }, r.instance || "—") },
-            { key: "cube", label: "Cube", render: r => el("a", { href: `#/cube/${encodeURIComponent(r.cube)}?tab=results`, className: "font-medium" }, r.cube) },
-            { key: "filename", label: "File", value: r => (r.filename || "").split("/").pop() },
-            { key: "type", label: "Type", render: r => el("span", { className: "badge badge-neutral" }, r.type.toUpperCase()) },
-            { key: "size", label: "Size", align: "right", sortValue: r => r.size, value: r => formatBytes(r.size) },
-            { key: "modified", label: "Date", sortValue: r => r.modified, value: r => formatDate(r.modified) },
-            { key: "actions", label: "", sortable: false, render: r => {
-              return el("a", { href: `/api/result/${encodeURIComponent(r.filename)}`, target: "_blank", className: "btn btn-ghost btn-sm", html: Icons.externalLink + " Open" });
-            }},
-          ],
-          data: results,
-        });
-        page.appendChild(tbl.el);
+        this._tree = await Api.getReports();
       } catch (err) {
-        Toast.error("Failed to load results: " + err.message);
+        list.innerHTML = "";
+        list.appendChild(el("div", { className: "text-warning text-sm" }, "Could not load the reports: " + err.message));
+        return;
       }
+
+      // A link to one cube opens its group: on the connected instance when it has
+      // the cube, otherwise on every instance that does.
+      let focusKey = null;
+      if (focusCube) {
+        const having = this._instances().filter(i => i.cubes.some(c => c.cube === focusCube));
+        const own = having.find(i => i.name === state.activeInstance);
+        (own ? [own] : having).forEach(i => this._expanded.add(`${i.name}/cube:${focusCube}`));
+        if (having.length) focusKey = `${(own || having[0]).name}/cube:${focusCube}`;
+      }
+      this._render(list);
+      if (focusKey) {
+        const target = [...list.querySelectorAll(".report-group")].find(g => g.dataset.key === focusKey);
+        if (target) target.scrollIntoView({ block: "start" });
+      }
+    },
+
+    // The connected instance first, then the rest as the server sorted them.
+    _instances() {
+      const all = (this._tree && this._tree.instances) || [];
+      const active = state.connected ? all.filter(i => i.name === state.activeInstance) : [];
+      return active.concat(all.filter(i => !active.includes(i)));
+    },
+
+    _render(list) {
+      list.innerHTML = "";
+      const instances = this._instances();
+      if (instances.length === 0) {
+        list.appendChild(el("div", { className: "empty-state" },
+          el("div", { className: "empty-state-title" }, "No reports yet"),
+          el("div", { className: "empty-state-text" },
+            "Run an optimization on the Optimize page for one cube's report, or run Optimize DB for a report on the whole instance."),
+          el("div", { className: "empty-state-action flex gap-2" },
+            el("a", { href: "#/nav", className: "btn btn-secondary btn-sm" }, "Optimize"),
+            el("a", { href: "#/optimize-db", className: "btn btn-secondary btn-sm" }, "Optimize DB"),
+          ),
+        ));
+        return;
+      }
+
+      const q = this._filter.trim().toLowerCase();
+      let shown = 0;
+      instances.forEach(inst => {
+        const label = inst.name || "(no instance)";
+        const whole = !q || label.toLowerCase().includes(q);
+        const cubes = whole ? inst.cubes : inst.cubes.filter(c => c.cube.toLowerCase().includes(q));
+        if (!whole && cubes.length === 0) return;
+        shown++;
+
+        const card = el("div", { className: "card report-instance" });
+        const runCount = inst.cubes.reduce((n, c) => n + c.runs.length, 0) + inst.optimize_db.length;
+        card.appendChild(el("div", { className: "card-header" },
+          el("div", { className: "flex items-center gap-2" },
+            el("div", { className: "card-title" }, label),
+            state.connected && inst.name === state.activeInstance
+              ? el("span", { className: "badge badge-info" }, "Connected") : null,
+          ),
+          el("span", { className: "text-xs text-tertiary" }, `${runCount} run${runCount === 1 ? "" : "s"}`),
+        ));
+
+        // While filtering, the cubes that match are opened.
+        cubes.forEach(c => card.appendChild(this._group(inst.name, `cube:${c.cube}`, c.cube,
+          c.runs, !whole, c.runs.map(buildRunRow))));
+        if (whole && inst.optimize_db.length) {
+          card.appendChild(this._group(inst.name, "optimize_db", "Optimize DB (all cubes)",
+            inst.optimize_db, false, inst.optimize_db.map(buildRunRow)));
+        }
+        if (whole && inst.other.length) {
+          card.appendChild(this._group(inst.name, "other", "Other files", null, false,
+            inst.other.map(file => el("div", { className: "report-run" },
+              el("div", { className: "report-run-when" }, formatDate(file.modified)),
+              el("div", { className: "report-run-kind report-file-name" }, file.filename),
+              el("div", { className: "report-run-actions" },
+                el("span", { className: "text-xs text-tertiary" }, formatBytes(file.size)),
+                el("a", { href: resultUrl(file.filename), target: "_blank", className: "report-data-link" }, "Open"),
+              ),
+            ))));
+        }
+        list.appendChild(card);
+      });
+
+      if (shown === 0) {
+        list.appendChild(el("div", { className: "text-secondary text-sm" },
+          `No instance or cube matches \u201c${this._filter.trim()}\u201d.`));
+      }
+    },
+
+    // A collapsible group of rows. `runs` is null for the other files.
+    _group(instance, id, title, runs, forceOpen, rows) {
+      const key = `${instance}/${id}`;
+      const open = forceOpen || this._expanded.has(key);
+      const group = el("div", { className: "report-group", dataset: { key } });
+      const body = el("div", { className: "report-runs" }, ...rows);
+      body.hidden = !open;
+      const count = runs ? `${runs.length} run${runs.length === 1 ? "" : "s"}` : `${rows.length} file${rows.length === 1 ? "" : "s"}`;
+      const latest = runs && runs[0] && runs[0].started ? ` \u00b7 latest ${formatDate(runs[0].started)}` : "";
+      const toggle = el("button", {
+        className: "report-group-toggle", "aria-expanded": String(open),
+        onClick: () => {
+          body.hidden = !body.hidden;
+          toggle.setAttribute("aria-expanded", String(!body.hidden));
+          if (body.hidden) this._expanded.delete(key); else this._expanded.add(key);
+        },
+      },
+        el("span", { className: "report-group-chevron", html: Icons.chevronRight }),
+        el("span", { className: "report-group-title" }, title),
+        el("span", { className: "text-xs text-tertiary" }, count + latest),
+      );
+      group.appendChild(toggle);
+      group.appendChild(body);
+      return group;
     },
 
     unmount() {},
@@ -3619,25 +3283,16 @@ const OptimusPy = (function () {
 
         const tbl = createTable({
           columns: [
-            { key: "status", label: "Status", render: r => {
-              const cls = r.status === "running" ? "badge-info" : r.status === "completed" ? "badge-success" : "badge-error";
-              return el("span", { className: `badge ${cls}` }, r.status);
-            }},
-            { key: "cube", label: "Cube", render: r => {
-              const cube = r.cube_name || r.cube_config?.cube || "Unknown";
-              return el("a", { href: `#/cube/${encodeURIComponent(cube)}?tab=optimize`, className: "font-medium" }, cube);
-            }},
+            { key: "status", label: "Status", render: r => jobStatusBadge(r.status) },
+            { key: "label", label: "Job", render: r => el("a", { href: jobLink(r), className: "font-medium" }, r.label) },
+            { key: "mode", label: "Kind", value: r => jobTitle(r) },
             { key: "instance", label: "Instance", value: r => r.instance || "—" },
-            { key: "mode", label: "Mode", value: r => r.mode || "optimize" },
-            { key: "started", label: "Started", value: r => r.started_at ? new Date(r.started_at * 1000).toLocaleTimeString() : "—" },
-            { key: "job_id", label: "Job ID", render: r => el("span", { className: "text-xs text-tertiary" }, r.job_id?.slice(0, 8) || "—") },
+            { key: "started_at", label: "Started", value: r => formatDate(r.started_at), sortValue: r => r.started_at },
+            { key: "job_id", label: "Job ID", render: r => el("span", { className: "text-xs text-tertiary" }, r.job_id) },
           ],
           data: jobs,
           filterable: false,
-          onRowClick: (row) => {
-            const cube = row.cube_name || row.cube_config?.cube;
-            if (cube) Router.navigate(`#/cube/${encodeURIComponent(cube)}?tab=optimize`);
-          },
+          onRowClick: row => Router.navigate(jobLink(row)),
         });
         page.appendChild(tbl.el);
       } catch (err) {
@@ -3651,10 +3306,7 @@ const OptimusPy = (function () {
   };
 
   // ==================================================================
-  // Page: Settings
-  // ==================================================================
-  // ==================================================================
-  // TransferPage (placeholder — full implementation in Tasks 6+7)
+  // Page: Sync Order — copy storage orders from one instance to another
   // ==================================================================
   const TransferPage = {
     _sourceInstance: null,
@@ -3666,6 +3318,12 @@ const OptimusPy = (function () {
     _targetOrders: {},
     _transferredCubes: {},
     _targetMissing: [],
+    _jobId: null,
+    _applyTarget: null,
+    _applyTotal: 0,
+    _applyResults: [],
+    _applyDone: null,
+    _unsubApply: null,
 
     _includeOptimized: true,
 
@@ -3691,6 +3349,9 @@ const OptimusPy = (function () {
       panels.appendChild(targetPanel);
 
       page.appendChild(panels);
+      const applyContainer = el("div", { id: "transfer-apply" });
+      page.appendChild(applyContainer);
+      this._renderApplyPanel(applyContainer);
     },
 
     _buildSourcePanel(panel) {
@@ -3707,10 +3368,11 @@ const OptimusPy = (function () {
         const inst = instanceSelect.value;
         if (!inst) { Toast.error("Select a source instance"); return; }
         this._sourceInstance = inst;
+        if (!(await Credentials.ensure(inst))) return;
         connectBtn.disabled = true;
         connectBtn.textContent = "Scanning...";
         try {
-          const data = await Api.transferScan(inst, null, 100);
+          const data = await Api.transferScan(inst, Credentials.get(inst), 100);
           this._sourceCubes = data.candidates || [];
           this._sourceConnected = true;
           Toast.success(`Scanned ${this._sourceCubes.length} cubes`);
@@ -3780,22 +3442,6 @@ const OptimusPy = (function () {
       });
     },
 
-    async _addToTarget(cubeNames) {
-      cubeNames.forEach(name => {
-        const cube = this._sourceCubes.find(c => c.cube_name === name);
-        if (cube && !this._transferredCubes[name]) {
-          this._transferredCubes[name] = {
-            proposed: cube.storage_order,
-            current: null,
-          };
-        }
-      });
-      if (this._targetConnected) {
-        await this._fetchTargetOrders(selected);
-      }
-      this.mount();
-    },
-
     _buildTargetPanel(panel) {
       const connRow = el("div", { className: "transfer-connect-row" });
       const instanceSelect = el("select", { className: "form-input", id: "transfer-target-instance" });
@@ -3810,6 +3456,7 @@ const OptimusPy = (function () {
         const inst = instanceSelect.value;
         if (!inst) { Toast.error("Select a target instance"); return; }
         this._targetInstance = inst;
+        if (!(await Credentials.ensure(inst))) return;
         this._targetConnected = true;
         if (this._sourceInstance && this._targetInstance === this._sourceInstance) {
           Toast.info("Source and target are the same instance");
@@ -3850,7 +3497,7 @@ const OptimusPy = (function () {
       if (transferredNames.length === 0) {
         dropZone.appendChild(el("div", { className: "transfer-drop-placeholder" },
           el("span", { html: Icons.arrowRight, style: "opacity:0.3" }),
-          el("div", { className: "text-secondary text-sm mt-2" }, "Drag cubes here or use the Transfer button"),
+          el("div", { className: "text-secondary text-sm mt-2" }, "Drag cubes here from the source list"),
         ));
       } else {
         transferredNames.forEach(cubeName => {
@@ -3899,27 +3546,34 @@ const OptimusPy = (function () {
       if (transferredNames.length > 0) {
         const actionsRow = el("div", { className: "flex gap-2 mt-3 flex-wrap" });
 
-        const applyBtn = el("button", { className: "btn btn-primary", onClick: async () => {
+        const applyBtn = el("button", { id: "transfer-apply-all", className: "btn btn-primary", onClick: () => {
           if (!this._targetConnected) { Toast.error("Connect to target instance first"); return; }
           const orders = {};
           Object.entries(this._transferredCubes).forEach(([name, cube]) => {
-            if (!this._targetMissing.includes(name)) {
-              orders[name] = cube.proposed;
-            }
+            if (!this._targetMissing.includes(name)) orders[name] = cube.proposed;
           });
-          if (Object.keys(orders).length === 0) { Toast.error("No valid cubes to apply"); return; }
-          applyBtn.disabled = true;
-          applyBtn.textContent = "Applying...";
-          try {
-            const resp = await Api.transferApply(this._targetInstance, null, orders);
-            Toast.success(`Transfer job started (${resp.job_id})`);
-            Router.navigate("#/jobs");
-          } catch (err) {
-            Toast.error(err.message);
-            applyBtn.disabled = false;
-            applyBtn.textContent = "Apply All";
-          }
+          const names = Object.keys(orders);
+          if (names.length === 0) { Toast.error("No valid cubes to apply"); return; }
+          const unchanged = names.filter(name => {
+            const current = this._transferredCubes[name].current;
+            return current && JSON.stringify(current) === JSON.stringify(orders[name]);
+          });
+          const target = this._targetInstance;
+          Modal.confirm(
+            `Apply the storage order to ${names.length - unchanged.length} cube(s) on '${target}'? ` +
+            "Each one is rebuilt in place on the server and is blocked while it runs." +
+            (unchanged.length ? ` ${unchanged.length} already match and will be skipped.` : ""),
+            async () => {
+              try {
+                const resp = await Api.transferApply(target, Credentials.get(target), orders);
+                this._watchApply(resp.job_id, target, names.length);
+                Sidebar.updateActivityMonitor();
+              } catch (err) {
+                Toast.error(err.message);
+              }
+            });
         }}, "Apply All");
+        applyBtn.disabled = !!(this._jobId && !this._applyDone);
         actionsRow.appendChild(applyBtn);
 
         const exportBtn = el("button", { className: "btn btn-secondary", onClick: async () => {
@@ -3929,7 +3583,7 @@ const OptimusPy = (function () {
           });
           try {
             const resp = await Api.transferExport(this._targetInstance || this._sourceInstance || "", orders);
-            Toast.success(`Exported ${resp.files.length} file(s) to exports/`);
+            Toast.success(`Exported ${resp.files.length} file(s) to ${resp.folder}`);
           } catch (err) {
             Toast.error(err.message);
           }
@@ -3948,7 +3602,7 @@ const OptimusPy = (function () {
 
     async _fetchTargetOrders(cubeNames) {
       try {
-        const data = await Api.transferTargetOrders(this._targetInstance, null, cubeNames);
+        const data = await Api.transferTargetOrders(this._targetInstance, Credentials.get(this._targetInstance), cubeNames);
         Object.entries(data.orders || {}).forEach(([name, order]) => {
           if (this._transferredCubes[name]) {
             this._transferredCubes[name].current = order;
@@ -3960,7 +3614,840 @@ const OptimusPy = (function () {
       }
     },
 
+    // ---- Apply: one row per cube, as the server reports it ----
+    _watchApply(jobId, target, total) {
+      if (this._unsubApply) this._unsubApply();
+      this._jobId = jobId;
+      this._applyTarget = target;
+      this._applyTotal = total;
+      this._applyResults = [];
+      this._applyDone = null;
+      StreamManager.connect(jobId);
+      // Kept across navigation: the rows are held here, and the panel is redrawn
+      // only while the page is on screen.
+      this._unsubApply = StreamManager.subscribe(jobId, (event, data) => {
+        if (event === "log") return;
+        if (event === "progress") {
+          this._applyResults.push(data);
+        } else {
+          this._applyDone = event === "complete" ? data : { status: "failed", error: data && data.error };
+          const failed = this._applyResults.filter(r => r.status === "failed").length;
+          if (this._applyDone.status === "completed") Toast.success(`Storage order applied on '${target}'`);
+          else if (this._applyDone.status === "cancelled") Toast.info("Sync stopped");
+          else Toast.error(failed ? `${failed} cube(s) failed on '${target}' — see the list` : `Sync failed: ${this._applyDone.error || "unknown error"}`);
+          Sidebar.updateActivityMonitor();
+        }
+        this._renderApplyPanel($("#transfer-apply"));
+      });
+      this._renderApplyPanel($("#transfer-apply"));
+    },
+
+    _renderApplyPanel(container) {
+      if (!container) return;
+      // Apply All is drawn with the rest of the page; the panel is redrawn on every
+      // sync event, so it keeps the button's state in step with the job.
+      const applyAll = $("#transfer-apply-all");
+      if (applyAll) applyAll.disabled = !!(this._jobId && !this._applyDone);
+      container.innerHTML = "";
+      if (!this._jobId) return;
+      const done = this._applyDone;
+      const count = status => this._applyResults.filter(r => r.status === status).length;
+      const card = el("div", { className: "card mt-4" });
+      const header = el("div", { className: "card-header" });
+      header.appendChild(el("div", { className: "card-title" }, `Applied to '${this._applyTarget}'`));
+      header.appendChild(el("span", { className: "text-sm text-secondary" },
+        `${count("applied")} applied · ${count("skipped")} skipped · ${count("failed")} failed — ` +
+        (done ? done.status : `${this._applyResults.length} of ${this._applyTotal}`)));
+      if (!done) {
+        const stopBtn = el("button", { className: "btn btn-danger btn-sm" }, "Stop after current cube");
+        stopBtn.addEventListener("click", async () => {
+          stopBtn.disabled = true;
+          try { await Api.cancelJob(this._jobId); } catch (err) { Toast.error("Stop failed: " + err.message); stopBtn.disabled = false; }
+        });
+        header.appendChild(stopBtn);
+      }
+      card.appendChild(header);
+      const badge = { applied: "badge-success", skipped: "badge-neutral", failed: "badge-error" };
+      card.appendChild(createTable({
+        columns: [
+          { key: "index", label: "#", align: "right" },
+          { key: "cube", label: "Cube" },
+          { key: "status", label: "Result", render: r => el("span", { className: `badge ${badge[r.status]}` }, r.status) },
+          { key: "error", label: "Detail", value: r => r.error || "" },
+        ],
+        data: this._applyResults,
+        filterable: false,
+        emptyMessage: "Waiting for the first cube…",
+      }).el);
+      container.appendChild(card);
+    },
+
     unmount() {},
+  };
+
+  // ==================================================================
+  // Page: Optimize DB — reorder every cube on an instance by leaf-element count
+  // ==================================================================
+  // Skip reasons arrive as codes; these are the page's wording for SKIP_LABELS in optimize_db.py.
+  const OPTDB_SKIP_LABELS = {
+    excluded: "Excluded in the run settings",
+    empty: "No memory in use",
+    below_min_ram: "Below minimum cube size",
+    too_few_dimensions: "Fewer than 3 dimensions",
+    already_optimized: "Already optimized",
+    string_elements: "Has string elements",
+    multiple_string_dims: "More than one dimension with strings",
+    already_in_target_order: "Already in target order",
+  };
+
+  const OPTDB_RUN_STATUS = {
+    running: "Running",
+    completed: "Completed",
+    stopped_time_limit: "Stopped — time limit",
+    cancelled: "Stopped — cancelled",
+    failed: "Failed",
+  };
+
+  function optdbStatusBadge(status) {
+    const cls = status === "completed" ? "badge-success"
+      : status === "running" ? "badge-info"
+        : status === "stopped_time_limit" ? "badge-warning" : "badge-error";
+    return el("span", { className: `badge ${cls}` }, OPTDB_RUN_STATUS[status] || status || "—");
+  }
+
+  const OPTDB_CUBE_BADGES = {
+    pending: "badge-neutral", in_flight: "badge-info", done: "badge-success",
+    reverted: "badge-warning", skipped: "badge-neutral", failed: "badge-error",
+  };
+
+  function optdbGb(bytes) {
+    return ((bytes || 0) / 1073741824).toFixed(2) + " GB";
+  }
+
+  // A run can take hours — the shared formatDuration only reaches minutes.
+  function optdbDuration(seconds) {
+    const total = Math.floor(seconds || 0);
+    if (total < 3600) return formatDuration(total);
+    return `${Math.floor(total / 3600)}h ${Math.floor((total % 3600) / 60)}m`;
+  }
+
+  const OptimizeDbPage = {
+    _instance: null,
+    _timeLimitHours: 8,
+    _order: "asc",
+    _minCubeMb: 10,
+    _stringPolicy: "skip_any",
+    _includeOptimized: false,
+    _revertOnRegression: true,
+    _disableActiveChores: false,
+    _excludeCubes: [],
+
+    _plan: null,
+    _planKey: null,
+    _jobId: null,
+    _unsubStream: null,
+    _timer: createElapsedTimer(),
+    _jobStartedAt: null,
+    _planId: null,
+    _queuePoll: null,
+
+    mount() {
+      const page = $("#page-optimize-db");
+      page.innerHTML = "";
+      if (!this._instance) this._instance = state.activeInstance || state.instances[0] || null;
+
+      page.appendChild(el("div", { className: "page-header" },
+        el("h1", { className: "page-title" }, "Optimize DB"),
+        el("p", { className: "page-subtitle" },
+          "Reorder the dimensions of every cube on an instance, one cube at a time, within a time limit you set"),
+      ));
+
+      page.appendChild(this._buildNotice());
+      page.appendChild(this._buildForm());
+
+      const planContainer = el("div", { id: "optdb-plan" });
+      this._renderPlan(planContainer);
+      page.appendChild(planContainer);
+
+      const progressContainer = el("div", { id: "optdb-progress" });
+      page.appendChild(progressContainer);
+
+      const recoveryContainer = el("div", { id: "optdb-recovery" });
+      page.appendChild(recoveryContainer);
+
+      if (this._jobId) {
+        this._renderProgress(progressContainer);
+      } else {
+        this._adoptActiveJob().then(job => {
+          // The lookup is async — do not attach a stream to a page the user left.
+          if (!job || !page.classList.contains("active")) return;
+          this._jobId = job.job_id;
+          this._jobStartedAt = job.started_at;
+          this._planId = job.label;
+          this._renderProgress($("#optdb-progress") || progressContainer);
+        });
+      }
+      this._renderRecovery(recoveryContainer);
+    },
+
+    // ---- What this mode is, stated where the operator starts it ----
+    _buildNotice() {
+      const notice = el("div", { className: "optdb-notice mb-4" });
+      notice.appendChild(el("div", { className: "optdb-notice-title" },
+        el("span", { html: Icons.info }), "How this mode behaves"));
+      const list = el("ul", { className: "optdb-notice-list" });
+      [
+        "This is a quick pass with one simple rule, not the full search the Optimize page runs. Each cube's dimensions are put in order of their leaf-element count, fewest first, and applied once. Nothing is tested against views or TI processes.",
+        "The time limit is checked before each cube starts. While TM1 reorders a cube, the cube is locked and the reorder cannot be safely interrupted, so the run can end later than the limit by as long as its last cube takes.",
+        "The memory saving shown is what TM1 reports for each cube. The instance's total memory only goes down after TM1 is restarted.",
+        "Run it on an instance nobody is using, such as a copy of production. Restart TM1 afterwards, before optimizing individual cubes on the Optimize page.",
+      ].forEach(text => list.appendChild(el("li", null, text)));
+      notice.appendChild(list);
+      return notice;
+    },
+
+    // ---- Instructions form ----
+    _buildForm() {
+      const card = el("div", { className: "card mb-4" });
+      card.appendChild(el("div", { className: "card-title mb-4" }, "Run settings"));
+
+      const row1 = el("div", { className: "form-row-3" });
+
+      const instGroup = el("div", { className: "form-group" });
+      instGroup.appendChild(el("label", { className: "form-label", for: "optdb-instance" }, "Instance"));
+      const instSelect = el("select", { className: "form-input", id: "optdb-instance" });
+      instSelect.appendChild(el("option", { value: "" }, "Select instance..."));
+      state.instances.forEach(name => instSelect.appendChild(el("option", { value: name }, name)));
+      instSelect.value = this._instance || "";
+      instSelect.addEventListener("change", () => { this._instance = instSelect.value || null; });
+      instGroup.appendChild(instSelect);
+      row1.appendChild(instGroup);
+
+      const limitGroup = el("div", { className: "form-group" });
+      limitGroup.appendChild(el("label", { className: "form-label", for: "optdb-time-limit" }, "Time limit (hours)"));
+      const limitInput = el("input", {
+        type: "number", className: "form-input", id: "optdb-time-limit",
+        min: "0.25", step: "0.25", value: String(this._timeLimitHours),
+      });
+      limitInput.addEventListener("change", () => {
+        const value = parseFloat(limitInput.value);
+        this._timeLimitHours = isNaN(value) ? this._timeLimitHours : value;
+        limitInput.value = String(this._timeLimitHours);
+      });
+      limitGroup.appendChild(limitInput);
+      limitGroup.appendChild(el("div", { className: "form-hint" }, "Checked before each cube — a cube already being reordered always finishes"));
+      row1.appendChild(limitGroup);
+
+      const minGroup = el("div", { className: "form-group" });
+      minGroup.appendChild(el("label", { className: "form-label", for: "optdb-min-mb" }, "Minimum cube size (MB)"));
+      const minInput = el("input", {
+        type: "number", className: "form-input", id: "optdb-min-mb",
+        min: "0", step: "1", value: String(this._minCubeMb),
+      });
+      minInput.addEventListener("change", () => {
+        const value = parseFloat(minInput.value);
+        this._minCubeMb = isNaN(value) ? this._minCubeMb : value;
+        minInput.value = String(this._minCubeMb);
+      });
+      minGroup.appendChild(minInput);
+      minGroup.appendChild(el("div", { className: "form-hint" }, "Smaller cubes are skipped — reordering them costs more time than it saves memory"));
+      row1.appendChild(minGroup);
+      card.appendChild(row1);
+
+      const row2 = el("div", { className: "form-row-3" });
+
+      const orderGroup = el("div", { className: "form-group" });
+      orderGroup.appendChild(el("label", { className: "form-label", for: "optdb-order" }, "Cube order"));
+      const orderSelect = el("select", { className: "form-input", id: "optdb-order" },
+        el("option", { value: "asc" }, "Smallest → largest"),
+        el("option", { value: "desc" }, "Largest → smallest"),
+      );
+      orderSelect.value = this._order;
+      orderSelect.addEventListener("change", () => { this._order = orderSelect.value; });
+      orderGroup.appendChild(orderSelect);
+      orderGroup.appendChild(el("div", { className: "form-hint" }, "The order cubes are processed in — not the dimension order"));
+      row2.appendChild(orderGroup);
+
+      const policyGroup = el("div", { className: "form-group" });
+      policyGroup.appendChild(el("label", { className: "form-label", for: "optdb-string-policy" }, "String dimensions"));
+      const policySelect = el("select", { className: "form-input", id: "optdb-string-policy" },
+        el("option", { value: "skip_any" }, "Skip any cube with string elements"),
+        el("option", { value: "pin_last" }, "Keep the string dimension last"),
+      );
+      policySelect.value = this._stringPolicy;
+      policySelect.addEventListener("change", () => { this._stringPolicy = policySelect.value; });
+      policyGroup.appendChild(policySelect);
+      policyGroup.appendChild(el("div", { className: "form-hint" }, "Cubes with strings in more than one dimension are always skipped"));
+      row2.appendChild(policyGroup);
+
+      const flagsGroup = el("div", { className: "form-group" });
+      flagsGroup.appendChild(el("label", { className: "form-label" }, "Safety"));
+      const revertLabel = el("label", { className: "checkbox-label", style: "cursor:pointer;display:flex;align-items:center;gap:6px" });
+      const revertCb = el("input", { type: "checkbox" });
+      revertCb.checked = this._revertOnRegression;
+      revertCb.addEventListener("change", () => { this._revertOnRegression = revertCb.checked; });
+      revertLabel.appendChild(revertCb);
+      revertLabel.appendChild(el("span", { className: "text-sm" }, "Revert a cube that ends up using more memory"));
+      flagsGroup.appendChild(revertLabel);
+      const choresLabel = el("label", { className: "checkbox-label", style: "cursor:pointer;display:flex;align-items:center;gap:6px;margin-top:6px" });
+      const choresCb = el("input", { type: "checkbox" });
+      choresCb.checked = this._disableActiveChores;
+      choresCb.addEventListener("change", () => { this._disableActiveChores = choresCb.checked; });
+      choresLabel.appendChild(choresCb);
+      choresLabel.appendChild(el("span", { className: "text-sm" }, "Disable active chores for the run"));
+      flagsGroup.appendChild(choresLabel);
+      flagsGroup.appendChild(el("div", { className: "form-hint" }, "Re-activated when the run ends, even if it fails. If OptimusPy itself is killed they stay off; re-enable them under Previous runs"));
+      row2.appendChild(flagsGroup);
+      card.appendChild(row2);
+
+      card.appendChild(this._buildExcludeGroup());
+
+      const optimizedGroup = el("div", { className: "form-group" });
+      optimizedGroup.appendChild(el("label", { className: "form-label" }, "Already optimized cubes"));
+      const optimizedLabel = el("label", { className: "checkbox-label", style: "cursor:pointer;display:flex;align-items:center;gap:6px" });
+      const optimizedCb = el("input", { type: "checkbox", id: "optdb-include-optimized" });
+      optimizedCb.checked = this._includeOptimized;
+      optimizedCb.addEventListener("change", () => { this._includeOptimized = optimizedCb.checked; });
+      optimizedLabel.appendChild(optimizedCb);
+      optimizedLabel.appendChild(el("span", { className: "text-sm" }, "Include optimized"));
+      optimizedGroup.appendChild(optimizedLabel);
+      optimizedGroup.appendChild(el("div", { className: "form-hint" },
+        "A cube whose storage order differs from its presentation order was ordered on purpose, often by the Optimize page. Left unticked, the plan skips it; ticked, the pass reorders it like any other cube"));
+      card.appendChild(optimizedGroup);
+
+      const actions = el("div", { className: "flex gap-2 mt-4 items-center" });
+      const buildBtn = el("button", { className: "btn btn-secondary", id: "optdb-plan-btn" }, "Build plan");
+      buildBtn.addEventListener("click", () => this._buildPlan(buildBtn));
+      actions.appendChild(buildBtn);
+      const runBtn = el("button", { className: "btn btn-primary", id: "optdb-run-btn" }, "Run plan");
+      runBtn.disabled = !this._plan || !(this._plan.cubes || []).length;
+      runBtn.addEventListener("click", () => this._runPlan(runBtn));
+      actions.appendChild(runBtn);
+      actions.appendChild(el("span", { className: "text-xs text-tertiary" },
+        "Building a plan only reads from TM1. Running it reorders the cubes on the server."));
+      card.appendChild(actions);
+
+      return card;
+    },
+
+    _buildExcludeGroup() {
+      const group = el("div", { className: "form-group" });
+      group.appendChild(el("label", { className: "form-label", for: "optdb-exclude-input" }, "Exclude cubes"));
+      const row = el("div", { className: "flex gap-2" });
+      const input = el("input", {
+        type: "text", className: "form-input", id: "optdb-exclude-input",
+        placeholder: "Cube name or pattern, e.g. Sales*",
+      });
+      const chips = el("div", { className: "optdb-chips mt-2" });
+      const add = () => {
+        const value = input.value.trim();
+        if (!value) return;
+        if (!this._excludeCubes.includes(value)) this._excludeCubes.push(value);
+        input.value = "";
+        this._renderChips(chips);
+      };
+      input.addEventListener("keydown", e => {
+        if (e.key === "Enter") { e.preventDefault(); add(); }
+      });
+      row.appendChild(input);
+      row.appendChild(el("button", { className: "btn btn-secondary btn-sm", onClick: add },
+        el("span", { html: Icons.plus }), "Add"));
+      group.appendChild(row);
+      group.appendChild(el("div", { className: "form-hint" }, "Case-insensitive; * and ? wildcards are supported"));
+      this._renderChips(chips);
+      group.appendChild(chips);
+      return group;
+    },
+
+    _renderChips(container) {
+      container.innerHTML = "";
+      if (this._excludeCubes.length === 0) {
+        container.appendChild(el("span", { className: "text-xs text-tertiary" }, "No cubes excluded"));
+        return;
+      }
+      this._excludeCubes.forEach(name => {
+        const remove = el("button", {
+          className: "optdb-chip-remove", "aria-label": `Remove ${name}`, html: Icons.x,
+          onClick: () => {
+            this._excludeCubes = this._excludeCubes.filter(c => c !== name);
+            this._renderChips(container);
+          },
+        });
+        container.appendChild(el("span", { className: "optdb-chip" }, name, remove));
+      });
+    },
+
+    _instructions() {
+      return {
+        time_limit_hours: this._timeLimitHours,
+        order: this._order,
+        exclude_cubes: this._excludeCubes,
+        min_cube_mb: this._minCubeMb,
+        string_policy: this._stringPolicy,
+        include_optimized: this._includeOptimized,
+        revert_on_regression: this._revertOnRegression,
+        disable_active_chores: this._disableActiveChores,
+      };
+    },
+
+    // What the plan on screen was built from. Running is refused once this has
+    // changed, so a run is always the plan the operator is looking at.
+    _planKeyNow() {
+      return JSON.stringify([this._instance, this._instructions()]);
+    },
+
+    // ---- Plan ----
+    async _buildPlan(btn) {
+      if (!this._instance) { Toast.error("Select an instance"); return; }
+      if (!(await Credentials.ensure(this._instance))) return;
+      btn.disabled = true;
+      btn.textContent = "Building plan\u2026";
+      try {
+        const plan = await Api.optimizeDbPlan(this._instance, Credentials.get(this._instance), this._instructions());
+        this._plan = plan;
+        this._planKey = this._planKeyNow();
+        this._renderPlan($("#optdb-plan"));
+        const runBtn = $("#optdb-run-btn");
+        if (runBtn) runBtn.disabled = !(plan.cubes || []).length;
+        Toast.success(`Plan ready — ${(plan.cubes || []).length} cube(s) to reorder`);
+      } catch (err) {
+        Toast.error(err.message);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Build plan";
+      }
+    },
+
+    _renderPlan(container) {
+      if (!container) return;
+      container.innerHTML = "";
+      const plan = this._plan;
+      if (!plan) {
+        container.appendChild(el("div", { className: "empty-state" },
+          el("div", { className: "empty-state-title" }, "No plan yet"),
+          el("div", { className: "empty-state-text" },
+            "Build a plan to see which cubes would be reordered, in what order, and which are skipped. Building a plan only reads from TM1 — nothing is changed."),
+        ));
+        return;
+      }
+
+      const cubes = plan.cubes || [];
+      const skipped = plan.skipped || [];
+
+      const stats = el("div", { className: "stat-cards" });
+      const stat = (label, value, hint) => stats.appendChild(el("div", { className: "stat-card" },
+        el("div", { className: "stat-card-label" }, label),
+        el("div", { className: "stat-card-value" }, value),
+        hint ? el("div", { className: "stat-card-hint" }, hint) : null,
+      ));
+      stat("Cube memory", optdbGb(plan.total_model_ram_bytes), "All cubes on the instance");
+      stat("In this plan", optdbGb(plan.planned_ram_bytes), "Memory of the cubes to reorder");
+      stat("Share", (plan.coverage_pct || 0).toFixed(1) + "%", "Of all cube memory, the part this plan reorders");
+      stat("Cubes", String(cubes.length), `${skipped.length} skipped`);
+      container.appendChild(stats);
+
+      const queueCard = el("div", { className: "card mb-4" });
+      queueCard.appendChild(el("div", { className: "card-title mb-2" },
+        `Cubes to reorder (${cubes.length})`));
+      queueCard.appendChild(el("div", { className: "text-sm text-secondary mb-2" },
+        `Plan ${plan.plan_id} — reordered top to bottom, ${plan.options && plan.options.order === "desc" ? "largest cube first" : "smallest cube first"}.`));
+      if (cubes.length === 0) {
+        queueCard.appendChild(el("div", { className: "text-secondary text-sm" }, "No cube qualifies — nothing would be reordered."));
+      } else {
+        const rows = cubes.map((c, i) => Object.assign({ position: i + 1 }, c));
+        const tbl = createTable({
+          columns: [
+            { key: "position", label: "#", align: "right" },
+            { key: "cube", label: "Cube", render: r => el("span", { className: "font-medium" }, r.cube) },
+            { key: "ram_bytes", label: "Memory", align: "right", value: r => formatBytes(r.ram_bytes || 0), sortValue: r => r.ram_bytes || 0 },
+            {
+              key: "target_order", label: "New dimension order", sortable: false,
+              render: r => el("span", { className: "optdb-order" }, (r.target_order || []).join(" \u2192 ")),
+            },
+          ],
+          data: rows,
+        });
+        queueCard.appendChild(tbl.el);
+      }
+      container.appendChild(queueCard);
+
+      if (skipped.length > 0) container.appendChild(this._buildSkippedCard(skipped));
+      container.appendChild(this._buildChoresCard(plan));
+    },
+
+    _buildSkippedCard(skipped) {
+      const groups = {};
+      skipped.forEach(s => {
+        const reason = s.reason || "unknown";
+        (groups[reason] = groups[reason] || []).push(s);
+      });
+      const card = el("div", { className: "card mb-4" });
+      card.appendChild(el("div", { className: "card-title mb-2" }, `Skipped cubes (${skipped.length})`));
+      Object.keys(groups).sort().forEach(reason => {
+        const entries = groups[reason];
+        const group = el("div", { className: "optdb-skip-group" });
+        group.appendChild(el("div", { className: "optdb-skip-reason" },
+          el("span", null, OPTDB_SKIP_LABELS[reason] || reason),
+          el("span", { className: "badge badge-neutral" }, String(entries.length)),
+        ));
+        const chips = el("div", { className: "optdb-chips" });
+        entries.forEach(entry => chips.appendChild(el("span", { className: "optdb-chip" },
+          `${entry.cube} · ${formatBytes(entry.ram_bytes || 0)}`)));
+        group.appendChild(chips);
+        card.appendChild(group);
+      });
+      return card;
+    },
+
+    _buildChoresCard(plan) {
+      const chores = plan.active_chores || [];
+      const willDisable = !!(plan.options && plan.options.disable_active_chores);
+      const card = el("div", { className: "card mb-4" });
+      card.appendChild(el("div", { className: "card-title mb-2" }, `Active chores (${chores.length})`));
+      card.appendChild(el("div", { className: "text-sm text-secondary mb-2" }, willDisable
+        ? "These chores are deactivated when the run starts and re-activated when it ends, even if it fails. If OptimusPy itself is killed they stay off; re-enable them under Previous runs below."
+        : "These chores keep running during the run. Tick 'Disable active chores for the run' to switch exactly these off while it runs."));
+      if (chores.length === 0) {
+        card.appendChild(el("div", { className: "text-secondary text-sm" }, "No chore is active on this instance."));
+      } else {
+        const chips = el("div", { className: "optdb-chips" });
+        chores.forEach(name => chips.appendChild(el("span", { className: "optdb-chip" }, name)));
+        card.appendChild(chips);
+      }
+      return card;
+    },
+
+    // ---- Run ----
+    _runPlan(btn) {
+      const plan = this._plan;
+      if (!plan) return;
+      if (this._planKeyNow() !== this._planKey) {
+        Toast.error("The run settings changed after this plan was built — build the plan again before running it");
+        return;
+      }
+      this._confirmRun(plan.instance, plan.plan_id,
+        `Reorder ${(plan.cubes || []).length} cube(s) on '${plan.instance}' exactly as listed in plan ${plan.plan_id}? Each cube is locked on the server while TM1 reorders it.`,
+        btn);
+    },
+
+    // Start plan `planId`: a fresh run, or the continuation of one already on
+    // disk — the server decides which. Shared by Run plan and every Resume button.
+    _confirmRun(instance, planId, message, btn) {
+      Modal.confirm(message, async () => {
+        if (!(await Credentials.ensure(instance))) return;
+        const label = btn.textContent;
+        btn.disabled = true;
+        btn.textContent = "Starting…";
+        try {
+          const resp = await Api.optimizeDbRun(instance, Credentials.get(instance), planId);
+          this._jobId = resp.job_id;
+          this._jobStartedAt = resp.started_at;
+          this._planId = planId;
+          StreamManager.connect(resp.job_id);
+          this._renderProgress($("#optdb-progress"));
+          Sidebar.updateActivityMonitor();
+          Toast.success(`Optimize DB run started (${resp.job_id})`);
+        } catch (err) {
+          Toast.error(err.message);
+        } finally {
+          btn.disabled = false;
+          btn.textContent = label;
+        }
+      });
+    },
+
+    async _adoptActiveJob() {
+      try {
+        const data = await Api.getJobs();
+        const jobs = (data.jobs || []).filter(j => j.mode === "optimize-db");
+        return jobs.find(j => j.status === "running") || jobs[0] || null;
+      } catch {
+        return null;
+      }
+    },
+
+    // Stop everything that follows the run on screen: the stream subscription, the
+    // timer and the queue poll. Called before the progress card is drawn again,
+    // when the run ends, and when the page is left.
+    _releaseProgress() {
+      if (this._unsubStream) { this._unsubStream(); this._unsubStream = null; }
+      this._timer.stop();
+      if (this._queuePoll) { clearInterval(this._queuePoll); this._queuePoll = null; }
+    },
+
+    // One row per planned cube, in plan order, read from the run artifact the
+    // server rewrites after every cube.
+    _renderQueue(container, run) {
+      container.innerHTML = "";
+      const cubes = Object.entries(run.cubes || {});
+      const finished = cubes.filter(([, c]) => ["done", "reverted", "skipped", "failed"].includes(c.status)).length;
+      let budget = "";
+      if (run.deadline_at && !run.finished_at) {
+        const left = run.deadline_at - Date.now() / 1000;
+        budget = left > 0 ? ` · ${optdbDuration(left)} of the time limit left`
+          : " · time limit reached — stops after the cube being reordered";
+      }
+      container.appendChild(el("div", { className: "text-sm text-secondary mb-2" },
+        `${finished} of ${cubes.length} cubes finished${budget}`));
+      container.appendChild(createTable({
+        columns: [
+          { key: "position", label: "#", align: "right" },
+          { key: "cube", label: "Cube" },
+          { key: "status", label: "Status", render: r => el("span",
+            { className: `badge ${OPTDB_CUBE_BADGES[r.status] || "badge-neutral"}` }, r.status === "in_flight" ? "reordering" : r.status) },
+          { key: "pct_change", label: "RAM change", align: "right",
+            value: r => r.pct_change == null ? "—" : `${r.pct_change > 0 ? "+" : ""}${r.pct_change.toFixed(2)}%` },
+          { key: "duration_s", label: "Took", align: "right",
+            value: r => r.duration_s == null ? "—" : optdbDuration(r.duration_s) },
+        ],
+        data: cubes.map(([cube, c], i) => Object.assign({ position: i + 1, cube }, c)),
+        filterable: false,
+      }).el);
+    },
+
+    _renderProgress(container) {
+      if (!container) return;
+      this._releaseProgress();
+      container.innerHTML = "";
+      if (!this._jobId) return;
+
+      const card = el("div", { className: "card mb-4" });
+      card.appendChild(el("div", { className: "card-title mb-2" }, "Run progress"));
+
+      const statusBar = el("div", { className: "terminal-status" });
+      const statusDot = el("span", { className: "status-dot" });
+      const statusText = el("span", { className: "text-sm font-medium" }, "Idle");
+      const timerEl = el("span", { className: "terminal-timer" }, "00:00");
+      const stopBtn = el("button", { className: "btn btn-danger btn-sm", style: "display:none;margin-left:auto" },
+        "Stop after current cube");
+      stopBtn.addEventListener("click", async () => {
+        stopBtn.disabled = true;
+        stopBtn.textContent = "Stopping\u2026";
+        try {
+          await Api.cancelJob(this._jobId);
+          Toast.info("Stopping — the cube being reordered finishes first");
+        } catch (e) {
+          Toast.error("Cancel failed: " + e.message);
+          stopBtn.disabled = false;
+          stopBtn.textContent = "Stop after current cube";
+        }
+      });
+      statusBar.appendChild(statusDot);
+      statusBar.appendChild(statusText);
+      statusBar.appendChild(timerEl);
+      statusBar.appendChild(stopBtn);
+      card.appendChild(statusBar);
+      const queue = el("div", { className: "mb-4" });
+      card.appendChild(queue);
+      const refreshQueue = async () => {
+        if (!this._planId) return;
+        try {
+          this._renderQueue(queue, (await Api.optimizeDbRunState(this._planId)).run);
+        } catch { /* the run artifact exists once the run has started */ }
+      };
+      refreshQueue();
+
+      const terminal = createTerminal();
+      card.appendChild(terminal.el);
+      const summary = el("div", { className: "mt-4" });
+      card.appendChild(summary);
+      container.appendChild(card);
+
+      StreamManager.getLogs(this._jobId).forEach(log => terminal.append(log));
+
+      const sseStatus = StreamManager.getStatus(this._jobId);
+      if (sseStatus === "running" || sseStatus === "unknown") {
+        statusDot.classList.add("running");
+        statusText.textContent = "Running";
+        stopBtn.style.display = "";
+        this._timer.start(timerEl, this._jobStartedAt || Date.now() / 1000);
+        StreamManager.connect(this._jobId);
+        this._queuePoll = setInterval(refreshQueue, 5000);
+      } else if (sseStatus === "completed") {
+        statusDot.classList.add("completed");
+        statusText.textContent = "Finished";
+      } else {
+        statusDot.classList.add("failed");
+        statusText.textContent = sseStatus === "cancelled" ? "Cancelled" : "Failed";
+      }
+
+      this._unsubStream = StreamManager.subscribe(this._jobId, (event, data) => {
+        if (event === "log") {
+          terminal.append(data);
+          return;
+        }
+        stopBtn.style.display = "none";
+        this._releaseProgress(); refreshQueue();
+        Sidebar.updateActivityMonitor();
+        if (event === "complete") {
+          const run = (data && data.run) || null;
+          const status = run && run.status;
+          // With no qualifying cube the core never opens a run and hands back
+          // the plan instead — a clean no-op, not a failure.
+          const nothingToRun = !!run && !status;
+          const ok = nothingToRun || !!(data && data.success);
+          statusDot.className = `status-dot ${ok ? "completed" : "failed"}`;
+          statusText.textContent = nothingToRun ? "Nothing to run" : (OPTDB_RUN_STATUS[status] || "Finished");
+          this._renderRunSummary(summary, run);
+          this._renderRecovery($("#optdb-recovery"));
+          if (nothingToRun) Toast.info("No cube qualified — nothing was reordered");
+          else if (data && data.success) Toast.success("Optimize DB finished — restart TM1 to see the memory saving");
+          else Toast.warning(`Optimize DB ended: ${OPTDB_RUN_STATUS[status] || status || "unknown"}`);
+        } else if (event === "cancelled") {
+          statusDot.className = "status-dot failed";
+          statusText.textContent = "Cancelled";
+          Toast.info("Optimize DB run cancelled");
+        } else if (event === "error_event") {
+          statusDot.className = "status-dot failed";
+          statusText.textContent = "Failed";
+          this._renderRecovery($("#optdb-recovery"));
+          Toast.error("Optimize DB failed: " + ((data && data.error) || "Unknown error"));
+        }
+      });
+    },
+
+    _renderRunSummary(container, run) {
+      container.innerHTML = "";
+      if (!run) return;
+      if (!run.status) {
+        container.appendChild(el("div", { className: "text-sm text-secondary" },
+          "No cube qualified under these run settings — nothing was reordered."));
+        return;
+      }
+      const totals = run.totals || {};
+      const stats = el("div", { className: "stat-cards" });
+      const stat = (label, value, hint) => stats.appendChild(el("div", { className: "stat-card" },
+        el("div", { className: "stat-card-label" }, label),
+        el("div", { className: "stat-card-value" }, value),
+        hint ? el("div", { className: "stat-card-hint" }, hint) : null,
+      ));
+      stat("Outcome", OPTDB_RUN_STATUS[run.status] || run.status || "—", `Plan ${run.plan_id || "—"}`);
+      stat("Reordered", String(totals.cubes_reordered || 0),
+        `${totals.cubes_reverted || 0} reverted · ${totals.cubes_failed || 0} failed · ${totals.cubes_pending || 0} not started`);
+      stat("Expected saving", formatBytes(totals.bytes_saved || 0), "Visible after a TM1 restart");
+      stat("Average change", (totals.mean_pct_change || 0).toFixed(2) + "%", "Per reordered cube");
+      stat("Elapsed", optdbDuration(totals.elapsed_s || 0), `Limit ${(run.options && run.options.time_limit_hours) || "—"}h — checked before each cube`);
+      container.appendChild(stats);
+
+      const chores = run.chores || {};
+      if (chores.state === "disabled") {
+        container.appendChild(this._buildChoreWarning({
+          plan_id: run.plan_id, instance: run.instance,
+        }));
+      } else if (chores.state === "restored") {
+        container.appendChild(el("div", { className: "text-sm text-secondary" },
+          `Re-activated ${(chores.deactivated || []).length} chore(s).`));
+      }
+    },
+
+    // ---- Recovery ----
+    async _renderRecovery(container) {
+      if (!container) return;
+      container.innerHTML = "";
+      const card = el("div", { className: "card" });
+      const header = el("div", { className: "card-header" });
+      header.appendChild(el("div", { className: "card-title" }, "Previous runs"));
+      header.appendChild(el("button", {
+        className: "btn btn-ghost btn-sm",
+        onClick: () => this._renderRecovery(container),
+      }, el("span", { html: Icons.refresh }), "Refresh"));
+      card.appendChild(header);
+      const body = el("div");
+      body.appendChild(el("div", { className: "text-secondary text-sm" }, "Loading runs\u2026"));
+      card.appendChild(body);
+      container.appendChild(card);
+
+      let runs;
+      try {
+        const data = await Api.optimizeDbRuns();
+        runs = data.runs || [];
+      } catch (err) {
+        body.innerHTML = "";
+        body.appendChild(el("div", { className: "text-warning text-sm" }, "Could not load runs: " + err.message));
+        return;
+      }
+
+      body.innerHTML = "";
+      if (runs.length === 0) {
+        body.appendChild(el("div", { className: "text-secondary text-sm" },
+          "No Optimize DB run has been recorded yet."));
+        return;
+      }
+
+      runs.filter(r => r.chores_pending_restore)
+        .forEach(r => body.appendChild(this._buildChoreWarning(r, container)));
+
+      const tbl = createTable({
+        columns: [
+          { key: "status", label: "Status", render: r => optdbStatusBadge(r.status) },
+          { key: "plan_id", label: "Plan", value: r => r.plan_id || "—" },
+          { key: "instance", label: "Instance", value: r => r.instance || "—" },
+          { key: "started_at", label: "Started", value: r => r.started_at ? formatDate(r.started_at) : "—" },
+          {
+            key: "cubes_done", label: "Cubes", align: "right",
+            value: r => `${r.cubes_done || 0} / ${r.cubes_total || 0}`,
+            sortValue: r => r.cubes_done || 0,
+          },
+          {
+            key: "chores_state", label: "Chores", render: r => r.chores_pending_restore
+              ? el("span", { className: "badge badge-warning" }, "disabled")
+              : el("span", { className: "text-xs text-tertiary" }, r.chores_state || "untouched"),
+          },
+          {
+            key: "report", label: "", sortable: false,
+            render: r => el("button", {
+              className: "btn btn-ghost btn-sm",
+              onClick: () => openOptimizeDbReport(r.plan_id),
+            }, el("span", { html: Icons.externalLink }), "Report"),
+          },
+          {
+            key: "resume", label: "", sortable: false,
+            render: r => r.status === "completed" ? null : el("button", {
+              className: "btn btn-ghost btn-sm",
+              onClick: e => this._confirmRun(r.instance, r.plan_id,
+                `Continue run ${r.plan_id} on '${r.instance}'? Cubes already done are checked and kept; the rest are reordered in the time left from the original limit.`,
+                e.currentTarget),
+            }, "Resume"),
+          },
+        ],
+        data: runs,
+        filterable: false,
+      });
+      body.appendChild(tbl.el);
+    },
+
+    _buildChoreWarning(run, recoveryContainer) {
+      const banner = el("div", { className: "optdb-warning mb-2" });
+      banner.appendChild(el("span", { className: "optdb-warning-icon", html: Icons.alertTriangle }));
+      banner.appendChild(el("div", null,
+        el("div", { className: "font-semibold" }, "Chores still disabled"),
+        el("div", { className: "text-sm" },
+          `Run ${run.plan_id || "—"} on '${run.instance || "—"}' deactivated chores and never re-activated them. They stay off until restored.`),
+      ));
+      const btn = el("button", { className: "btn btn-primary btn-sm", style: "margin-left:auto;flex-shrink:0" },
+        "Re-enable chores");
+      btn.addEventListener("click", async () => {
+        if (!(await Credentials.ensure(run.instance))) return;
+        btn.disabled = true;
+        btn.textContent = "Re-enabling\u2026";
+        try {
+          const resp = await Api.optimizeDbRestoreChores(
+            run.instance, Credentials.get(run.instance), run.plan_id);
+          Toast.success(`Re-activated ${(resp.restored || []).length} chore(s)`);
+          this._renderRecovery(recoveryContainer || $("#optdb-recovery"));
+        } catch (err) {
+          Toast.error(err.message);
+          btn.disabled = false;
+          btn.textContent = "Re-enable chores";
+        }
+      });
+      banner.appendChild(btn);
+      return banner;
+    },
+
+    unmount() {
+      this._releaseProgress();
+    },
   };
 
   const SettingsPage = {
@@ -3995,55 +4482,35 @@ const OptimusPy = (function () {
       themeCard.appendChild(themeRow);
       page.appendChild(themeCard);
 
-      // Instance configs — show ALL instances from config.ini
+      // TM1 Instances — the config.ini in use, read-only
       {
+        const cfg = state.config;
         const instancesCard = el("div", { className: "card mb-4" });
         instancesCard.appendChild(el("div", { className: "card-title mb-4" }, "TM1 Instances"));
 
-        if (state.configReadOnly) {
-          instancesCard.appendChild(el("div", {
-            className: "readonly-banner mb-3",
-          }, "This config.ini is managed externally — read-only. Edit it where it is maintained (e.g. the shared file or RushTI)."));
-        } else {
-          // "New Instance" button
-          const newInstanceBtn = el("button", { className: "btn btn-secondary btn-sm mb-3", onClick: () => {
-            const nameInput = el("input", { className: "form-input", type: "text", placeholder: "Instance name (e.g. prod_server)" });
-            const bodyEl = el("div", null,
-              el("label", { className: "form-label" }, "Instance Name"),
-              nameInput,
-            );
-            Modal.open({
-              title: "New TM1 Instance",
-              body: bodyEl,
-              footer: [
-                el("button", { className: "btn btn-ghost", onClick: () => Modal.close() }, "Cancel"),
-                el("button", { className: "btn btn-primary", onClick: async () => {
-                  const name = nameInput.value.trim();
-                  if (!name) { Toast.error("Instance name is required"); return; }
-                  try {
-                    await Api.createInstance(name, {});
-                    Toast.success(`Instance "${name}" created`);
-                    Modal.close();
-                    await Sidebar.loadInstances();
-                    this.mount();
-                  } catch (err) {
-                    Toast.error(err.message);
-                  }
-                }}, "Create"),
-              ],
-            });
-            nameInput.focus();
-          }}, el("span", { html: Icons.plus }), " New Instance");
-          instancesCard.appendChild(newInstanceBtn);
-        }
+        const sourceLabels = { linked: "Linked file", default: "OptimusPy's own copy", flag: "Set by --config at launch" };
+        instancesCard.appendChild(el("div", { className: "form-group" },
+          el("div", { className: "form-label" }, "File in use"),
+          el("div", { className: "flex items-center gap-2 flex-wrap" },
+            el("code", { className: "config-path" }, cfg.config_path || ""),
+            el("span", { className: "badge badge-neutral" }, sourceLabels[cfg.source] || ""),
+          ),
+        ));
 
-        if (state.instances.length === 0) {
-          instancesCard.appendChild(el("div", { className: "text-secondary text-sm" }, "No instances configured. Add one to get started."));
+        if (cfg.source !== "flag") instancesCard.appendChild(this._buildConfigChooser(cfg));
+
+        if (cfg.error) {
+          instancesCard.appendChild(el("div", { className: "config-error" }, cfg.error));
+        } else if (state.instances.length === 0) {
+          instancesCard.appendChild(el("div", { className: "text-secondary text-sm" }, cfg.source === "default"
+            ? "There's no config.ini yet. Point to one above, or create config/config.ini from config/config.ini.example."
+            : "This config.ini has no instances."));
         }
 
         const tabs = el("div", { className: "tabs" });
         const containers = {};
-        state.instances.forEach((name, i) => {
+        const instances = cfg.error ? [] : state.instances;
+        instances.forEach((name, i) => {
           const tab = el("div", {
             className: `tab${i === 0 ? " active" : ""}`,
             dataset: { instance: name },
@@ -4064,13 +4531,15 @@ const OptimusPy = (function () {
           tabs.appendChild(tab);
           containers[name] = el("div", { style: i === 0 ? "" : "display:none" });
         });
-        instancesCard.appendChild(tabs);
-        Object.values(containers).forEach(c => instancesCard.appendChild(c));
+        if (instances.length > 0) {
+          instancesCard.appendChild(tabs);
+          Object.values(containers).forEach(c => instancesCard.appendChild(c));
+        }
         page.appendChild(instancesCard);
 
         // Load first instance config
-        if (state.instances.length > 0) {
-          const firstName = state.instances[0];
+        if (instances.length > 0) {
+          const firstName = instances[0];
           this._loadInstanceConfig(containers[firstName], firstName);
           containers[firstName].dataset.loaded = "true";
         }
@@ -4081,21 +4550,19 @@ const OptimusPy = (function () {
       cacheCard.appendChild(el("div", { className: "card-title mb-4" }, "Cache"));
       cacheCard.appendChild(el("p", { className: "text-secondary text-sm mb-3" }, "Scan results and cube intelligence are cached locally. Clear the cache to force fresh data from the server."));
       const clearCacheBtn = el("button", { className: "btn btn-secondary", onClick: () => {
-        // Clear localStorage caches
-        const keys = Object.keys(localStorage);
-        keys.forEach(k => {
-          if (k.startsWith("op-scan-") || k.startsWith("op-intel-")) {
-            localStorage.removeItem(k);
-          }
-        });
-        // Clear in-memory caches
-        state.scanData = null;
-        state.scanTimestamp = null;
-        state.cubeMetadata = {};
+        clearCaches();
         Toast.success("Cache cleared — scans and cube intelligence will be refreshed");
       }}, "Clear Cache");
       cacheCard.appendChild(clearCacheBtn);
       page.appendChild(cacheCard);
+
+      // Folders the UI writes JSON to
+      const foldersCard = el("div", { className: "card mb-4" });
+      foldersCard.appendChild(el("div", { className: "card-title mb-4" }, "Folders"));
+      const foldersList = el("div");
+      foldersCard.appendChild(foldersList);
+      foldersCard.appendChild(el("p", { className: "text-xs text-tertiary" }, "Files already saved stay in the old folder."));
+      page.appendChild(foldersCard);
 
       // Saved configs management
       const configsCard = el("div", { className: "card" });
@@ -4104,81 +4571,137 @@ const OptimusPy = (function () {
       configsCard.appendChild(configsList);
       page.appendChild(configsCard);
       this._loadSavedConfigs(configsList);
+      this._loadFolders(foldersList, configsList);
+    },
+
+    async _loadFolders(container, configsList) {
+      let folders;
+      try {
+        folders = await Api.getFolders();
+      } catch (err) {
+        container.appendChild(el("div", { className: "text-secondary text-sm" }, "Failed to load folders: " + err.message));
+        return;
+      }
+      const rows = [
+        { kind: "cube_configs", label: "Saved cube configs" },
+        { kind: "exports", label: "Sync Order exports" },
+      ];
+      const change = async (body) => {
+        try {
+          await Api.setFolder(body);
+        } catch (err) {
+          Toast.error(err.message);
+          return;
+        }
+        if (body.kind === "cube_configs") {
+          configsList.innerHTML = "";
+          this._loadSavedConfigs(configsList);
+          Sidebar.loadSavedCubes();
+        }
+        container.innerHTML = "";
+        this._loadFolders(container, configsList);
+      };
+      rows.forEach(({ kind, label }) => {
+        const folder = folders[kind];
+        const inputId = `folder-input-${kind}`;
+        const input = el("input", { id: inputId, className: "form-input", type: "text", placeholder: "Path to a folder", style: "flex:1;min-width:200px;" });
+        const controls = el("div", { className: "flex gap-2 flex-wrap items-center" },
+          input,
+          el("button", { className: "btn btn-secondary", onClick: () => change({ kind, path: input.value }) }, "Change folder"),
+        );
+        if (!folder.is_default) {
+          controls.appendChild(el("button", { className: "btn btn-ghost", onClick: () => change({ kind, reset: true }) }, "Use default"));
+        }
+        container.appendChild(el("div", { className: "form-group" },
+          el("label", { className: "form-label", for: inputId }, label),
+          el("div", { className: "flex items-center gap-2 flex-wrap mb-2" },
+            el("code", { className: "config-path" }, folder.path),
+            folder.is_default ? el("span", { className: "text-xs text-tertiary" }, "(default)") : null,
+          ),
+          controls,
+        ));
+      });
+    },
+
+    // Point OptimusPy at another config.ini, by link or by copy. Hidden when
+    // --config chose the file at launch.
+    _buildConfigChooser(cfg) {
+      const box = el("div", { className: "form-group" });
+      box.appendChild(el("label", { className: "form-label", for: "config-path-input" }, "Change file"));
+      const input = el("input", {
+        id: "config-path-input", className: "form-input", type: "text",
+        placeholder: "Path to a config.ini, or to the folder that holds one",
+      });
+      box.appendChild(input);
+      const buttons = el("div", { className: "flex gap-2 mt-2 flex-wrap" },
+        el("button", { className: "btn btn-secondary", onClick: () => this._switchConfig({ mode: "link", path: input.value }) }, "Link to this file"),
+        el("button", { className: "btn btn-secondary", onClick: () => this._switchConfig({ mode: "copy", path: input.value }) }, "Copy into OptimusPy"),
+      );
+      if (cfg.source === "linked" && cfg.own_copy_exists) {
+        buttons.appendChild(el("button", { className: "btn btn-ghost", onClick: () => this._switchConfig({ mode: "own" }) }, "Use OptimusPy's own copy"));
+      }
+      box.appendChild(buttons);
+      box.appendChild(el("p", { className: "text-xs text-tertiary mt-2" },
+        "A link follows the file, so changes made for RushTI or your scripts show up here. A copy is a snapshot, so later changes to the original don't."));
+      return box;
+    },
+
+    async _switchConfig(body) {
+      let data;
+      try {
+        data = await Api.setConfigSource(body);
+      } catch (err) {
+        if (err.status === 409 && err.data && err.data.exists) {
+          Modal.open({
+            title: "Replace config/config.ini?",
+            body: el("p", { className: "text-sm" }, "OptimusPy's own copy is replaced with this file. The instances in the current copy are lost."),
+            size: "sm",
+            footer: [
+              el("button", { className: "btn btn-secondary", onClick: () => Modal.close() }, "Cancel"),
+              el("button", { className: "btn btn-danger", onClick: () => {
+                Modal.close();
+                this._switchConfig(Object.assign({}, body, { overwrite: true }));
+              }}, "Replace"),
+            ],
+          });
+        } else {
+          Toast.error(err.message);
+        }
+        return;
+      }
+      // The same instance name can point at a different server in the new file,
+      // so nothing from the old one carries over.
+      state.activeInstance = null;
+      state.connected = false;
+      state.serverName = null;
+      Credentials.clear();
+      clearCaches();
+      await Sidebar.loadInstances();
+      Toast.success(`Reading ${data.config_path}`);
+      this.mount();
     },
 
     async _loadInstanceConfig(container, instanceName) {
       try {
         const data = await Api.getInstance(instanceName);
-        const params = data.params || {};
-        const ro = state.configReadOnly;
         const fieldsContainer = el("div", { className: "instance-fields" });
-
-        // Render existing fields (skip password — handled separately)
-        Object.entries(params).forEach(([key, value]) => {
-          if (key.toLowerCase() === "password") return;
-          fieldsContainer.appendChild(this._createFieldRow(key, value, instanceName, fieldsContainer));
+        Object.entries(data.params || {}).forEach(([key, value]) => {
+          fieldsContainer.appendChild(el("div", { className: "flex gap-2 items-center mb-2" },
+            el("span", { className: "form-label", style: "flex:0.4;min-width:100px;margin:0;" }, key),
+            value === ""
+              ? el("span", { className: "text-sm text-tertiary", style: "flex:1;" }, "(empty)")
+              : el("span", { className: "text-sm", style: "flex:1;word-break:break-all;" }, value),
+          ));
         });
         container.appendChild(fieldsContainer);
-        if (ro) {
-          fieldsContainer.querySelectorAll("input").forEach(i => { i.disabled = true; });
-          fieldsContainer.querySelectorAll("button").forEach(b => b.remove());
-        }
 
-        let pwInput = null;
-        if (!ro) {
-          // "Add Field" button
-          const addFieldBtn = el("button", { className: "btn btn-secondary btn-sm mt-2", onClick: () => {
-            const row = this._createFieldRow("", "", instanceName, fieldsContainer, true);
-            fieldsContainer.appendChild(row);
-            // Focus the key input
-            const keyInput = row.querySelector("[data-field-key]");
-            if (keyInput) keyInput.focus();
-          }}, el("span", { html: Icons.plus }), " Add Field");
-          container.appendChild(addFieldBtn);
-
-          // Password field (write-only)
-          const pwGroup = el("div", { className: "form-group mt-4" });
-          pwGroup.appendChild(el("label", { className: "form-label" }, "Update Password (write-only)"));
-          pwInput = el("input", { className: "form-input", type: "password", placeholder: "Leave empty to keep current", dataset: { key: "password" } });
-          pwGroup.appendChild(pwInput);
-          container.appendChild(pwGroup);
-        }
-
-        // Action buttons row
-        const actionsRow = el("div", { className: "flex gap-2 mt-4 flex-wrap" });
-
-        if (!ro) {
-          // Save button
-          const saveBtn = el("button", { className: "btn btn-primary" }, "Save");
-          saveBtn.addEventListener("click", async () => {
-            const newParams = {};
-            fieldsContainer.querySelectorAll("[data-field-row]").forEach(row => {
-              const keyEl = row.querySelector("[data-field-key]");
-              const valEl = row.querySelector("[data-field-value]");
-              const key = keyEl ? (keyEl.dataset.fieldKey || keyEl.value || "").trim() : "";
-              const val = valEl ? valEl.value : "";
-              if (key) newParams[key] = val;
-            });
-            // Include password only if non-empty
-            if (pwInput.value) newParams.password = pwInput.value;
-            try {
-              await Api.updateInstance(instanceName, newParams);
-              Toast.success(`Config saved for ${instanceName}`);
-            } catch (err) {
-              Toast.error(err.message);
-            }
-          });
-          actionsRow.appendChild(saveBtn);
-        }
-
-        // Test Connection button
-        const testBtn = el("button", { className: "btn btn-secondary" }, "Test Connection");
+        // Test Connection: the password typed in the Connect dialog, else config.ini's
+        const testBtn = el("button", { className: "btn btn-secondary mt-2" }, "Test Connection");
         testBtn.addEventListener("click", async () => {
           testBtn.disabled = true;
           testBtn.textContent = "Testing...";
           try {
-            const pw = (pwInput && pwInput.value) || state.password || null;
-            const resp = await Api.connect(instanceName, pw);
+            const resp = await Api.connect(instanceName, Credentials.get(instanceName));
             Toast.success(`Connected to ${resp.server_name} (${resp.cube_count} cubes)`);
           } catch (err) {
             Toast.error(`Connection failed: ${err.message}`);
@@ -4187,79 +4710,18 @@ const OptimusPy = (function () {
             testBtn.textContent = "Test Connection";
           }
         });
-        actionsRow.appendChild(testBtn);
-
-        if (!ro) {
-          // Delete Instance button
-          const deleteBtn = el("button", { className: "btn btn-danger" }, "Delete Instance");
-          deleteBtn.addEventListener("click", () => {
-            Modal.confirm(`Delete instance "${instanceName}" from config.ini? This cannot be undone.`, async () => {
-              try {
-                await Api.deleteInstance(instanceName);
-                Toast.success(`Instance "${instanceName}" deleted`);
-                // Reload instances and re-render settings
-                await Sidebar.loadInstances();
-                this.mount();
-              } catch (err) {
-                Toast.error(err.message);
-              }
-            });
-          });
-          actionsRow.appendChild(deleteBtn);
-        }
-
-        container.appendChild(actionsRow);
+        container.appendChild(testBtn);
       } catch (err) {
         container.appendChild(el("div", { className: "text-secondary text-sm" }, "Failed to load config: " + err.message));
       }
-    },
-
-    _createFieldRow(key, value, instanceName, fieldsContainer, isNew = false) {
-      const row = el("div", { className: "flex gap-2 items-center mb-2", dataset: { fieldRow: "true" } });
-
-      if (isNew) {
-        // Editable key input for new fields
-        const keyInput = el("input", {
-          className: "form-input", type: "text", placeholder: "key",
-          style: "flex:0.4;", dataset: { fieldKey: "" },
-        });
-        keyInput.addEventListener("input", () => { keyInput.dataset.fieldKey = keyInput.value; });
-        row.appendChild(keyInput);
-      } else {
-        // Hidden input to carry the key value + visible label
-        row.appendChild(el("input", { type: "hidden", dataset: { fieldKey: key }, value: key }));
-        row.appendChild(el("label", { className: "form-label", style: "flex:0.4;min-width:100px;margin:0;" }, key));
-      }
-
-      const valInput = el("input", { className: "form-input", type: "text", value, style: "flex:1;", dataset: { fieldValue: "true" } });
-      row.appendChild(valInput);
-
-      // Delete field button
-      const delBtn = el("button", {
-        className: "btn btn-ghost btn-sm", "aria-label": `Delete field ${key}`, html: Icons.x,
-        onClick: async () => {
-          if (isNew || !key) {
-            // Just remove the row from DOM — not saved yet
-            row.remove();
-            return;
-          }
-          try {
-            await Api.deleteInstanceField(instanceName, key);
-            row.remove();
-            Toast.success(`Field "${key}" removed`);
-          } catch (err) {
-            Toast.error(err.message);
-          }
-        }
-      });
-      row.appendChild(delBtn);
-      return row;
     },
 
     async _loadSavedConfigs(container) {
       try {
         const data = await Api.getSavedCubes();
         const configs = data.saved_cubes || [];
+        // Reloaded after a delete or a folder change: replace the rows, don't add to them.
+        container.innerHTML = "";
 
         if (configs.length === 0) {
           container.appendChild(el("div", { className: "text-secondary text-sm" }, "No saved configs."));
@@ -4327,12 +4789,11 @@ const OptimusPy = (function () {
     // Register pages
     Router.register("home", HomePage);
     Router.register("nav", NavPage);
-    Router.register("cubes", CubesPage);
-    Router.register("cube-workspace", CubeWorkspace);
-    Router.register("results", ResultsPage);
+    Router.register("reports", ReportsPage);
     Router.register("jobs", JobsPage);
     Router.register("settings", SettingsPage);
     Router.register("transfer", TransferPage);
+    Router.register("optimize-db", OptimizeDbPage);
 
     // Load initial data (non-blocking — app should load even if API calls fail)
     try { await Sidebar.loadInstances(); } catch { /* will show empty instance list */ }
@@ -4351,5 +4812,5 @@ const OptimusPy = (function () {
   }
 
   // Public API (for debugging)
-  return { state, Api, Router, Toast, Modal, Theme, StreamManager, BatchManager, Sidebar };
+  return { state, Api, Router, Toast, Modal, Theme, StreamManager, Sidebar };
 })();

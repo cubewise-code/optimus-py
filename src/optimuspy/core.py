@@ -5,6 +5,7 @@ import logging
 import math
 import os
 import sys
+import tempfile
 import time
 from contextlib import suppress
 from pathlib import Path
@@ -20,11 +21,11 @@ from optimuspy.executors import (OriginalOrderExecutor, MainExecutor, Predefined
                                  OptimizationCancelled)
 from optimuspy.metrics import (detect_is_v12, cube_memory_used_bytes, memory_by_cube_bytes,
                                ram_source_ready, read_cube_memory_bytes)
+from optimuspy.order_frame import OrderFrame, REASON_NOT_A_PERMUTATION
 from optimuspy.resume import recover, RecoveryEffects
-from optimuspy.results import ExecutionContext, OptimusResult
+from optimuspy.results import ExecutionContext, OptimusResult, ram_signal_is_dead
 
 APP_NAME = "optimuspy"
-TIME_STAMP = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
 LOGFILE = APP_NAME + ".log"
 RESULT_PATH = Path("results/")
 RESULT_FILENAME = "{}_{}_{}"  # instance, cube_name, timestamp
@@ -68,14 +69,28 @@ def get_logfile_path() -> Path:
     return logs_dir / LOGFILE
 
 
-def configure_logging():
+def configure_logging(verbose: bool = False):
+    """Send INFO (or DEBUG under --verbose) to the logfile and to stdout.
+
+    `verbose` is the only way to reach a DEBUG line. Every order the frame
+    refuses is reported there — the locked slot, an ignored order, a position
+    rule — so "why was my order skipped?" is answerable at -v and nowhere else.
+    """
+    level = logging.DEBUG if verbose else logging.INFO
     logging.basicConfig(
-        filename=LOGFILE,
+        filename=get_logfile_path(),
+        encoding="utf-8",
         format="%(asctime)s - " + APP_NAME + " - %(levelname)s - %(message)s",
-        level=logging.INFO,
+        level=level,
     )
-    # also log to stdout
-    logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
+    # basicConfig is a no-op once the root logger has handlers, so set the level
+    # explicitly: -v must work regardless of what configured logging first.
+    root = logging.getLogger()
+    root.setLevel(level)
+    # also log to stdout, once
+    if not any(isinstance(h, logging.StreamHandler) and getattr(h, "stream", None) is sys.stdout
+               for h in root.handlers):
+        root.addHandler(logging.StreamHandler(sys.stdout))
 
 
 def get_tm1_config(config_ini_path: str):
@@ -84,24 +99,136 @@ def get_tm1_config(config_ini_path: str):
     return config
 
 
+def tm1_params(config_ini_path: str, instance: str, password: str = None) -> dict:
+    """Return the TM1Service keyword arguments for one config.ini instance.
+
+    A password given on the command line replaces the one in config.ini and is
+    taken as plain text.
+    """
+    config = get_tm1_config(config_ini_path)
+    if instance not in config:
+        raise ValueError(f"Instance '{instance}' not found in {config_ini_path}")
+    params = dict(config[instance])
+    params['session_context'] = APP_NAME
+    if password:
+        params['password'] = password
+        params['decode_b64'] = False
+    return params
+
+
+# The installation's own settings, an optional INI file with one [optimuspy]
+# section. The defaults live in the code, so a missing file or key means the
+# default; config/settings.ini.example lists every key with a comment. The file
+# is relative to the working directory, like DEFAULT_CONFIG_INI.
+SETTINGS_PATH = Path("config/settings.ini")
+SETTINGS_SECTION = "optimuspy"
+DEFAULT_PORT = 8765
+
+
+def _read_settings() -> configparser.ConfigParser:
+    """The settings file, parsed. A missing file is an empty one, and so is one that
+    cannot be read or parsed, with a warning: a broken settings file never stops
+    the CLI or the UI."""
+    try:
+        return _parse_settings()
+    except (configparser.Error, OSError, UnicodeDecodeError) as e:
+        logging.warning(f"Ignoring {SETTINGS_PATH}: {e}")
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.add_section(SETTINGS_SECTION)
+    return parser
+
+
+def _parse_settings() -> configparser.ConfigParser:
+    """The settings file, always with an [optimuspy] section; a missing file gives
+    an empty one. Raises when the file cannot be read or parsed."""
+    parser = configparser.ConfigParser(interpolation=None)
+    with suppress(FileNotFoundError), open(SETTINGS_PATH, encoding="utf-8") as f:
+        parser.read_file(f)
+    if not parser.has_section(SETTINGS_SECTION):
+        parser.add_section(SETTINGS_SECTION)
+    return parser
+
+
+def load_settings() -> dict:
+    """The [optimuspy] section of the settings file, as strings. {} when there is none."""
+    return dict(_read_settings()[SETTINGS_SECTION])
+
+
+def save_setting(key: str, value: Optional[str]) -> None:
+    """Set one key in the settings file, or remove it when `value` is None.
+
+    The other keys are kept. The file is written to a temporary file beside it and
+    moved into place, so a crash never leaves half a file. Python's INI writer
+    drops comments; they live in settings.ini.example. A file that cannot be read
+    or parsed raises rather than being overwritten.
+    """
+    parser = _parse_settings()
+    if value is None:
+        parser.remove_option(SETTINGS_SECTION, key)
+    else:
+        parser.set(SETTINGS_SECTION, key, str(value))
+
+    SETTINGS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp = tempfile.mkstemp(dir=SETTINGS_PATH.parent, prefix=".settings-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            parser.write(f)
+        os.replace(temp, SETTINGS_PATH)
+    except BaseException:
+        with suppress(OSError):
+            os.remove(temp)
+        raise
+
+
+def setting_ui_port() -> int:
+    """The `ui_port` setting: a port from 1 to 65535, or DEFAULT_PORT."""
+    value = load_settings().get("ui_port")
+    if value is None:
+        return DEFAULT_PORT
+    with suppress(ValueError):
+        port = int(value)
+        if 1 <= port <= 65535:
+            return port
+    logging.warning(f"Ignoring ui_port = {value!r} in {SETTINGS_PATH}: "
+                    f"expected a port from 1 to 65535; using {DEFAULT_PORT}")
+    return DEFAULT_PORT
+
+
+def setting_open_browser() -> bool:
+    """The `open_browser` setting: whether the UI opens a browser tab. True by default."""
+    parser = _read_settings()
+    try:
+        return parser.getboolean(SETTINGS_SECTION, "open_browser", fallback=True)
+    except ValueError:
+        value = parser.get(SETTINGS_SECTION, "open_browser")
+        logging.warning(f"Ignoring open_browser = {value!r} in {SETTINGS_PATH}: "
+                        f"expected true or false; using true")
+        return True
+
+
 class ConfigLocation(NamedTuple):
     path: str
-    read_only: bool
+    source: str  # "flag" (--config), "linked" (from Settings) or "default"
 
 
 def resolve_config_path(cli_path: Optional[str]) -> ConfigLocation:
-    """Resolve the config.ini path and whether it must be treated as read-only.
+    """The config.ini to read, and where that choice came from.
 
-    A path supplied explicitly via --config is assumed to be owned by another tool
-    (shared credentials) and is therefore read-only. The built-in default is OptimusPy's
-    own file and remains writable. Existence is checked only for an explicit path
-    (fail-fast); the default is left to the existing read path.
+    An explicit --config wins and must exist. Next comes the file linked from the
+    UI's Settings page (the `config_ini` setting), which is returned even when it
+    is missing: the CLI reports that, and the UI starts so the link can be fixed.
+    Otherwise it is DEFAULT_CONFIG_INI, which is not checked here.
     """
-    if cli_path is None:
-        return ConfigLocation(DEFAULT_CONFIG_INI, read_only=False)
-    if not os.path.isfile(cli_path):
-        raise FileNotFoundError(cli_path)
-    return ConfigLocation(cli_path, read_only=True)
+    if cli_path is not None:
+        if not os.path.isfile(cli_path):
+            raise FileNotFoundError(cli_path)
+        location = ConfigLocation(cli_path, "flag")
+    else:
+        linked = load_settings().get("config_ini")
+        location = (ConfigLocation(linked, "linked") if linked
+                    else ConfigLocation(DEFAULT_CONFIG_INI, "default"))
+    logging.info(f"config.ini: {location.path} ({location.source})")
+    return location
 
 
 def load_cube_config(path: str) -> dict:
@@ -129,9 +256,23 @@ def validate_cube_config(config: dict, mode: str):
         raise ValueError(f"Only one of {exclusive_fields} can be set. Found: {active}")
 
     if 'predefined_orders' in config:
-        for order in config['predefined_orders']:
+        # Tier 1, as much of it as is checkable without a server. Whether the names
+        # are this cube's dimensions can only be settled once the cube is known
+        # (_validate_predefined_orders), but shape and duplicates are config errors
+        # that should never cost a TM1 connection to discover.
+        for index, order in enumerate(config['predefined_orders']):
             if not isinstance(order, list):
                 raise ValueError("Each entry in 'predefined_orders' must be a list of dimension names")
+            if not order:
+                raise ValueError(f"'predefined_orders[{index}]' is empty")
+            if not all(isinstance(dim, str) and dim.strip() for dim in order):
+                raise ValueError(
+                    f"'predefined_orders[{index}]' must contain only non-empty dimension names")
+            duplicates = sorted({dim for dim in order if order.count(dim) > 1})
+            if duplicates:
+                raise ValueError(
+                    f"'predefined_orders[{index}]' repeats {duplicates} — "
+                    f"a dimension order lists each dimension once")
 
     if 'orders_to_ignore' in config:
         for order in config['orders_to_ignore']:
@@ -176,6 +317,45 @@ def resolve_position(value, num_dimensions: int) -> int:
     if pos < 1 or pos > num_dimensions:
         raise ValueError(f"Position {pos} out of range (1-{num_dimensions})")
     return pos - 1
+
+
+def _validate_predefined_orders(predefined_orders: List[List[str]], order_frame, cube_name: str):
+    """Fail the run on a predefined order that is not an order of this cube.
+
+    Tier 1: a wrong length, an unknown dimension name or a duplicate is a config
+    error, not a constraint collision, so it fails loudly — and it fails here,
+    before the first reorder, rather than part-way through a sweep with cubes
+    already modified. Every entry is reported, not just the first, so a typo'd
+    config is fixed in one pass.
+    """
+    malformed = [(index, verdict) for index, verdict in (
+        (i, order_frame.admits(order)) for i, order in enumerate(predefined_orders))
+        if not verdict.admissible and verdict.code == REASON_NOT_A_PERMUTATION]
+    if not malformed:
+        return
+    detail = "\n".join(f"  predefined_orders[{index}]: {verdict.reason}"
+                       for index, verdict in malformed)
+    raise ValueError(
+        f"Invalid predefined_orders for cube '{cube_name}':\n{detail}")
+
+
+def _validate_position_rules(order_frame, cube_name: str):
+    """Fail the run on a dimension_position_rules entry that names no real layout.
+
+    The documented behaviour (docs/advanced/dimension-position-rules.md): typos
+    and out-of-range positions fail fast, and a rule that collides with the
+    locked slot raises. Every problem is reported, not just the first, and this
+    runs before any TM1 work — a rule the frame cannot resolve would otherwise
+    constrain nothing and let the run report success over a search nobody asked
+    for.
+    """
+    problems = order_frame.validate_position_rules()
+    if not problems:
+        return
+    detail = "\n".join(f"  dimension_position_rules[{index}]: {message}"
+                       for index, message in problems)
+    raise ValueError(
+        f"Invalid dimension_position_rules for cube '{cube_name}':\n{detail}")
 
 
 def is_dimension_only_numeric(tm1: TM1Service, dimension_name: str) -> bool:
@@ -257,14 +437,7 @@ def main(mode: str, cube_config: dict, config_ini_path: str, password: str = Non
     optimize_dimension = cube_config.get('optimize_dimension')
     process_parameters = cube_config.get('process_parameters', {})
 
-    config = get_tm1_config(config_ini_path)
-    tm1_args = dict(config[instance_name])
-    tm1_args['session_context'] = APP_NAME
-    if password:
-        tm1_args['password'] = password
-        tm1_args['decode_b64'] = False
-
-    with TM1Service(**tm1_args) as tm1:
+    with TM1Service(**tm1_params(config_ini_path, instance_name, password)) as tm1:
         # Expose tm1 service for external cancellation (UI stop button)
         if tm1_holder is not None:
             tm1_holder["tm1"] = tm1
@@ -296,7 +469,10 @@ def main(mode: str, cube_config: dict, config_ini_path: str, password: str = Non
 
         # SET mode: apply order directly, no benchmarking
         if mode == 'set':
-            return _execute_set_mode(tm1, cube_name, predefined_orders[0], is_v12)
+            frame = OrderFrame(
+                initial_dimension_order,
+                not is_dimension_only_numeric(tm1, initial_dimension_order[-1]))
+            return _execute_set_mode(tm1, cube_name, predefined_orders[0], is_v12, frame)
 
         # OPTIMIZE mode
         return _execute_optimize_mode(
@@ -344,8 +520,28 @@ def _recover_pending_order(tm1: TM1Service, cube_name: str, executor, pending: d
     logging.info(f"Recovered in-flight order for cube '{cube_name}': {pending_order}")
 
 
-def _execute_set_mode(tm1: TM1Service, cube_name: str, target_order: List[str], is_v12: bool = False) -> bool:
+def _execute_set_mode(tm1: TM1Service, cube_name: str, target_order: List[str],
+                      is_v12: bool = False, order_frame=None) -> bool:
     logging.info(f"SET mode: applying dimension order for cube '{cube_name}' to: {target_order}")
+
+    # A TI process calling this via ExecuteCommand cannot tell "applied" from
+    # "skipped" by exit code, so the log line is the only channel — and the two
+    # outcomes below are deliberately different channels.
+    verdict = order_frame.admits(target_order)
+    if not verdict.admissible:
+        if verdict.code == REASON_NOT_A_PERMUTATION:
+            # Tier 1: not a coherent request. Fail the process rather than let a
+            # typo look like a successful no-op.
+            logging.error(
+                f"SET mode: invalid dimension order for cube '{cube_name}' — {verdict.reason}. "
+                f"No reorder was applied.")
+            return False
+        # Tier 2: a legitimate request TM1 will refuse anyway. Warn and carry on.
+        logging.warning(
+            f"SET mode: REORDER SKIPPED for cube '{cube_name}' — {verdict.reason}. "
+            f"The cube is unchanged, still ordered {order_frame.storage_order}. "
+            f"Exiting 0: nothing failed, nothing was applied.")
+        return True
 
     # Before/after RAM logging is best-effort; never let the RAM source lifecycle
     # block the actual reorder, which is the primary purpose of set mode.
@@ -377,14 +573,11 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
                            process_parameters: dict = None,
                            dimension_position_rules: list = None,
                            cancel_event=None, is_v12: bool = False) -> bool:
-    # VMM/VMT live in the }CubeProperties control cube, which only exists on v11.
-    # On v12 those caps are gone, so we neither raise nor restore them there.
+    # Stamped when the run starts, not when the module loads: the UI runs many
+    # optimizations in one process, and each needs its own report file.
+    run_stamp = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
     original_vmm, original_vmt = (None, None)
-    if not is_v12:
-        original_vmm, original_vmt = retrieve_vmm_vmt(tm1, cube_name)
-        write_vmm_vmt(tm1, cube_name, "1000000", "1000000")
 
-    displayed_dimension_order = tm1.cubes.get_dimension_names(cube_name=cube_name)
     # The live storage order (may be a crashed/reordered state); used only to
     # validate the checkpoint by dimension SET. The true original is sourced from
     # the checkpoint on resume (see below), never from this reordered read.
@@ -440,18 +633,59 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
         logging.info("--no-resume specified — ignoring existing checkpoint")
         checkpoint_mgr.remove()
 
-    # Determine the measure (string-last) rule from the RESOLVED original order —
+    # The locked slot: if the dimension in the last position of the STORAGE order
+    # carries string elements, that position is locked and the dimension never
+    # moves (TM1 rejects the write regardless). Resolved from the ORIGINAL order —
     # on resume that is the checkpoint's original, not the reordered live cube,
-    # whose last dim need not be the measure.
-    measure_dimension_only_numeric = is_dimension_only_numeric(tm1, initial_dimension_order[-1])
+    # whose last dim need not be the one the lock keys off.
+    last_slot_locked = not is_dimension_only_numeric(tm1, initial_dimension_order[-1])
+    if last_slot_locked:
+        logging.info(
+            f"Last slot locked for cube '{cube_name}': dimension "
+            f"'{initial_dimension_order[-1]}' has string elements and never moves")
+
+    # The frame every order source consults. Only the greedy adds the user
+    # preferences to its own copy (decision 10); an explicitly named order is
+    # subject to the lock alone.
+    cube_frame = OrderFrame(initial_dimension_order, last_slot_locked)
+
+    # The greedy is the only order source that honours the user preferences
+    # (decision 10), so it is the only frame built with them. Built here rather
+    # than at the construction site so its rules are validated before any TM1
+    # work, as the documentation promises.
+    greedy_frame = OrderFrame(
+        initial_dimension_order, last_slot_locked,
+        dimensions_to_exclude=dimensions_to_exclude,
+        orders_to_ignore=orders_to_ignore,
+        position_rules=dimension_position_rules)
+    if dimension_position_rules:
+        _validate_position_rules(greedy_frame, cube_name)
+        pinned = greedy_frame.pinned_positions
+        logging.info(
+            f"dimension_position_rules seat {len(pinned)} dimension(s) for cube "
+            f"'{cube_name}': " + ", ".join(f"'{d}' at {i}" for i, d in sorted(pinned.items())))
+
+    # Tier 1 for predefined orders: reject a malformed order BEFORE any reorder is
+    # sent, so a typo cannot fail the run half-way with cubes already modified.
+    # validate_cube_config catches what is checkable without a server; a name that
+    # is not one of this cube's dimensions can only be caught here.
+    if predefined_orders:
+        _validate_predefined_orders(predefined_orders, cube_frame, cube_name)
 
     with ram_source_ready(tm1, is_v12):
         try:
+            # VMM/VMT live in the }CubeProperties control cube, which only exists on v11.
+            # On v12 those caps are gone, so we neither raise nor restore them there.
+            # Raised inside the try, so the finally below always puts them back.
+            if not is_v12:
+                original_vmm, original_vmt = retrieve_vmm_vmt(tm1, cube_name)
+                write_vmm_vmt(tm1, cube_name, "1000000", "1000000")
+
             # Benchmark original order (skip if resumed)
             if original_order_result is None:
                 original_executor = OriginalOrderExecutor(
-                    tm1, cube_name, view_names, process_names, displayed_dimension_order, executions,
-                    measure_dimension_only_numeric, initial_dimension_order, context,
+                    tm1, cube_name, view_names, process_names, initial_dimension_order, executions,
+                    last_slot_locked, initial_dimension_order, context,
                     checkpoint_manager=checkpoint_mgr, process_parameters=process_parameters,
                     cancel_event=cancel_event, is_v12=is_v12)
                 permutation_results += original_executor.execute()
@@ -468,41 +702,40 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
 
             # Run iterations: targeted, predefined, or greedy algorithm
             if optimize_position is not None:
-                resolved_pos = resolve_position(optimize_position, len(displayed_dimension_order))
+                resolved_pos = resolve_position(optimize_position, len(initial_dimension_order))
                 logging.info(f"Optimizing position {resolved_pos + 1} (0-based: {resolved_pos}) "
                              f"for cube '{cube_name}'")
                 executor = PositionOptimizerExecutor(
-                    tm1, cube_name, view_names, process_names, displayed_dimension_order, executions,
-                    measure_dimension_only_numeric, resolved_pos, context, dimensions_to_exclude,
+                    tm1, cube_name, view_names, process_names, initial_dimension_order, executions,
+                    last_slot_locked, resolved_pos, context, dimensions_to_exclude,
                     checkpoint_manager=checkpoint_mgr, process_parameters=process_parameters,
-                    cancel_event=cancel_event, is_v12=is_v12)
+                    cancel_event=cancel_event, is_v12=is_v12, order_frame=cube_frame)
             elif optimize_dimension:
-                if optimize_dimension not in displayed_dimension_order:
+                if optimize_dimension not in initial_dimension_order:
                     raise ValueError(
                         f"Dimension '{optimize_dimension}' not found in cube '{cube_name}'. "
-                        f"Available: {displayed_dimension_order}")
+                        f"Available: {initial_dimension_order}")
                 logging.info(f"Optimizing dimension '{optimize_dimension}' for cube '{cube_name}'")
                 executor = DimensionOptimizerExecutor(
-                    tm1, cube_name, view_names, process_names, displayed_dimension_order, executions,
-                    measure_dimension_only_numeric, optimize_dimension, context,
+                    tm1, cube_name, view_names, process_names, initial_dimension_order, executions,
+                    last_slot_locked, optimize_dimension, context,
                     checkpoint_manager=checkpoint_mgr, process_parameters=process_parameters,
-                    cancel_event=cancel_event, is_v12=is_v12)
+                    cancel_event=cancel_event, is_v12=is_v12, order_frame=cube_frame)
             elif predefined_orders:
                 executor = PredefinedOrderExecutor(
-                    tm1, cube_name, view_names, process_names, displayed_dimension_order, executions,
-                    measure_dimension_only_numeric, predefined_orders, context,
+                    tm1, cube_name, view_names, process_names, initial_dimension_order, executions,
+                    last_slot_locked, predefined_orders, context,
                     checkpoint_manager=checkpoint_mgr, process_parameters=process_parameters,
-                    cancel_event=cancel_event, is_v12=is_v12)
+                    cancel_event=cancel_event, is_v12=is_v12, order_frame=cube_frame)
             else:
-                dimensions_metadata = _collect_dimension_metadata(tm1, displayed_dimension_order)
+                dimensions_metadata = _collect_dimension_metadata(tm1, initial_dimension_order)
                 cardinality = {d["name"]: d["leaf_elements"] for d in dimensions_metadata}
-                string_dims = [d["name"] for d in dimensions_metadata if d["has_strings"]]
                 executor = MainExecutor(
-                    tm1, cube_name, view_names, process_names, displayed_dimension_order, executions,
-                    measure_dimension_only_numeric, context, fast, dimensions_to_exclude, orders_to_ignore,
+                    tm1, cube_name, view_names, process_names, initial_dimension_order, executions,
+                    last_slot_locked, context, fast,
                     checkpoint_manager=checkpoint_mgr, process_parameters=process_parameters,
-                    dimension_position_rules=dimension_position_rules, cancel_event=cancel_event,
-                    is_v12=is_v12, cardinality=cardinality, string_dims=string_dims)
+                    cancel_event=cancel_event,
+                    is_v12=is_v12, cardinality=cardinality, order_frame=greedy_frame)
 
             # Set resume context on executor (arm the RAM re-anchor only on a real resume)
             executor.set_resume_context(initial_dimension_order, original_order_result,
@@ -521,6 +754,12 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
             new_results = executor.execute(resume_state=resume_state)
             permutation_results += new_results
 
+            if executor.skipped_orders:
+                breakdown = ", ".join(f"{count} {code}"
+                                      for code, count in sorted(executor.skipped_orders.items()))
+                logging.info(f"Skipped {sum(executor.skipped_orders.values())} candidate "
+                             f"orders for cube '{cube_name}' ({breakdown})")
+
             # Combine resumed + new results for final analysis
             unique_results = _deduplicate_results(
                 [original_order_result], resumed_results, permutation_results)
@@ -529,6 +768,21 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
             best_permutation = optimus_result.best_result
             logging.info(f"Completed analysis for cube '{cube_name}'")
 
+            # Say it before the winner is announced, so the two are read together.
+            if ram_signal_is_dead(unique_results):
+                logging.warning(
+                    f"THIS CUBE WAS NOT MEASURABLE: every order OptimusPy asked the "
+                    f"server to apply to cube '{cube_name}' came back 0.00%, so all "
+                    f"{len(unique_results)} rows report the same RAM and any RAM-ranked "
+                    f"choice below was a tie-break, not a measurement. Treat the RAM "
+                    f"column and the recommended order as unsupported.")
+                logging.warning(
+                    f"This is a statement about cube '{cube_name}' on this run, not "
+                    f"about the server or its version. The usual cause is that the "
+                    f"cube's data was not resident when benchmarking started — an "
+                    f"unmaterialised cube costs the same in every order, so 0.00% is "
+                    f"the truthful answer to a question worth nothing. Let a large "
+                    f"load settle and re-run.")
             if not best_permutation:
                 tm1.cubes.update_storage_dimension_order(cube_name, initial_dimension_order)
                 logging.info(
@@ -563,7 +817,8 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
             return False
 
         finally:
-            if not is_v12:
+            # None if they were never read: nothing was raised, so nothing to restore.
+            if original_vmm is not None:
                 with suppress(Exception):
                     write_vmm_vmt(tm1, cube_name, original_vmm, original_vmt)
 
@@ -576,7 +831,7 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
                     optimus_result = OptimusResult(cube_name, unique_for_output, instance_name=instance_name)
                 else:
                     optimus_result.instance_name = instance_name
-                file_base = RESULT_FILENAME.format(instance_name, cube_name, TIME_STAMP)
+                file_base = RESULT_FILENAME.format(instance_name, cube_name, run_stamp)
                 instance_dir = RESULT_PATH / instance_name
 
                 optimus_result.to_html(instance_dir / f"{file_base}.html", total_duration=context.elapsed)
@@ -650,21 +905,38 @@ def _compute_suggested_order(dimensions_metadata: list) -> dict:
     }
 
 
-def _collect_dimension_metadata(tm1: TM1Service, dimension_names: list) -> list:
+def _dimension_metadata(tm1: TM1Service, dim_name: str) -> dict:
+    """Collect one dimension's shape (leaf count, string flag, nibble depth).
+
+    Two API calls per dimension. Dimensions are shared across cubes, so any
+    instance-wide caller must memoize by dimension name (see
+    `_collect_dimension_metadata`'s `cache`) — re-reading a dimension once per
+    cube turns a one-minute sweep into a twenty-minute one.
+    """
+    leaf_count = tm1.elements.get_number_of_leaf_elements(
+        dimension_name=dim_name, hierarchy_name=dim_name)
+    string_count = tm1.elements.get_number_of_string_elements(
+        dimension_name=dim_name, hierarchy_name=dim_name)
+    return {
+        "name": dim_name,
+        "leaf_elements": leaf_count,
+        "has_strings": string_count > 0,
+        "string_elements": string_count,
+        "nibble_depth": _compute_nibble_depth(leaf_count),
+    }
+
+
+def _collect_dimension_metadata(tm1: TM1Service, dimension_names: list, cache: dict = None) -> list:
     """Collect per-dimension metadata (leaf count, string flag, nibble depth)."""
     dimensions_metadata = []
     for dim_name in dimension_names:
-        leaf_count = tm1.elements.get_number_of_leaf_elements(
-            dimension_name=dim_name, hierarchy_name=dim_name)
-        string_count = tm1.elements.get_number_of_string_elements(
-            dimension_name=dim_name, hierarchy_name=dim_name)
-        dimensions_metadata.append({
-            "name": dim_name,
-            "leaf_elements": leaf_count,
-            "has_strings": string_count > 0,
-            "string_elements": string_count,
-            "nibble_depth": _compute_nibble_depth(leaf_count),
-        })
+        if cache is not None and dim_name in cache:
+            dimensions_metadata.append(cache[dim_name])
+            continue
+        meta = _dimension_metadata(tm1, dim_name)
+        if cache is not None:
+            cache[dim_name] = meta
+        dimensions_metadata.append(meta)
     return dimensions_metadata
 
 

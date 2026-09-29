@@ -1,8 +1,7 @@
-from optimuspy.executors import MainExecutor
 from tests.test_fold_a import make_main_executor
 
 
-def test_fold_b_seeds_pure_cardinality_ascending_for_numeric_only(scripted):
+def test_fold_b_seeds_pure_cardinality_ascending_for_numeric_only(measure_orders):
     # Numeric-only cube: NOTHING is forced last. A numeric measure has no TM1
     # constraint, so the seed is pure cardinality ascending -- the smallest dim
     # ("M", 3) leads and the largest ("Big", 50000) takes the last slot (90/10).
@@ -11,7 +10,7 @@ def test_fold_b_seeds_pure_cardinality_ascending_for_numeric_only(scripted):
     card = {"Big": 50000, "Sm": 50, "Md": 300, "M": 3}
     ex = make_main_executor(dims, card, fast=True)
     log = []
-    scripted(ex, lambda o: 100.0, log)
+    measure_orders(ex, lambda o: 100.0, log)
     ex.context.set_initial_ram(100.0)
     ex._run_fold_b()
     # first evaluated order is the seed: strictly ascending cardinality
@@ -21,7 +20,7 @@ def test_fold_b_seeds_pure_cardinality_ascending_for_numeric_only(scripted):
     assert len(log) == 1
 
 
-def test_fold_b_skips_pinned_dims_and_refines_only_undecided(scripted):
+def test_fold_b_skips_pinned_dims_and_refines_only_undecided(measure_orders):
     # NOTE: the brief's original assertion here — `all(o.index("Big") == 2 for o
     # in log)` — is not reachable: Big is pinned/decided (excluded from *refine*,
     # i.e. never chosen as the dim a sweep repositions), but _sweep_across_positions
@@ -43,7 +42,7 @@ def test_fold_b_skips_pinned_dims_and_refines_only_undecided(scripted):
     card = {"A": 180, "B": 205, "Big": 50000, "M": 3}  # A,B undecided; Big pinned
     ex = make_main_executor(dims, card, fast=True)
     log = []
-    scripted(ex, lambda o: 100.0 - len(log) * 0.1, log)
+    measure_orders(ex, lambda o: 100.0 - len(log) * 0.1, log)
     ex.context.set_initial_ram(100.0)
 
     swept_dims = []
@@ -67,7 +66,7 @@ def test_fold_b_skips_pinned_dims_and_refines_only_undecided(scripted):
     assert all(o.index("Big") == 3 for o in log)
 
 
-def test_fold_b_caps_at_k_passes(scripted, monkeypatch):
+def test_fold_b_caps_at_k_passes(measure_orders, monkeypatch):
     import optimuspy.tau as tau_mod
     monkeypatch.setattr(tau_mod, "FOLD_B_MAX_PASSES", 2)
     dims = ["A", "B", "C", "M"]
@@ -75,14 +74,14 @@ def test_fold_b_caps_at_k_passes(scripted, monkeypatch):
     ex = make_main_executor(dims, card, fast=True)
     log = []
     # strictly decreasing RAM so every pass finds an improvement -> would loop forever if uncapped
-    scripted(ex, lambda o: 100.0 - len(log) * 0.01, log)
+    measure_orders(ex, lambda o: 100.0 - len(log) * 0.01, log)
     ex.context.set_initial_ram(100.0)
     ex._run_fold_b()
     # bounded: seed(1) + at most K passes * (dims * positions) reorders
     assert len(log) <= 1 + 2 * 3 * 3
 
 
-def test_fold_b_rejects_ties_and_stops_early_when_a_pass_improves_nothing(scripted):
+def test_fold_b_rejects_ties_and_stops_early_when_a_pass_improves_nothing(measure_orders):
     # Ties (best_val == the current placement's metric) must NOT be accepted —
     # only a STRICT improvement may move resulting_order. With every candidate
     # tied at the same RAM, the very first pass finds nothing better, so the
@@ -91,7 +90,7 @@ def test_fold_b_rejects_ties_and_stops_early_when_a_pass_improves_nothing(script
     card = {"A": 100, "B": 110, "M": 3}  # A,B undecided; M pinned
     ex = make_main_executor(dims, card, fast=True)
     log = []
-    scripted(ex, lambda o: 100.0, log)  # every permutation ties at the same RAM
+    measure_orders(ex, lambda o: 100.0, log)  # every permutation ties at the same RAM
     ex.context.set_initial_ram(100.0)
     ex._run_fold_b()
     # seed [M, A, B] (pure ascending) + one full pass over refine=[B,A]: from that
@@ -101,14 +100,14 @@ def test_fold_b_rejects_ties_and_stops_early_when_a_pass_improves_nothing(script
     assert len(log) == 3
 
 
-def test_fold_b_process_only_leaves_position_span_unpruned(scripted):
+def test_fold_b_process_only_leaves_position_span_unpruned(measure_orders):
     # ADR-0002: process-only cubes must NOT tau-prune the position SPAN
     # (tau_span=None), even though the refine SET is still pinned via TAU_RAM.
     dims = ["A", "B", "Big", "M"]
     card = {"A": 180, "B": 205, "Big": 50000, "M": 3}
     ex = make_main_executor(dims, card, fast=True, process_names=["P"])
     log = []
-    scripted(ex, lambda o: 100.0, log)  # ties everywhere -> no improvement ever accepted
+    measure_orders(ex, lambda o: 100.0, log)  # ties everywhere -> no improvement ever accepted
     ex.context.set_initial_ram(100.0)
 
     swept_dims = []
@@ -130,7 +129,7 @@ def test_fold_b_process_only_leaves_position_span_unpruned(scripted):
     assert any(o.index("B") == 0 for o in log)
 
 
-def test_fold_b_uses_looser_query_tau_when_views_present(scripted):
+def test_fold_b_uses_looser_query_tau_when_views_present(measure_orders):
     # With views set, the refine SET uses TAU_QUERY (10x), not TAU_RAM (4x).
     # B/A = 500/100 = 5x: decided (excluded from refine) under TAU_RAM, but
     # undecided (included) under TAU_QUERY. If Fold B mistakenly used TAU_RAM for
@@ -143,7 +142,7 @@ def test_fold_b_uses_looser_query_tau_when_views_present(scripted):
     card = {"A": 100, "B": 500, "M": 3}
     ex = make_main_executor(dims, card, fast=True, view_names=["V"])
     log = []
-    scripted(ex, lambda o: 100.0, log, query_of=lambda o: 1.0)  # ties -> no acceptance needed
+    measure_orders(ex, lambda o: 100.0, log, query_of=lambda o: 1.0)  # ties -> no acceptance needed
     ex.context.set_initial_ram(100.0)
     ex._run_fold_b()
     # The front/query dim A was swept beyond the seed -> only possible under the
@@ -151,7 +150,7 @@ def test_fold_b_uses_looser_query_tau_when_views_present(scripted):
     assert len(log) > 1
 
 
-def test_fold_b_back_span_pruned_by_ram_tau_even_with_views(scripted):
+def test_fold_b_back_span_pruned_by_ram_tau_even_with_views(measure_orders):
     # Companion to the ranking fix: on a VIEWS cube the back/last position SPAN is
     # pruned by TAU_RAM (4x), not the looser TAU_QUERY (10x). B (4000) and C
     # (25000) are 6.25x apart: undecided under TAU_QUERY (so both enter the refine
@@ -164,7 +163,7 @@ def test_fold_b_back_span_pruned_by_ram_tau_even_with_views(scripted):
     card = {"f0": 1, "f1": 15, "f2": 300, "B": 4000, "C": 25000}
     ex = make_main_executor(dims, card, fast=True, view_names=["V"])
     log = []
-    scripted(ex, lambda o: 100.0, log, query_of=lambda o: 1.0)
+    measure_orders(ex, lambda o: 100.0, log, query_of=lambda o: 1.0)
     ex.context.set_initial_ram(100.0)
 
     swept_dims = []
@@ -184,26 +183,22 @@ def test_fold_b_back_span_pruned_by_ram_tau_even_with_views(scripted):
     assert len(log) == 1
 
 
-def test_fold_b_never_refines_string_dim_off_last(scripted):
-    # Review fix: refine must exclude ALL string-bearing dims (decided-by-rule,
-    # seeded last), not just the pinned measure. Before the fix, a non-measure
-    # string dim that happens to be "undecided" by cardinality (within tau of
-    # some other dim) stayed in refine. Since the seed always places string dims
-    # last, and the span->positions filter forbids a string dim's OWN sweep from
-    # landing back on the last index, refining it necessarily moves it off the
-    # last slot with no way back -- violating the hard string-last TM1 rule.
+def test_fold_b_refines_a_non_last_string_dim_like_any_other(measure_orders):
+    # The fold B counterpart of the disagreement between the old and new rules.
+    # "S" carries string elements from another cube's use but is not this cube's
+    # measure, so it does not sit in the locked slot. The old rule excluded EVERY
+    # string-bearing dim from refine and seeded it last; the locked-slot rule
+    # leaves it movable, so it is refined and placed by cardinality like anything
+    # else. Only "M", in the locked slot, is untouchable.
     #
-    # "S" (card 120) is deliberately within tau of "D1" (card 100, 1.2x) so it is
-    # genuinely undecided -> a real trigger for the bug, not a decided/pinned dim
-    # that would be excluded anyway. "D2" (card 50000) dominates D1 by >>4x, which
-    # caps D1's own allowed span below the last index (index 3) -- so D1's sweep
-    # can never collaterally bump S off its seeded slot either, keeping the
-    # assertion clean.
+    # "S" (card 120) is within tau of "D1" (card 100, 1.2x) so it is genuinely
+    # undecided and a real refine candidate, not a decided dim that would be
+    # skipped anyway.
     dims = ["D1", "D2", "S", "M"]
     card = {"D1": 100, "D2": 50000, "S": 120, "M": 3}
-    ex = make_main_executor(dims, card, fast=True, string_dims=["S"])
+    ex = make_main_executor(dims, card, fast=True, last_slot_locked=True)
     log = []
-    scripted(ex, lambda o: 100.0, log)  # ties everywhere -> nothing ever accepted
+    measure_orders(ex, lambda o: 100.0, log)  # ties everywhere -> nothing ever accepted
     ex.context.set_initial_ram(100.0)
 
     swept_dims = []
@@ -217,16 +212,17 @@ def test_fold_b_never_refines_string_dim_off_last(scripted):
 
     ex._run_fold_b()
 
-    # S is undecided (within tau of D1) yet must NEVER be the target dim a sweep
-    # repositions -- it is excluded from refine unconditionally as a string dim.
-    assert "S" not in swept_dims
-    # The genuinely undecided non-string dim (D1) was still refined normally.
+    # S is refined like any other undecided dim — the old rule forbade this.
+    assert "S" in swept_dims
+    # The genuinely undecided non-string dim is still refined normally.
     assert "D1" in swept_dims
-    # S never leaves its seeded last slot in any evaluated order.
-    assert all(o[-1] == "S" for o in log)
+    # The locked dim is never a refine target and never leaves the last slot.
+    assert "M" not in swept_dims
+    assert all(o[-1] == "M" for o in log), \
+        f"locked dim left the last slot: {[o for o in log if o[-1] != 'M']}"
 
 
-def test_fold_b_back_positions_are_ram_ranked_even_with_views(scripted):
+def test_fold_b_back_positions_are_ram_ranked_even_with_views(measure_orders):
     # ADR-0002 / 90/10 rule: the back/last positions are RAM-driven regardless of
     # config. Even on a VIEWS cube (front = query-ranked), a move that improves
     # query but REGRESSES RAM at a back position must be REJECTED.
@@ -246,7 +242,7 @@ def test_fold_b_back_positions_are_ram_ranked_even_with_views(scripted):
     ram_of = lambda o: 100.0 - (5.0 if list(o)[-1] == "d4" else 0.0)
     # Query: better (lower) when d4 sits one slot forward (index 3).
     query_of = lambda o: 1.0 - (0.5 if list(o)[3] == "d4" else 0.0)
-    scripted(ex, ram_of, log, query_of=query_of)
+    measure_orders(ex, ram_of, log, query_of=query_of)
     ex.context.set_initial_ram(ram_of(tuple(dims)))
     ex._run_fold_b()
 
@@ -259,7 +255,7 @@ def test_fold_b_back_positions_are_ram_ranked_even_with_views(scripted):
     assert len(log) == 3
 
 
-def test_fold_b_never_evicts_string_measure_from_last_slot(scripted):
+def test_fold_b_never_evicts_string_measure_from_last_slot(measure_orders):
     # The hard TM1 rule: a string-bearing dim must stay last (CellPutS targets the
     # last dimension). A small string measure S plus two large, similar numeric
     # dims (X=8000, Y=9000, undecided so both are refined) is the trigger: each
@@ -268,12 +264,11 @@ def test_fold_b_never_evicts_string_measure_from_last_slot(scripted):
     # into the last slot, evicting S. Reserving string-held positions forbids it.
     dims = ["A", "B", "X", "Y", "S"]
     card = {"A": 1, "B": 15, "X": 8000, "Y": 9000, "S": 50}
-    ex = make_main_executor(dims, card, fast=True, string_dims=["S"],
-                            measure_only_numeric=False)
+    ex = make_main_executor(dims, card, fast=True, last_slot_locked=True)
     log = []
     # RAM rewards the largest dim last -> maximal pressure to evict the small S.
     ram_of = lambda o: 100.0 - {"Y": 10.0, "X": 9.0}.get(list(o)[-1], 0.0)
-    scripted(ex, ram_of, log)
+    measure_orders(ex, ram_of, log)
     ex.context.set_initial_ram(ram_of(tuple(dims)))
     ex._run_fold_b()
 
@@ -285,7 +280,7 @@ def test_fold_b_never_evicts_string_measure_from_last_slot(scripted):
     # X and Y remain movable among the non-reserved positions.
 
 
-def test_fold_b_resume_skips_seed_and_completed_passes(scripted):
+def test_fold_b_resume_skips_seed_and_completed_passes(measure_orders):
     # On resume, _run_fold_b must NOT re-apply the seed (that % was already
     # anchored before checkpointing) and must resume from the checkpointed
     # current_order / pass_index rather than restarting the coordinate descent.
@@ -293,12 +288,11 @@ def test_fold_b_resume_skips_seed_and_completed_passes(scripted):
     card = {"A": 100, "B": 110, "C": 120, "M": 3}  # all undecided -> always "improvable"
     ex = make_main_executor(dims, card, fast=True)
     log = []
-    scripted(ex, lambda o: 100.0 - len(log) * 0.1, log)
+    measure_orders(ex, lambda o: 100.0 - len(log) * 0.1, log)
     ex.context.set_initial_ram(100.0)
 
     resumed_order = ["C", "B", "M", "A"]
     resume_state = {"executor_state": {"fold_b_state": {
-        "seed_order": ["A", "B", "C", "M"],
         "current_order": list(resumed_order),
         "pass_index": 1,  # only the last of FOLD_B_MAX_PASSES=2 remains
     }}}
@@ -317,7 +311,7 @@ def test_fold_b_resume_skips_seed_and_completed_passes(scripted):
     assert len(log) == 8
 
 
-def test_fold_b_freezes_excluded_dim(scripted):
+def test_fold_b_freezes_excluded_dim(measure_orders):
     # "Excl" is pinned via dimensions_to_exclude at its original index (1).
     # card values are chosen so that:
     #  - the OLD (unfixed) cardinality-only seed sort would relocate Excl (its
@@ -335,10 +329,9 @@ def test_fold_b_freezes_excluded_dim(scripted):
     #    the swept target_dim.
     dims = ["A", "Excl", "B", "M"]
     card = {"A": 100, "Excl": 90, "B": 110, "M": 3}
-    ex = make_main_executor(dims, card, fast=True)
-    ex.dimensions_to_exclude = ["Excl"]
+    ex = make_main_executor(dims, card, fast=True, exclude=["Excl"])
     log = []
-    scripted(ex, lambda o: 100.0, log)  # ties everywhere -> nothing ever accepted
+    measure_orders(ex, lambda o: 100.0, log)  # ties everywhere -> nothing ever accepted
     ex.context.set_initial_ram(100.0)
 
     swept_dims = []

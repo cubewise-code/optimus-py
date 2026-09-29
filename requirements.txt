@@ -3,4 +3,3 @@ configparser>=3.5.3
 mdxpy>=0.2
 xlsxwriter
 pandas
-Jinja2

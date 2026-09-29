@@ -1,0 +1,43 @@
+name: Tests
+
+on:
+  push:
+    branches:
+      - master
+      - optimuspy2dot0
+  pull_request:
+    branches:
+      - master
+      - optimuspy2dot0
+
+jobs:
+  pytest:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor and the ceiling of requires-python in pyproject.toml.
+        python-version: ['3.9', '3.12']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        # Non-editable on purpose: this also proves the package builds and its
+        # declared dependencies resolve. The suite itself runs against src/
+        # either way — pyproject sets pythonpath = ["src"].
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+          pip install pytest
+
+      - name: Run tests
+        # testpaths, pythonpath and --import-mode=importlib all come from
+        # pyproject.toml, so no extra arguments are needed here.
+        run: python -m pytest -q
