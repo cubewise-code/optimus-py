@@ -97,8 +97,8 @@ function UiTour() {
 
 const POINTS = [
   'Double-click the executable and it opens in your browser. No Python, nothing to install.',
-  'Runs on your machine and talks only to your TM1 servers.',
-  'Follow a run live, with its log and a Stop button, then open the report from the cube\'s Results tab.',
+  'Runs on your machine and connects to any TM1 server it can reach over the REST API.',
+  'Follow a run live, with its log and a Stop button, then open the report from the cube\'s Reports tab.',
   'Optimize DB has its own page: build the plan, set the time limit, and start it.',
 ]
 

@@ -7,8 +7,7 @@ const METRIC_SERVICE_URL = 'https://tm1py.org/latest/reference/services/metricse
 
 const POINTS = [
   'One code path for both versions: every mode, the UI and Optimize DB work the same on v11 and v12.',
-  'Memory comes from TM1py\'s MetricService on both. v12 reports it in a different unit, and OptimusPy converts it for you.',
-  'Running somewhere without local storage? The checkpoint can live in TM1\'s own file storage, so a stopped run still resumes.',
+  'Memory is read through TM1py\'s MetricService, the same call on v11 and v12.',
   'On v11, VMM and VMT are raised so cached views don\'t hide the real query time, then put back, even if the run fails.',
 ]
 
@@ -68,7 +67,7 @@ function Diagram() {
 
       <div className="mt-4 flex items-center justify-center gap-2 rounded-lg bg-good/[0.08] px-3 py-2 text-sm text-good">
         <Check className="h-4 w-4" aria-hidden="true" />
-        Both converted to bytes, so every comparison is like for like
+        Two versions, same numbers: every comparison is like for like
       </div>
     </div>
   )
@@ -103,7 +102,6 @@ export default function V12() {
           </ul>
           <div className="flex flex-wrap gap-x-6 gap-y-2 font-semibold">
             <a href={DOCS.v12} className="text-brand hover:underline">How v12 support works →</a>
-            <a href={DOCS.checkpoints} className="text-brand hover:underline">Checkpoints →</a>
           </div>
         </div>
 
