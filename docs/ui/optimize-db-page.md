@@ -39,7 +39,7 @@ The first time you pick an instance after the page loads, the **Connect to Insta
 
 If no cube qualifies, the page says so and there's nothing to run.
 
-![A built plan: the stat cards, two cubes to reorder with their new dimension orders, and six skipped cubes grouped by reason](../assets/images/optimuspy/ui/optimize-db-plan.png)
+![A built plan: the stat cards, one cube to reorder with its new dimension order, and seven skipped cubes grouped by reason](../assets/images/optimuspy/ui/optimize-db-plan.png)
 
 ## Run plan
 

@@ -2,7 +2,7 @@
 
 Every job the UI server has run since it started (optimizations, syncs and Optimize DB runs), newest first. The page has no sidebar item: open it at `#/jobs`.
 
-![Jobs page listing a completed single-cube optimization and a completed Sync Order](../assets/images/optimuspy/ui/jobs-page.png)
+![Jobs page listing two completed single-cube optimizations and a completed Sync Order](../assets/images/optimuspy/ui/jobs-page.png)
 
 ## The job list
 
