@@ -84,9 +84,20 @@ jobs:
           files: optimuspy-windows.zip
 
   build-linux:
-    name: Build on Linux
+    name: Build on Linux (${{ matrix.arch }})
     needs: build-windows
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86-64
+            runner: ubuntu-latest
+            bundle: optimuspy-linux
+          # ARM servers, and Linux VMs on Apple Silicon Macs.
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            bundle: optimuspy-linux-arm64
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
@@ -125,12 +136,12 @@ jobs:
           cp config/config.ini.example bundle/optimuspy/config/
           cp config/settings.ini.example bundle/optimuspy/config/
           cp samples/*.json bundle/optimuspy/samples/
-          tar -czf optimuspy-linux.tar.gz -C bundle optimuspy
+          tar -czf ${{ matrix.bundle }}.tar.gz -C bundle optimuspy
 
       - name: Upload the bundle
         uses: actions/upload-artifact@v7
         with:
-          name: optimuspy-linux
+          name: ${{ matrix.bundle }}
           path: bundle/
 
       - name: Get short SHA
@@ -144,4 +155,4 @@ jobs:
           tag_name: build-${{ steps.sha.outputs.short }}
           name: Build ${{ steps.sha.outputs.short }}
           body: "Automated build from commit ${{ github.sha }}"
-          files: optimuspy-linux.tar.gz
+          files: ${{ matrix.bundle }}.tar.gz

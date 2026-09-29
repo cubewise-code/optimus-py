@@ -37,18 +37,22 @@ Builds from `master` also publish the same bundle as `optimuspy-windows.zip` on 
 
 ### Linux
 
-1. Download `optimuspy-linux.tar.gz` from the [Releases page](https://github.com/cubewise-code/optimus-py/releases).
+1. Download the bundle for your machine's processor from the [Releases page](https://github.com/cubewise-code/optimus-py/releases). `uname -m` tells you which one:
+    - `x86_64`: `optimuspy-linux.tar.gz`;
+    - `aarch64`: `optimuspy-linux-arm64.tar.gz`, for ARM servers and for Linux VMs on an Apple Silicon Mac.
+
+    The x86-64 bundle doesn't run on `aarch64`, even where the system can emulate x86-64: it stops at startup with `Failed to create parent directory structure` or a segmentation fault.
 2. Unpack it and start the executable:
 
     ```bash
-    tar -xzf optimuspy-linux.tar.gz
+    tar -xzf optimuspy-linux.tar.gz   # or optimuspy-linux-arm64.tar.gz
     cd optimuspy
     ./optimuspy
     ```
 
     With no arguments it opens the web UI. The UI listens on `127.0.0.1` only, so open it in a browser on the same machine. Copy `config/config.ini.example` to `config/config.ini` and fill it in, or link the `config.ini` you already have under **Settings**; the command line reads the same file, for example `./optimuspy scan --instance <name>`.
 
-The same bundle is kept as the `optimuspy-linux` artifact of each **Build Executable** run on the [Actions tab](https://github.com/cubewise-code/optimus-py/actions). GitHub delivers an artifact as a zip, which does not keep the executable bit: after unzipping, run `chmod +x optimuspy/optimuspy`.
+The same bundles are kept as the `optimuspy-linux` and `optimuspy-linux-arm64` artifacts of each **Build Executable** run on the [Actions tab](https://github.com/cubewise-code/optimus-py/actions). GitHub delivers an artifact as a zip, which does not keep the executable bit: after unzipping, run `chmod +x optimuspy/optimuspy`.
 
 ## Next step
 

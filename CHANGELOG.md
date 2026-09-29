@@ -6,7 +6,7 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
 
 ### Upgrading from 1.x
 
-1. **Install 2.0.0.** Unzip the Windows bundle (`optimuspy-windows.zip`) or the Linux bundle (`optimuspy-linux.tar.gz`). Its `optimuspy` folder holds the executable, `config/config.ini.example` and `samples/` (example cube configs). With Python 3.9 or later you can instead clone the repository and run `pip install -e .`, which adds the `optimuspy` command. See [Installation](docs/getting-started/installation.md).
+1. **Install 2.0.0.** Unzip the Windows bundle (`optimuspy-windows.zip`) or the Linux bundle (`optimuspy-linux.tar.gz`, or `optimuspy-linux-arm64.tar.gz` on ARM). Its `optimuspy` folder holds the executable, `config/config.ini.example` and `samples/` (example cube configs). With Python 3.9 or later you can instead clone the repository and run `pip install -e .`, which adds the `optimuspy` command. See [Installation](docs/getting-started/installation.md).
 2. **Move `config.ini` into a `config` folder.** 2.0.0 reads `config/config.ini`, relative to the folder you run the command from (for the bundle, the executable's folder). A `config.ini` sitting in that folder itself is not read. The instance sections keep the same format. To leave the file where it is, link it from the [Settings page](docs/ui/settings-page.md), which the command line then uses too, or pass `--config path/to/config.ini`. Either way OptimusPy only reads that file and never writes to it. See [TM1 Connection](docs/getting-started/tm1-connection.md).
 3. **Turn each command into a JSON cube config.** The 1.x flags are gone. A 1.x command stops with `error: unrecognized arguments` or `invalid choice`, exit code 2, before it connects. For example, this 1.x command:
 
@@ -78,7 +78,7 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
 - **Folders chosen in Settings.** Saved cube configs go to `cube-configs/` and Sync Order exports to `exports/`; the Settings page moves either one.
 - **TM1 v12 (PAoC / PAaaS)** alongside v11. VMM and VMT are raised during a run and put back afterwards on v11 only. See [Home](docs/index.md).
 - **`-v` / `--verbose`** logs the reason each skipped order was refused.
-- **Windows and Linux bundles.** Each holds the executable, `config/config.ini.example`, `config/settings.ini.example` and the sample cube configs. See [Installation](docs/getting-started/installation.md).
+- **Windows and Linux bundles.** Linux comes for x86-64 and for arm64. Each holds the executable, `config/config.ini.example`, `config/settings.ini.example` and the sample cube configs. See [Installation](docs/getting-started/installation.md).
 
 ### Changed
 
