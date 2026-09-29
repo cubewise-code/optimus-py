@@ -1,12 +1,10 @@
-<div class="optimus-banner" markdown>
-# OptimusPy Documentation
+<div align="center" style="margin-bottom: 1.5rem;">
+  <img src="assets/images/optimuspy/optimuspy-cli.png" alt="The OptimusPy command-line banner: the OptimusPy logo in block letters, TM1 Cube Dimension Order Optimizer, and a scrambled grid of numbers becoming an ordered one" style="max-width: min(100%, 560px); height: auto;"/>
+</div>
 
 The goal of OptimusPy is to find a better storage dimension order for your IBM TM1 / Planning Analytics cubes, so they use less memory and answer queries faster. It gets there by measuring real reorders on your server (RAM, query time and TI time), rather than guessing, and it can apply the winner for you. You can drive it from a local web UI or from the command line, and every run ends with an interactive HTML report.
 
 Supported versions: TM1 v11 and v12 (PAoC/PAaaS).
-
-[← Back to the landing page](https://cubewise-code.github.io/optimus-py/){ .back-link }
-</div>
 
 <div align="center" markdown>
 [:material-web: Website](https://cubewise-code.github.io/optimus-py/){ .md-button }
