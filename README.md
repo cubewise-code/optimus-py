@@ -68,6 +68,7 @@ optimuspy scan --instance tm1srv01 --output cube-configs/
 
 - New to OptimusPy? Start with the [User Guide](https://cubewise-code.github.io/optimus-py/docs/guide/choose-a-mode/).
 - What's new in 2.0.0, and how to upgrade from 1.x: [CHANGELOG.md](CHANGELOG.md).
+- Contributing, and how versions and releases are made: [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
