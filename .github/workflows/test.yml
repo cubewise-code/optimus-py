@@ -1,14 +1,29 @@
 name: Tests
 
+# Runs when code changes. A push to master that passes here starts Build
+# Executable, which builds the bundles and releases, so CHANGELOG.md and the
+# build workflow count as code: a PR that only touches them can still release.
 on:
   push:
     branches:
       - master
       - optimuspy2dot0
+    paths: &code
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'optimuspy.spec'
+      - 'config/**'
+      - 'samples/**'
+      - 'CHANGELOG.md'
+      - '.github/scripts/**'
+      - '.github/workflows/test.yml'
+      - '.github/workflows/build.yml'
   pull_request:
     branches:
       - master
       - optimuspy2dot0
+    paths: *code
 
 jobs:
   pytest:

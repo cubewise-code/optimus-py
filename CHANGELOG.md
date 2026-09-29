@@ -80,7 +80,7 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
 - **Folders chosen in Settings.** Saved cube configs go to `cube-configs/` and Sync Order exports to `exports/`; the Settings page moves either one.
 - **TM1 v12 (PAoC / PAaaS)** alongside v11. VMM and VMT are raised during a run and put back afterwards on v11 only. See [Home](docs/index.md).
 - **`-v` / `--verbose`** logs the reason each skipped order was refused.
-- **Windows and Linux bundles.** Linux comes for x86-64 and for arm64. Each holds the executable, `config/config.ini.example`, `config/settings.ini.example` and the sample cube configs. See [Installation](docs/getting-started/installation.md).
+- **Windows and Linux bundles.** Linux comes for x86-64 and for arm64. Each holds the executable, `config/config.ini.example`, `config/settings.ini.example`, the sample cube configs and a `BUILD_INFO.txt` naming its version and commit. Each version is a release on the [Releases page](https://github.com/cubewise-code/optimus-py/releases), tagged `vX.Y.Z`, with the three bundles attached. See [Installation](docs/getting-started/installation.md).
 
 ### Changed
 

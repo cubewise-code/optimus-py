@@ -23,17 +23,15 @@ optimuspy --help
 
 ## Prebuilt bundles
 
-Use a bundle when you cannot install Python (locked-down servers, kiosk environments, etc.). The **Build Executable** workflow builds a Windows and a Linux bundle. Each unpacks to an `optimuspy/` folder holding the executable, `config/config.ini.example`, `config/settings.ini.example` (see [Settings File](settings.md)) and `samples/` (example cube configs).
+Use a bundle when you cannot install Python (locked-down servers, kiosk environments, etc.). Each release on the [Releases page](https://github.com/cubewise-code/optimus-py/releases) carries three bundles: `optimuspy-windows.zip`, `optimuspy-linux.tar.gz` (x86-64) and `optimuspy-linux-arm64.tar.gz`. Each unpacks to an `optimuspy/` folder holding the executable, `config/config.ini.example`, `config/settings.ini.example` (see [Settings File](settings.md)), `samples/` (example cube configs) and `BUILD_INFO.txt`, which names the version and the commit the bundle was built from.
+
+The latest release's bundles are rebuilt whenever a change is merged to `master` between releases, so a download can hold fixes that came after the release's version. `BUILD_INFO.txt` shows which commit it is.
 
 ### Windows
 
-1. Open the [Actions tab](https://github.com/cubewise-code/optimus-py/actions) of the repository.
-2. Click the most recent successful **Build Executable** run.
-3. Scroll to the **Artifacts** section and download `optimuspy-windows`.
-4. Unzip it. The `optimuspy/` folder holds `optimuspy.exe`, `config/config.ini.example`, `config/settings.ini.example` and `samples/` (example cube configs).
-5. Copy `config/config.ini.example` to `config/config.ini` and fill in your TM1 instances, or link the `config.ini` you already have under **Settings**. Double-click `optimuspy.exe` to open the web UI.
-
-Builds from `master` also publish the same bundle as `optimuspy-windows.zip` on the [Releases page](https://github.com/cubewise-code/optimus-py/releases).
+1. Download `optimuspy-windows.zip` from the latest release on the [Releases page](https://github.com/cubewise-code/optimus-py/releases).
+2. Unzip it. The `optimuspy/` folder holds `optimuspy.exe`, `config/config.ini.example`, `config/settings.ini.example`, `samples/` (example cube configs) and `BUILD_INFO.txt`.
+3. Copy `config/config.ini.example` to `config/config.ini` and fill in your TM1 instances, or link the `config.ini` you already have under **Settings**. Double-click `optimuspy.exe` to open the web UI.
 
 ### Linux
 
@@ -52,7 +50,7 @@ Builds from `master` also publish the same bundle as `optimuspy-windows.zip` on 
 
     With no arguments it opens the web UI. The UI listens on `127.0.0.1` only, so open it in a browser on the same machine. Copy `config/config.ini.example` to `config/config.ini` and fill it in, or link the `config.ini` you already have under **Settings**; the command line reads the same file, for example `./optimuspy scan --instance <name>`.
 
-The same bundles are kept as the `optimuspy-linux` and `optimuspy-linux-arm64` artifacts of each **Build Executable** run on the [Actions tab](https://github.com/cubewise-code/optimus-py/actions). GitHub delivers an artifact as a zip, which does not keep the executable bit: after unzipping, run `chmod +x optimuspy/optimuspy`.
+Every **Build Executable** run on the [Actions tab](https://github.com/cubewise-code/optimus-py/actions) also keeps its bundles as the `optimuspy-windows`, `optimuspy-linux` and `optimuspy-linux-arm64` artifacts, which is how to get a build of another branch. GitHub delivers an artifact as a zip, which does not keep the executable bit: after unzipping a Linux one, run `chmod +x optimuspy/optimuspy`.
 
 ## Next step
 

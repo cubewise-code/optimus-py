@@ -1,24 +1,172 @@
+# OptimusPy Build & Release Workflow
+#
+# Triggers:
+#   - PR to master: one Linux x86-64 build, as validation. Nothing is published.
+#   - Tests pass on a push to master: all three bundles, then a release or an
+#     update of the latest release's bundles.
+#   - Manual dispatch: all three bundles for any branch, kept as run artifacts.
+#
+# On master, the merged PR's label decides what happens:
+#   release:major / release:minor / release:patch
+#     plan → set the version and tag vX.Y.Z → build from the tag
+#     → create release vX.Y.Z with the CHANGELOG.md section and the bundles
+#   no release label
+#     plan → build the tested commit → replace the bundles on the latest vX.Y.Z release
+#
+# A version in the code that is newer than every release is released as it
+# stands instead of being bumped, so the first release of 2.0.0 is v2.0.0. .github/scripts/release.py holds
+# these decisions and tests/test_release_script.py covers them.
+#
+# Releases are published only from the repository named by the
+# RELEASE_REPOSITORY variable (cubewise-code/optimus-py when it isn't set), so
+# a fork builds but never releases.
+
 name: Build Executable
 
 on:
-  push:
-    # `optimuspy2dot0` builds so the v2 executable can be tested before the
-    # merge; only master publishes a release. Remove it after the v2 merge.
-    branches:
-      - master
-      - optimuspy2dot0
+  pull_request:
+    # `optimuspy2dot0` is validated until the v2 merge. Remove it after the merge.
+    branches: [master, optimuspy2dot0]
+    paths:
+      - 'src/**'
+      - 'pyproject.toml'
+      - 'optimuspy.spec'
+      - 'config/**'
+      - 'samples/**'
+      - '.github/scripts/**'
+      - '.github/workflows/build.yml'
+  workflow_run:
+    workflows: [Tests]
+    types: [completed]
+    branches: [master]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+
+# Master runs queue one behind the other and are never cancelled, so two quick
+# merges can't release the same version. A PR's superseded runs are cancelled.
+concurrency:
+  group: ${{ github.event_name == 'workflow_run' && 'release' || format('build-{0}', github.ref) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  plan:
+    name: Plan the release
+    runs-on: ubuntu-latest
+    # On master, only after Tests passed on a push.
+    if: >
+      github.event_name != 'workflow_run' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push')
+    outputs:
+      sha: ${{ steps.sha.outputs.sha }}
+      publish: ${{ steps.plan.outputs.publish }}
+      release: ${{ steps.plan.outputs.release }}
+      version: ${{ steps.plan.outputs.version }}
+      tag: ${{ steps.plan.outputs.tag }}
+      bump: ${{ steps.plan.outputs.bump }}
+      pr: ${{ steps.plan.outputs.pr }}
+      linux: ${{ steps.platforms.outputs.linux }}
+      windows: ${{ steps.platforms.outputs.windows }}
+    steps:
+      - name: Pick the commit to build
+        id: sha
+        # The commit Tests ran on, not whatever master points at now.
+        run: echo "sha=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.sha.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Read the merged PR's labels
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ steps.sha.outputs.sha }}
+          PUBLISH: >-
+            ${{ github.event_name == 'workflow_run' &&
+                github.repository == (vars.RELEASE_REPOSITORY || 'cubewise-code/optimus-py') }}
+        run: |
+          echo "publish=$PUBLISH" >> "$GITHUB_OUTPUT"
+          if [ "$PUBLISH" != "true" ]; then
+            python .github/scripts/release.py plan >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          PR=$(gh api "repos/${{ github.repository }}/commits/$SHA/pulls" \
+            --jq '[.[] | select(.merged_at != null and .base.ref == "master")][0]')
+          if [ -z "$PR" ] || [ "$PR" = "null" ]; then
+            echo "No merged PR for $SHA: no release."
+            LABELS=""
+          else
+            echo "pr=$(echo "$PR" | jq -r '.number')" >> "$GITHUB_OUTPUT"
+            LABELS=$(echo "$PR" | jq -r '[.labels[].name] | join(",")')
+            echo "PR #$(echo "$PR" | jq -r '.number') has labels: ${LABELS:-none}"
+          fi
+          python .github/scripts/release.py plan --labels "$LABELS" --tags "$(git tag -l)" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Pick the platforms
+        id: platforms
+        run: |
+          X86='{"arch":"x86-64","runner":"ubuntu-latest","bundle":"optimuspy-linux"}'
+          # ARM servers, and Linux VMs on Apple Silicon Macs.
+          ARM='{"arch":"arm64","runner":"ubuntu-24.04-arm","bundle":"optimuspy-linux-arm64"}'
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            echo "linux=[$X86]" >> "$GITHUB_OUTPUT"
+            echo "windows=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "linux=[$X86,$ARM]" >> "$GITHUB_OUTPUT"
+            echo "windows=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  tag:
+    name: Set the version and tag it
+    needs: plan
+    if: needs.plan.outputs.publish == 'true' && needs.plan.outputs.release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.tag.outputs.sha }}
+    steps:
+      - name: Checkout code
+        # Master's tip: the version commit goes on top of anything merged
+        # since the tested commit.
+        uses: actions/checkout@v6
+        with:
+          ref: master
+
+      - name: Commit the version and push the tag
+        id: tag
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python .github/scripts/release.py set-version "$VERSION"
+          if ! git diff --quiet; then
+            git commit -m "Release $VERSION" -- pyproject.toml src/optimuspy/__init__.py
+            git push origin HEAD:master
+          fi
+          git tag -a "$TAG" -m "OptimusPy $VERSION"
+          git push origin "$TAG"
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
   build-windows:
     name: Build on Windows
+    needs: [plan, tag]
+    if: >
+      always() && needs.plan.result == 'success' && needs.plan.outputs.windows == 'true' &&
+      (needs.tag.result == 'success' || needs.tag.result == 'skipped')
     runs-on: windows-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.tag.outputs.sha || needs.plan.outputs.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -62,7 +210,15 @@ jobs:
           Copy-Item config\config.ini.example bundle/optimuspy/config/
           Copy-Item config\settings.ini.example bundle/optimuspy/config/
           Copy-Item samples\*.json bundle/optimuspy/samples/
-          Compress-Archive -Path bundle/optimuspy -DestinationPath optimuspy-windows.zip
+          $version = python .github/scripts/release.py current
+          @(
+            "OptimusPy $version"
+            "Bundle: optimuspy-windows"
+            "Commit: $(git rev-parse HEAD)"
+            "Built: $((Get-Date).ToUniversalTime().ToString('yyyy-MM-dd HH:mm:ss')) UTC"
+          ) | Set-Content bundle/optimuspy/BUILD_INFO.txt
+          New-Item -ItemType Directory -Force release | Out-Null
+          Compress-Archive -Path bundle/optimuspy -DestinationPath release/optimuspy-windows.zip
 
       - name: Upload the bundle
         uses: actions/upload-artifact@v7
@@ -70,37 +226,29 @@ jobs:
           name: optimuspy-windows
           path: bundle/
 
-      - name: Get short SHA
-        id: sha
-        run: echo "short=$(git rev-parse --short HEAD)" >> $env:GITHUB_OUTPUT
-
-      - name: Create Release
-        if: github.ref == 'refs/heads/master'
-        uses: softprops/action-gh-release@v2
+      - name: Upload the release archive
+        uses: actions/upload-artifact@v7
         with:
-          tag_name: build-${{ steps.sha.outputs.short }}
-          name: Build ${{ steps.sha.outputs.short }}
-          body: "Automated build from commit ${{ github.sha }}"
-          files: optimuspy-windows.zip
+          name: release-optimuspy-windows
+          path: release/optimuspy-windows.zip
+          retention-days: 7
 
   build-linux:
     name: Build on Linux (${{ matrix.arch }})
-    needs: build-windows
+    needs: [plan, tag]
+    if: >
+      always() && needs.plan.result == 'success' &&
+      (needs.tag.result == 'success' || needs.tag.result == 'skipped')
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - arch: x86-64
-            runner: ubuntu-latest
-            bundle: optimuspy-linux
-          # ARM servers, and Linux VMs on Apple Silicon Macs.
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-            bundle: optimuspy-linux-arm64
+        include: ${{ fromJSON(needs.plan.outputs.linux) }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.tag.outputs.sha || needs.plan.outputs.sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -131,12 +279,19 @@ jobs:
 
       - name: Assemble the bundle
         run: |
-          mkdir -p bundle/optimuspy/config bundle/optimuspy/samples
+          mkdir -p bundle/optimuspy/config bundle/optimuspy/samples release
           cp dist/optimuspy bundle/optimuspy/
           cp config/config.ini.example bundle/optimuspy/config/
           cp config/settings.ini.example bundle/optimuspy/config/
           cp samples/*.json bundle/optimuspy/samples/
-          tar -czf ${{ matrix.bundle }}.tar.gz -C bundle optimuspy
+          {
+            echo "OptimusPy $(python .github/scripts/release.py current)"
+            echo "Bundle: ${{ matrix.bundle }}"
+            echo "Commit: $(git rev-parse HEAD)"
+            echo "Built: $(date -u +'%Y-%m-%d %H:%M:%S') UTC"
+          } > bundle/optimuspy/BUILD_INFO.txt
+          # Archived here, on the runner: an Actions artifact does not keep the executable bit.
+          tar -czf release/${{ matrix.bundle }}.tar.gz -C bundle optimuspy
 
       - name: Upload the bundle
         uses: actions/upload-artifact@v7
@@ -144,15 +299,70 @@ jobs:
           name: ${{ matrix.bundle }}
           path: bundle/
 
-      - name: Get short SHA
-        id: sha
-        run: echo "short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-
-      - name: Upload to Release
-        if: github.ref == 'refs/heads/master'
-        uses: softprops/action-gh-release@v2
+      - name: Upload the release archive
+        uses: actions/upload-artifact@v7
         with:
-          tag_name: build-${{ steps.sha.outputs.short }}
-          name: Build ${{ steps.sha.outputs.short }}
-          body: "Automated build from commit ${{ github.sha }}"
-          files: ${{ matrix.bundle }}.tar.gz
+          name: release-${{ matrix.bundle }}
+          path: release/${{ matrix.bundle }}.tar.gz
+          retention-days: 7
+
+  publish:
+    name: Publish the bundles
+    needs: [plan, tag, build-windows, build-linux]
+    if: >
+      always() && needs.plan.outputs.publish == 'true' &&
+      needs.build-windows.result == 'success' && needs.build-linux.result == 'success' &&
+      (needs.tag.result == 'success' || needs.tag.result == 'skipped')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ needs.tag.outputs.sha || needs.plan.outputs.sha }}
+          fetch-depth: 0
+
+      - name: Download the release archives
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+
+      - name: Create the release
+        if: needs.plan.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          TAG: ${{ needs.plan.outputs.tag }}
+        run: |
+          python .github/scripts/release.py notes "$VERSION" --repo "${{ github.repository }}" > notes.md
+          if [ -s notes.md ] && grep -q '[^[:space:]]' notes.md; then
+            NOTES=(--notes-file notes.md)
+          else
+            echo "CHANGELOG.md has no section for $VERSION: using generated notes."
+            NOTES=(--generate-notes)
+          fi
+          gh release create "$TAG" release/* --verify-tag --latest \
+            --title "OptimusPy $VERSION" "${NOTES[@]}"
+
+      - name: Replace the bundles on the latest release
+        if: needs.plan.outputs.release != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The newest vX.Y.Z release, so older build-<sha> releases are never touched.
+          LATEST=$(gh api "repos/${{ github.repository }}/releases" --paginate \
+            --jq '.[] | select(.draft | not) | select(.tag_name | test("^v[0-9]+\\.[0-9]+\\.[0-9]+$")) | .tag_name' | head -n 1)
+          if [ -z "$LATEST" ]; then
+            echo "No vX.Y.Z release yet: nothing to update."
+            exit 0
+          fi
+          # A build that predates the release (a merge that waited behind it) is not newer.
+          if ! git merge-base --is-ancestor "$LATEST" HEAD; then
+            echo "$LATEST is not an ancestor of ${{ needs.plan.outputs.sha }}: its bundles stay."
+            exit 0
+          fi
+          echo "Replacing the bundles on $LATEST with the build of ${{ needs.plan.outputs.sha }}."
+          gh release upload "$LATEST" release/* --clobber
