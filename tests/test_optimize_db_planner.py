@@ -4,6 +4,7 @@ import pytest
 from optimuspy.optimize_db import (
     DEFAULT_OPTIONS,
     build_plan,
+    collect_cube_records,
     estimate_seconds,
     fits_in_budget,
     resolve_options,
@@ -19,13 +20,14 @@ def options(**overrides):
     return resolve_options({"instance": "srv", **overrides})
 
 
-def cube(name, ram_gb, dims, strings=(), leaves=None):
+def cube(name, ram_gb, dims, strings=(), leaves=None, visible=None):
     """A collected cube record: storage order plus per-dimension shape."""
     leaves = leaves or {}
     return {
         "cube": name,
         "ram_bytes": ram_gb * GB,
         "storage_order": list(dims),
+        "visible_order": list(visible) if visible is not None else list(dims),
         "dimensions": {d: {"name": d,
                            "leaf_elements": leaves.get(d, 100),
                            "has_strings": d in strings}
@@ -100,6 +102,55 @@ def test_two_string_dimensions_are_skipped_even_under_pin_last():
 ])
 def test_cubes_not_worth_a_rebuild_are_skipped(record, expected):
     assert resolve_target_order(record, options())[1] == expected
+
+
+def test_already_optimized_cubes_are_skipped_by_default():
+    """A storage order that differs from the presentation order was set on purpose."""
+    record = cube("Sales", 5, ["Product", "Measure", "Time"],
+                  leaves={"Time": 900, "Product": 40, "Measure": 12},
+                  visible=["Time", "Product", "Measure"])
+    assert resolve_target_order(record, options()) == (None, "already_optimized")
+
+
+def test_include_optimized_reorders_them_like_any_other_cube():
+    record = cube("Sales", 5, ["Product", "Measure", "Time"],
+                  leaves={"Time": 900, "Product": 40, "Measure": 12},
+                  visible=["Time", "Product", "Measure"])
+    target, reason = resolve_target_order(record, options(include_optimized=True))
+    assert reason is None
+    assert target == ["Measure", "Product", "Time"]
+
+
+class _Cubes:
+    def __init__(self, storage, visible):
+        self.storage, self.visible, self.name_reads = storage, visible, 0
+
+    def get_storage_dimension_order(self, cube_name):
+        return list(self.storage)
+
+    def get_dimension_names(self, cube_name):
+        self.name_reads += 1
+        return list(self.visible)
+
+
+class _TM1:
+    def __init__(self, cubes):
+        self.cubes = cubes
+
+
+def test_collector_reads_the_presentation_order_only_when_it_decides_a_skip(monkeypatch):
+    from optimuspy import optimize_db as odb
+    monkeypatch.setattr(odb, "_dimension_metadata",
+                        lambda tm1, d: {"name": d, "leaf_elements": 10, "has_strings": False})
+    tm1 = _TM1(_Cubes(["B", "C", "A"], ["A", "B", "C"]))
+
+    [record] = collect_cube_records(tm1, {"Sales": 50 * MB}, options())
+    assert record["visible_order"] == ["A", "B", "C"]
+    assert resolve_target_order(record, options())[1] == "already_optimized"
+
+    [record] = collect_cube_records(tm1, {"Sales": 50 * MB}, options(include_optimized=True))
+    assert record["visible_order"] is None
+    assert tm1.cubes.name_reads == 1
 
 
 def test_excluded_cubes_are_never_touched():
@@ -201,6 +252,7 @@ def test_defaults_are_the_conservative_ones():
     ({"instance": "srv", "min_cube_mb": -1}, "min_cube_mb"),
     ({"instance": "srv", "max_consecutive_failures": 0}, "max_consecutive_failures"),
     ({"instance": "srv", "revert_on_regression": "yes"}, "revert_on_regression"),
+    ({"instance": "srv", "include_optimized": 1}, "include_optimized"),
 ])
 def test_bad_instructions_fail_before_anything_is_touched(config, message):
     with pytest.raises(ValueError, match=message):

@@ -68,6 +68,7 @@ DEFAULT_OPTIONS = {
     "exclude_cubes": [],
     "min_cube_mb": 10.0,
     "string_policy": "skip_any",
+    "include_optimized": False,
     "revert_on_regression": True,
     "disable_active_chores": False,
     "max_consecutive_failures": 3,
@@ -81,6 +82,7 @@ SKIP_LABELS = {
     "empty": "no memory in use",
     "below_min_ram": "below minimum cube size",
     "too_few_dimensions": "fewer than 3 dimensions",
+    "already_optimized": "already optimized",
     "string_elements": "has string elements",
     "multiple_string_dims": "more than one dimension with strings",
     "already_in_target_order": "already in target order",
@@ -130,7 +132,7 @@ def validate_db_config(config: dict):
     if not isinstance(failures, int) or isinstance(failures, bool) or failures < 1:
         raise ValueError("'max_consecutive_failures' must be an integer >= 1")
 
-    for flag in ("revert_on_regression", "disable_active_chores"):
+    for flag in ("include_optimized", "revert_on_regression", "disable_active_chores"):
         if flag in config and not isinstance(config[flag], bool):
             raise ValueError(f"'{flag}' must be true or false")
 
@@ -188,6 +190,12 @@ def resolve_target_order(record: dict, options: dict) -> Tuple[Optional[List[str
     if len(dimensions) < 3:
         return None, "too_few_dimensions"
 
+    # A storage order that differs from the presentation order was set on
+    # purpose, often by a measured optimization; the heuristic would overwrite it.
+    visible = record.get("visible_order")
+    if not options["include_optimized"] and visible is not None and list(visible) != dimensions:
+        return None, "already_optimized"
+
     meta = record.get("dimensions") or {}
     string_dims = [d for d in dimensions if meta.get(d, {}).get("has_strings")]
 
@@ -213,7 +221,8 @@ def build_plan(instance: str, plan_id: str, options: dict, cube_records: List[di
     """Turn collected cube records into an ordered plan plus a skip ledger.
 
     Pure: every TM1 read has already happened. `cube_records` entries carry
-    `cube`, `ram_bytes`, `storage_order` and `dimensions`
+    `cube`, `ram_bytes`, `storage_order`, `visible_order` (the presentation
+    order, None when it wasn't read) and `dimensions`
     (`{name: {leaf_elements, has_strings, ...}}`).
     """
     queue, skipped = [], []
@@ -303,7 +312,8 @@ def _gb(value: float) -> float:
 def collect_cube_records(tm1, ram_by_cube: dict, options: dict) -> List[dict]:
     """Read storage order and dimension shape for every cube worth planning.
 
-    One `get_storage_dimension_order` per surviving cube, and two element reads
+    One `get_storage_dimension_order` per surviving cube (plus one
+    `get_dimension_names` unless `include_optimized` is set), and two element reads
     per *unique* dimension — dimensions are shared across cubes, so the cache is
     what keeps an instance-wide sweep to minutes.
     """
@@ -313,16 +323,20 @@ def collect_cube_records(tm1, ram_by_cube: dict, options: dict) -> List[dict]:
     for index, (cube_name, ram_bytes) in enumerate(ram_by_cube.items(), 1):
         if cheap_skip_reason(cube_name, ram_bytes, options):
             records.append({"cube": cube_name, "ram_bytes": ram_bytes,
-                            "storage_order": None, "dimensions": {}})
+                            "storage_order": None, "visible_order": None, "dimensions": {}})
             continue
         try:
             storage_order = list(tm1.cubes.get_storage_dimension_order(cube_name=cube_name))
+            # Only needed to skip cubes that are already optimized.
+            visible_order = (None if options["include_optimized"]
+                             else list(tm1.cubes.get_dimension_names(cube_name=cube_name)))
             dimensions = {d: _cached_dimension(tm1, d, dim_cache) for d in storage_order}
         except Exception as e:
             logging.warning(f"Could not inspect cube '{cube_name}', excluding from plan: {e}")
             continue
         records.append({"cube": cube_name, "ram_bytes": ram_bytes,
-                        "storage_order": storage_order, "dimensions": dimensions})
+                        "storage_order": storage_order, "visible_order": visible_order,
+                        "dimensions": dimensions})
         if index % 25 == 0:
             logging.info(f"Planning: inspected {index} of {total} cubes")
     return records
@@ -884,6 +898,7 @@ def format_plan(plan: dict) -> str:
         f"  Cube order        : {'smallest to largest' if options['order'] == 'asc' else 'largest to smallest'}",
         f"  Time limit        : {options['time_limit_hours']:.2f} h (checked between cubes only)",
         f"  String policy     : {options['string_policy']}",
+        f"  Include optimized : {'yes' if options['include_optimized'] else 'no'}",
         f"  Revert regressions: {'yes' if options['revert_on_regression'] else 'no'}",
         f"  Disable chores    : {'yes' if options['disable_active_chores'] else 'no'}",
         f"  Model RAM         : {_gb(plan['total_model_ram_bytes']):.2f} GB",

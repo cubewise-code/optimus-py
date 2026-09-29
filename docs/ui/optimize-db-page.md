@@ -20,8 +20,11 @@ The card at the top sets the same options as the instructions JSON:
 | **Safety**: *Revert a cube that ends up using more memory* | on | `revert_on_regression` |
 | **Safety**: *Disable active chores for the run* | off | `disable_active_chores` |
 | **Exclude cubes** | none | `exclude_cubes` |
+| **Already optimized cubes**: *Include optimized* | off | `include_optimized` |
 
 **Cube order** is the order the cubes are processed in, not the dimension order; that is always leaf-element count, fewest first. **Exclude cubes** takes one name or pattern at a time (case-insensitive, `*` and `?` wildcards, e.g. `Sales*`); press Enter to add each one.
+
+A cube is **already optimized** when its storage order differs from its presentation order, which usually means someone chose that order on purpose, often with the [Optimize page](optimize-page.md). The plan skips these cubes by default, so this pass doesn't overwrite a measured order with its one simple rule. Tick **Include optimized** to reorder them like any other cube.
 
 The first time you pick an instance after the page loads, the **Connect to Instance** dialog asks for its password. Leave it blank if `config.ini` stores it.
 
@@ -31,7 +34,7 @@ The first time you pick an instance after the page loads, the **Connect to Insta
 
 - Stat cards with the memory of all cubes on the instance, the memory of the cubes to reorder, and the share of all cube memory the plan covers. That share is the number to read first, because it tells you how much of the model the run will and won't touch.
 - **Cubes to reorder**: one row per cube, in the order the run takes them, with its memory and its new dimension order.
-- **Skipped cubes**: every cube the plan leaves alone, with the reason (excluded, below the minimum size, string elements, already in the target order, and so on). See [Skip reasons](../modes/optimize-db.md#skip-reasons).
+- **Skipped cubes**: every cube the plan leaves alone, with the reason (excluded, below the minimum size, already optimized, string elements, already in the target order, and so on). See [Skip reasons](../modes/optimize-db.md#skip-reasons).
 - **Active chores**: the chores that are active right now. This is a snapshot for you to review; the run reads the live state again when it starts.
 
 If no cube qualifies, the page says so and there's nothing to run.

@@ -34,6 +34,7 @@ Instance-scoped, deliberately **not** the per-cube schema, because `cube`, `view
   "exclude_cubes": ["System *", "Cube A"],
   "min_cube_mb": 10.0,
   "string_policy": "skip_any",
+  "include_optimized": false,
   "revert_on_regression": true,
   "disable_active_chores": false,
   "max_consecutive_failures": 3
@@ -48,6 +49,7 @@ Instance-scoped, deliberately **not** the per-cube schema, because `cube`, `view
 | `exclude_cubes` | `[]` | Cube names to leave alone. Case-insensitive, `*` and `?` wildcards supported. |
 | `min_cube_mb` | `10.0` | Cubes below this RAM are skipped. A rebuild on a tiny cube costs more attention than it saves. |
 | `string_policy` | `"skip_any"` | `skip_any` skips any cube with string elements; `pin_last` reorders the numeric dimensions and pins the single string dimension last. |
+| `include_optimized` | `false` | Also reorder cubes that are already optimized, meaning their storage order differs from their presentation order. Left `false`, they're skipped, because that order was set on purpose (often by [Optimize mode](optimize-mode.md)) and this pass would overwrite it. |
 | `revert_on_regression` | `true` | Put a cube back in its original order when the reorder made it use more memory. |
 | `disable_active_chores` | `false` | Deactivate the chores that are active **when the run starts**, for the duration of the run. |
 | `max_consecutive_failures` | `3` | Abort the run after this many failures in a row. An integer ≥ 1. |
@@ -109,6 +111,7 @@ The planner is the single authority on what is skipped and why. Every skipped cu
 | `empty` | No memory in use. |
 | `below_min_ram` | Smaller than `min_cube_mb`. |
 | `too_few_dimensions` | Fewer than 3 dimensions, so there is nothing meaningful to reorder. |
+| `already_optimized` | The storage order differs from the presentation order, and `include_optimized` is `false`. |
 | `string_elements` | Has string elements and `string_policy` is `skip_any`. |
 | `multiple_string_dims` | More than one dimension holds strings. TM1 keeps string values in the last dimension, so with two string dimensions there is no safe placement; these need separate analysis. |
 | `already_in_target_order` | The storage order already matches the new order (leaf-element count, fewest first). |

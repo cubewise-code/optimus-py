@@ -3513,6 +3513,7 @@ const OptimusPy = (function () {
     empty: "No memory in use",
     below_min_ram: "Below minimum cube size",
     too_few_dimensions: "Fewer than 3 dimensions",
+    already_optimized: "Already optimized",
     string_elements: "Has string elements",
     multiple_string_dims: "More than one dimension with strings",
     already_in_target_order: "Already in target order",
@@ -3548,6 +3549,7 @@ const OptimusPy = (function () {
     _order: "asc",
     _minCubeMb: 10,
     _stringPolicy: "skip_any",
+    _includeOptimized: false,
     _revertOnRegression: true,
     _disableActiveChores: false,
     _excludeCubes: [],
@@ -3712,6 +3714,19 @@ const OptimusPy = (function () {
 
       card.appendChild(this._buildExcludeGroup());
 
+      const optimizedGroup = el("div", { className: "form-group" });
+      optimizedGroup.appendChild(el("label", { className: "form-label" }, "Already optimized cubes"));
+      const optimizedLabel = el("label", { className: "checkbox-label", style: "cursor:pointer;display:flex;align-items:center;gap:6px" });
+      const optimizedCb = el("input", { type: "checkbox", id: "optdb-include-optimized" });
+      optimizedCb.checked = this._includeOptimized;
+      optimizedCb.addEventListener("change", () => { this._includeOptimized = optimizedCb.checked; });
+      optimizedLabel.appendChild(optimizedCb);
+      optimizedLabel.appendChild(el("span", { className: "text-sm" }, "Include optimized"));
+      optimizedGroup.appendChild(optimizedLabel);
+      optimizedGroup.appendChild(el("div", { className: "form-hint" },
+        "A cube whose storage order differs from its presentation order was ordered on purpose, often by the Optimize page. Left unticked, the plan skips it; ticked, the pass reorders it like any other cube"));
+      card.appendChild(optimizedGroup);
+
       const actions = el("div", { className: "flex gap-2 mt-4 items-center" });
       const buildBtn = el("button", { className: "btn btn-secondary", id: "optdb-plan-btn" }, "Build plan");
       buildBtn.addEventListener("click", () => this._buildPlan(buildBtn));
@@ -3781,6 +3796,7 @@ const OptimusPy = (function () {
         exclude_cubes: this._excludeCubes,
         min_cube_mb: this._minCubeMb,
         string_policy: this._stringPolicy,
+        include_optimized: this._includeOptimized,
         revert_on_regression: this._revertOnRegression,
         disable_active_chores: this._disableActiveChores,
       };

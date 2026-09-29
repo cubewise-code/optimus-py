@@ -31,6 +31,7 @@ The planner is pure (every TM1 read has already happened before it runs), so a p
 | `empty` | No memory in use |
 | `below_min_ram` | Under `min_cube_mb` |
 | `too_few_dimensions` | Fewer than 3 dimensions |
+| `already_optimized` | Storage order differs from the presentation order, and `include_optimized` is off |
 | `string_elements` | Has string elements, under `skip_any` |
 | `multiple_string_dims` | More than one dimension with strings, under `pin_last` (under `skip_any` such a cube is already ledgered as `string_elements`) |
 | `already_in_target_order` | The heuristic would change nothing |

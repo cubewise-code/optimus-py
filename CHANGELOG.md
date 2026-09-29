@@ -59,7 +59,7 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
     See [Optimize Mode](docs/modes/optimize-mode.md).
   - [`set`](docs/modes/set-mode.md) applies one order without benchmarking.
   - [`scan`](docs/modes/scan-mode.md) lists the cubes that make up `--ram-percent` of the instance's memory (60% by default), largest first. With `--output`, it also writes a starter config for each cube.
-  - [`optimize-db`](docs/modes/optimize-db.md) reorders every cube on an instance by leaf-element count, fewest first, within a time limit. It benchmarks nothing. With `disable_active_chores`, it disables the chores that are active when the run starts and re-enables them afterwards.
+  - [`optimize-db`](docs/modes/optimize-db.md) reorders every cube on an instance by leaf-element count, fewest first, within a time limit. It benchmarks nothing, and it leaves already optimized cubes (a storage order that differs from the presentation order) alone unless `include_optimized` is set. With `disable_active_chores`, it disables the chores that are active when the run starts and re-enables them afterwards.
     - `--dry-run` builds the plan without changing anything.
     - `--plan` runs a saved plan.
     - `--resume` continues a stopped run in the time left.

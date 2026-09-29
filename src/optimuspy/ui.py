@@ -990,7 +990,7 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
     # request body (instance, password) is connection detail, not an option.
     OPTIMIZE_DB_OPTION_KEYS = (
         "time_limit_hours", "order", "exclude_cubes", "min_cube_mb", "string_policy",
-        "revert_on_regression", "disable_active_chores", "max_consecutive_failures",
+        "include_optimized", "revert_on_regression", "disable_active_chores", "max_consecutive_failures",
     )
 
     def _optimize_db_config(self, body: dict) -> dict:
