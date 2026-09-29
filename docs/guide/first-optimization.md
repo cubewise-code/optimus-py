@@ -18,7 +18,7 @@ The same single-cube run, first in the UI, then on the command line.
 
 6. **Configure the run.** On *Configure*, keep the mode on *Greedy*. Pick one or more views, set *Executions per permutation* (5 to 10 is sensible), and choose CSV or XLSX. Leave *Auto-apply best* off for a first run, so the cube ends in its original order.
 7. **Start.** Click *Save & Start Optimization*. The *Optimize* tab shows the live log. *Stop* ends the run and puts the original order back.
-8. **Read the report.** When the run ends, the cube's *Results* tab lists the report. Open the HTML file. See [Reading the Result](reading-the-result.md).
+8. **Read the report.** When the run ends, the cube's *Reports* tab lists the run. Click *Open report*. See [Reading the Result](reading-the-result.md).
 
 Every page of the UI is described under [UI](../ui/overview.md), starting with the [Optimize Page](../ui/optimize-page.md).
 

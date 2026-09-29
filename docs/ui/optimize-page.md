@@ -55,9 +55,9 @@ The **Config Preview** beside the form shows the generated JSON config (it's ide
 
 The job's status, elapsed time and live log, with a **Stop** button while it runs. A run that fails shows as **Failed**, with the error in the log. The tab finds the cube's job on the server, so it also shows a job started in another browser tab or before a reload, replaying its log from the start.
 
-### Results
+### Reports
 
-The cube's result files, newest first, each with an **Open** button.
+The cube's runs on the connected instance, newest first: each run's **Open report**, and its CSV or XLSX as a small link beside it. **View Prior Reports**, above the tabs, opens the [Reports page](reports-page.md) with the cube's group open.
 
 ## Stopping a job
 
@@ -65,4 +65,4 @@ Click **Stop** on the cube's Optimize tab (the sidebar Activity Monitor takes yo
 
 ## What happens next
 
-Results land on the [Results page](results-page.md). The [Jobs page](jobs-page.md) lists every job since the UI server started.
+The report and its data land on the [Reports page](reports-page.md). The [Jobs page](jobs-page.md) lists every job since the UI server started.

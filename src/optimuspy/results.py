@@ -259,6 +259,232 @@ def ram_signal_is_dead(results: List[PermutationResult]) -> bool:
     return len({r.ram_usage for r in results}) == 1
 
 
+# ---------------------------------------------------------------------------
+# HTML reports
+# ---------------------------------------------------------------------------
+
+# One stylesheet for every HTML report, so the single-cube and the Optimize DB
+# reports keep the same look.
+REPORT_CSS = """
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        background: #F8FAFC;
+        color: #1E293B;
+        line-height: 1.5;
+    }
+    .container { max-width: 1440px; margin: 0 auto; padding: 24px; }
+    .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 24px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid #E2E8F0;
+    }
+    .header-left { display: flex; align-items: center; gap: 16px; }
+    .logo { height: 48px; width: auto; }
+    .header h1 { font-size: 20px; font-weight: 600; color: #0F172A; }
+    .header-meta { font-size: 13px; color: #64748B; text-align: right; }
+    .cards {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+        margin-bottom: 24px;
+    }
+    .card {
+        background: #fff;
+        border: 1px solid #E2E8F0;
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .card-label { font-size: 12px; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500; }
+    .card-value { font-size: 24px; font-weight: 700; color: #0F172A; font-family: 'SF Mono', 'Fira Code', monospace; margin: 4px 0; }
+    .card-sub { font-size: 12px; color: #64748B; }
+    .card-sub .positive { color: #DC2626; }
+    .card-sub .negative { color: #16A34A; }
+    .panel {
+        background: #fff;
+        border: 1px solid #E2E8F0;
+        border-radius: 12px;
+        padding: 24px;
+        margin-bottom: 24px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+    }
+    .panel h2 { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #0F172A; }
+    .chart-container { position: relative; height: 400px; }
+    .dim-order { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .dim-tag {
+        display: inline-block;
+        padding: 6px 12px;
+        border-radius: 8px;
+        font-size: 13px;
+        font-weight: 500;
+    }
+    .dim-moved-up { background: #DBEAFE; color: #1E40AF; }
+    .dim-moved-down { background: #FEF3C7; color: #92400E; }
+    .dim-same { background: #F1F5F9; color: #475569; }
+    .dim-legend { display: flex; gap: 12px; font-size: 12px; color: #64748B; }
+    .dim-legend .dim-tag { padding: 2px 8px; font-size: 11px; }
+    .positive { color: #DC2626; }
+    .negative { color: #16A34A; }
+    .footer { text-align: center; padding: 24px 0; font-size: 12px; color: #94A3B8; }
+    .podium { display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }
+    .podium-card {
+        flex: 1; min-width: 200px; background: #F8FAFC; border: 1px solid #E2E8F0;
+        border-radius: 10px; padding: 14px 16px; cursor: pointer; transition: all 0.15s ease;
+    }
+    .podium-card:hover { border-color: #94A3B8; box-shadow: 0 2px 6px rgba(0,0,0,0.06); }
+    .podium-card.highlight { border-color: #2563EB; background: #EFF6FF; }
+    .podium-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+    .podium-query .podium-title { color: #1E40AF; }
+    .podium-process .podium-title { color: #92400E; }
+    .podium-ram .podium-title { color: #3730A3; }
+    .podium-best .podium-title { color: #166534; }
+    .podium-id { font-family: 'SF Mono', 'Fira Code', monospace; font-size: 20px; font-weight: 700; color: #0F172A; }
+    .podium-detail { font-size: 12px; color: #64748B; margin-top: 2px; font-family: 'SF Mono', 'Fira Code', monospace; }
+    .podium-dims { display: flex; gap: 3px; flex-wrap: wrap; margin-top: 8px; }
+    .podium-dim { padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 500; background: #E2E8F0; color: #475569; }
+    .table-scroll { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th {
+        background: #F8FAFC; border-bottom: 2px solid #E2E8F0; padding: 10px 12px;
+        text-align: left; font-weight: 600; color: #475569; font-size: 11px;
+        text-transform: uppercase; letter-spacing: 0.03em; position: sticky; top: 0; z-index: 2;
+    }
+    th.sortable { cursor: pointer; user-select: none; }
+    th.sortable:hover { color: #0F172A; }
+    th.sorted { color: #0F172A; }
+    th .sort-arrow { font-size: 10px; margin-left: 3px; }
+    td { padding: 8px 12px; border-bottom: 1px solid #F1F5F9; }
+    .num { font-family: 'SF Mono', 'Fira Code', monospace; text-align: right; }
+    tr.data-row { cursor: pointer; transition: background 0.1s ease; }
+    tr.data-row:hover { background: #F8FAFC; }
+    tr.row-original { background: #EFF6FF; }
+    tr.row-original:hover { background: #DBEAFE; }
+    tr.row-best { background: #F0FDF4; }
+    tr.row-best:hover { background: #DCFCE7; }
+    tr.row-highlight { outline: 2px solid #2563EB; outline-offset: -2px; }
+    .expand-icon {
+        display: inline-block; width: 18px; height: 18px; line-height: 18px;
+        text-align: center; border-radius: 4px; background: #F1F5F9;
+        color: #64748B; font-size: 12px; font-weight: 700;
+        transition: all 0.15s ease; flex-shrink: 0;
+    }
+    tr.open .expand-icon { background: #0F172A; color: #fff; transform: rotate(90deg); }
+    .badge {
+        display: inline-block; padding: 2px 7px; border-radius: 5px;
+        font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
+        white-space: nowrap; margin-right: 3px;
+    }
+    .badge-original { background: #DBEAFE; color: #1E40AF; }
+    .badge-best { background: #DCFCE7; color: #166534; }
+    .badge-iteration { background: #F1F5F9; color: #475569; }
+    .badge-rank { background: #FEF3C7; color: #92400E; }
+    tr.detail-row { display: none; }
+    tr.detail-row.visible { display: table-row; }
+    tr.detail-row > td { padding: 0; border-bottom: 2px solid #E2E8F0; background: #FAFBFC; }
+    .detail-panel { padding: 16px 20px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }
+    @media (max-width: 900px) { .detail-panel { grid-template-columns: 1fr; } }
+    .detail-block h4 {
+        font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;
+        letter-spacing: 0.06em; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #E2E8F0;
+    }
+    .mini-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .mini-table th { position: static; background: transparent; border-bottom: 1px solid #E2E8F0; padding: 4px 6px; font-size: 10px; color: #94A3B8; }
+    .mini-table td { padding: 4px 6px; border-bottom: 1px solid #F1F5F9; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; }
+    .mini-table td.label-cell { font-family: 'Inter', sans-serif; color: #475569; font-weight: 500; }
+    .dim-flow { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+    .dim-flow .df-chip { padding: 3px 8px; border-radius: 5px; font-size: 11px; font-weight: 500; background: #F1F5F9; color: #475569; }
+    .dim-flow .df-chip.up { background: #DBEAFE; color: #1E40AF; }
+    .dim-flow .df-chip.down { background: #FEF3C7; color: #92400E; }
+    .dim-flow .df-arrow { color: #CBD5E1; font-size: 10px; }
+    .stat-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 12px; }
+    .stat-row .stat-label { color: #64748B; }
+    .stat-row .stat-val { font-family: 'SF Mono', 'Fira Code', monospace; font-weight: 600; }
+    .dim-up-text { color: #1E40AF; }
+    .dim-down-text { color: #92400E; }
+    .note {
+        background: #FFFBEB; border: 1px solid #FDE68A; color: #92400E;
+        border-radius: 12px; padding: 14px 18px; margin-bottom: 24px; font-size: 13px;
+    }
+    .chart-offline {
+        display: flex; align-items: center; justify-content: center; height: 100%;
+        color: #64748B; font-size: 13px; text-align: center;
+    }
+    .badge-warning { background: #FEF3C7; color: #92400E; }
+    .badge-failed { background: #FEE2E2; color: #991B1B; }
+    .badge-neutral { background: #F1F5F9; color: #475569; }
+    .panel p { font-size: 14px; }
+    .muted { color: #94A3B8; }
+    .error-text { color: #B91C1C; font-size: 12px; margin-top: 4px; }
+"""
+
+
+def _logo_base64() -> str:
+    logo_path = Path(__file__).parent / "images" / "logo.png"
+    if not logo_path.exists():
+        return ""
+    try:
+        from PIL import Image
+        img = Image.open(logo_path)
+        ratio = 300 / img.width
+        img = img.resize((300, int(img.height * ratio)), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="PNG", optimize=True)
+        return base64.b64encode(buf.getvalue()).decode()
+    except ImportError:
+        with open(logo_path, "rb") as f:
+            return base64.b64encode(f.read()).decode()
+
+
+def report_page(title: str, heading: str, meta: str, body: str, scripts: str = "") -> str:
+    """The page every HTML report is built in: the head, the styles, the logo, the
+    header and the footer around the report's own `body` and `scripts`.
+
+    Charts use Chart.js from its CDN. When it can't be loaded, each
+    `.chart-container` says so and the rest of the report reads as usual.
+    """
+    logo_b64 = _logo_base64()
+    logo_html = f'<img src="data:image/png;base64,{logo_b64}" alt="OptimusPy" class="logo">' if logo_b64 else ""
+    return f"""<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{title}</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>{REPORT_CSS}</style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <div class="header-left">
+            {logo_html}
+            <h1>{heading}</h1>
+        </div>
+        <div class="header-meta">
+            {meta}
+        </div>
+    </div>
+{body}
+    <div class="footer">
+        OptimusPy v2.0 — TM1 Cube Dimension Order Optimizer
+    </div>
+</div>
+{scripts}
+<script>
+if (typeof Chart === 'undefined') {{
+    document.querySelectorAll('.chart-container').forEach(c => {{
+        c.innerHTML = '<div class="chart-offline">The chart needs an internet connection: its library loads from cdn.jsdelivr.net.</div>';
+    }});
+}}
+</script>
+</body>
+</html>"""
+
+
 class OptimusResult:
     TEXT_FONT_SIZE = 5
 
@@ -360,27 +586,9 @@ class OptimusResult:
             file_name = file_name.with_suffix(".csv")
             return self.to_csv(file_name)
 
-    @staticmethod
-    def _load_logo_base64() -> str:
-        logo_path = Path(__file__).parent / "images" / "logo.png"
-        if not logo_path.exists():
-            return ""
-        try:
-            from PIL import Image
-            img = Image.open(logo_path)
-            ratio = 300 / img.width
-            img = img.resize((300, int(img.height * ratio)), Image.LANCZOS)
-            buf = io.BytesIO()
-            img.save(buf, format="PNG", optimize=True)
-            return base64.b64encode(buf.getvalue()).decode()
-        except ImportError:
-            with open(logo_path, "rb") as f:
-                return base64.b64encode(f.read()).decode()
-
     def to_html(self, file_name, total_duration: float = 0.0):
         original = self.original_order_result
         best = self.best_result
-        logo_b64 = self._load_logo_base64()
         timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
         report_subject = f"{self.instance_name} / {self.cube_name}" if self.instance_name else self.cube_name
 
@@ -527,171 +735,7 @@ class OptimusResult:
                 </div>
             </div>"""
 
-        logo_html = ""
-        if logo_b64:
-            logo_html = f'<img src="data:image/png;base64,{logo_b64}" alt="OptimusPy" class="logo">'
-
-        html = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>OptimusPy Report — {report_subject}</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-<style>
-    *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{
-        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-        background: #F8FAFC;
-        color: #1E293B;
-        line-height: 1.5;
-    }}
-    .container {{ max-width: 1440px; margin: 0 auto; padding: 24px; }}
-    .header {{
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        margin-bottom: 24px;
-        padding-bottom: 16px;
-        border-bottom: 1px solid #E2E8F0;
-    }}
-    .header-left {{ display: flex; align-items: center; gap: 16px; }}
-    .logo {{ height: 48px; width: auto; }}
-    .header h1 {{ font-size: 20px; font-weight: 600; color: #0F172A; }}
-    .header-meta {{ font-size: 13px; color: #64748B; text-align: right; }}
-    .cards {{
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-        gap: 16px;
-        margin-bottom: 24px;
-    }}
-    .card {{
-        background: #fff;
-        border: 1px solid #E2E8F0;
-        border-radius: 12px;
-        padding: 16px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-    }}
-    .card-label {{ font-size: 12px; color: #64748B; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 500; }}
-    .card-value {{ font-size: 24px; font-weight: 700; color: #0F172A; font-family: 'SF Mono', 'Fira Code', monospace; margin: 4px 0; }}
-    .card-sub {{ font-size: 12px; color: #64748B; }}
-    .card-sub .positive {{ color: #DC2626; }}
-    .card-sub .negative {{ color: #16A34A; }}
-    .panel {{
-        background: #fff;
-        border: 1px solid #E2E8F0;
-        border-radius: 12px;
-        padding: 24px;
-        margin-bottom: 24px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.04);
-    }}
-    .panel h2 {{ font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #0F172A; }}
-    .chart-container {{ position: relative; height: 400px; }}
-    .dim-order {{ display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }}
-    .dim-tag {{
-        display: inline-block;
-        padding: 6px 12px;
-        border-radius: 8px;
-        font-size: 13px;
-        font-weight: 500;
-    }}
-    .dim-moved-up {{ background: #DBEAFE; color: #1E40AF; }}
-    .dim-moved-down {{ background: #FEF3C7; color: #92400E; }}
-    .dim-same {{ background: #F1F5F9; color: #475569; }}
-    .dim-legend {{ display: flex; gap: 12px; font-size: 12px; color: #64748B; }}
-    .dim-legend .dim-tag {{ padding: 2px 8px; font-size: 11px; }}
-    .positive {{ color: #DC2626; }}
-    .negative {{ color: #16A34A; }}
-    .footer {{ text-align: center; padding: 24px 0; font-size: 12px; color: #94A3B8; }}
-    .podium {{ display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap; }}
-    .podium-card {{
-        flex: 1; min-width: 200px; background: #F8FAFC; border: 1px solid #E2E8F0;
-        border-radius: 10px; padding: 14px 16px; cursor: pointer; transition: all 0.15s ease;
-    }}
-    .podium-card:hover {{ border-color: #94A3B8; box-shadow: 0 2px 6px rgba(0,0,0,0.06); }}
-    .podium-card.highlight {{ border-color: #2563EB; background: #EFF6FF; }}
-    .podium-title {{ font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }}
-    .podium-query .podium-title {{ color: #1E40AF; }}
-    .podium-process .podium-title {{ color: #92400E; }}
-    .podium-ram .podium-title {{ color: #3730A3; }}
-    .podium-best .podium-title {{ color: #166534; }}
-    .podium-id {{ font-family: 'SF Mono', 'Fira Code', monospace; font-size: 20px; font-weight: 700; color: #0F172A; }}
-    .podium-detail {{ font-size: 12px; color: #64748B; margin-top: 2px; font-family: 'SF Mono', 'Fira Code', monospace; }}
-    .podium-dims {{ display: flex; gap: 3px; flex-wrap: wrap; margin-top: 8px; }}
-    .podium-dim {{ padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 500; background: #E2E8F0; color: #475569; }}
-    .table-scroll {{ overflow-x: auto; }}
-    table {{ width: 100%; border-collapse: collapse; font-size: 13px; }}
-    th {{
-        background: #F8FAFC; border-bottom: 2px solid #E2E8F0; padding: 10px 12px;
-        text-align: left; font-weight: 600; color: #475569; font-size: 11px;
-        text-transform: uppercase; letter-spacing: 0.03em; position: sticky; top: 0; z-index: 2;
-    }}
-    th.sortable {{ cursor: pointer; user-select: none; }}
-    th.sortable:hover {{ color: #0F172A; }}
-    th.sorted {{ color: #0F172A; }}
-    th .sort-arrow {{ font-size: 10px; margin-left: 3px; }}
-    td {{ padding: 8px 12px; border-bottom: 1px solid #F1F5F9; }}
-    .num {{ font-family: 'SF Mono', 'Fira Code', monospace; text-align: right; }}
-    tr.data-row {{ cursor: pointer; transition: background 0.1s ease; }}
-    tr.data-row:hover {{ background: #F8FAFC; }}
-    tr.row-original {{ background: #EFF6FF; }}
-    tr.row-original:hover {{ background: #DBEAFE; }}
-    tr.row-best {{ background: #F0FDF4; }}
-    tr.row-best:hover {{ background: #DCFCE7; }}
-    tr.row-highlight {{ outline: 2px solid #2563EB; outline-offset: -2px; }}
-    .expand-icon {{
-        display: inline-block; width: 18px; height: 18px; line-height: 18px;
-        text-align: center; border-radius: 4px; background: #F1F5F9;
-        color: #64748B; font-size: 12px; font-weight: 700;
-        transition: all 0.15s ease; flex-shrink: 0;
-    }}
-    tr.open .expand-icon {{ background: #0F172A; color: #fff; transform: rotate(90deg); }}
-    .badge {{
-        display: inline-block; padding: 2px 7px; border-radius: 5px;
-        font-size: 10px; font-weight: 700; letter-spacing: 0.02em;
-        white-space: nowrap; margin-right: 3px;
-    }}
-    .badge-original {{ background: #DBEAFE; color: #1E40AF; }}
-    .badge-best {{ background: #DCFCE7; color: #166534; }}
-    .badge-iteration {{ background: #F1F5F9; color: #475569; }}
-    .badge-rank {{ background: #FEF3C7; color: #92400E; }}
-    tr.detail-row {{ display: none; }}
-    tr.detail-row.visible {{ display: table-row; }}
-    tr.detail-row > td {{ padding: 0; border-bottom: 2px solid #E2E8F0; background: #FAFBFC; }}
-    .detail-panel {{ padding: 16px 20px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; }}
-    @media (max-width: 900px) {{ .detail-panel {{ grid-template-columns: 1fr; }} }}
-    .detail-block h4 {{
-        font-size: 11px; font-weight: 700; color: #64748B; text-transform: uppercase;
-        letter-spacing: 0.06em; margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #E2E8F0;
-    }}
-    .mini-table {{ width: 100%; border-collapse: collapse; font-size: 12px; }}
-    .mini-table th {{ position: static; background: transparent; border-bottom: 1px solid #E2E8F0; padding: 4px 6px; font-size: 10px; color: #94A3B8; }}
-    .mini-table td {{ padding: 4px 6px; border-bottom: 1px solid #F1F5F9; font-family: 'SF Mono', 'Fira Code', monospace; font-size: 11px; }}
-    .mini-table td.label-cell {{ font-family: 'Inter', sans-serif; color: #475569; font-weight: 500; }}
-    .dim-flow {{ display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }}
-    .dim-flow .df-chip {{ padding: 3px 8px; border-radius: 5px; font-size: 11px; font-weight: 500; background: #F1F5F9; color: #475569; }}
-    .dim-flow .df-chip.up {{ background: #DBEAFE; color: #1E40AF; }}
-    .dim-flow .df-chip.down {{ background: #FEF3C7; color: #92400E; }}
-    .dim-flow .df-arrow {{ color: #CBD5E1; font-size: 10px; }}
-    .stat-row {{ display: flex; justify-content: space-between; padding: 3px 0; font-size: 12px; }}
-    .stat-row .stat-label {{ color: #64748B; }}
-    .stat-row .stat-val {{ font-family: 'SF Mono', 'Fira Code', monospace; font-weight: 600; }}
-    .dim-up-text {{ color: #1E40AF; }}
-    .dim-down-text {{ color: #92400E; }}
-</style>
-</head>
-<body>
-<div class="container">
-    <div class="header">
-        <div class="header-left">
-            {logo_html}
-            <h1>Optimization Report — {report_subject}</h1>
-        </div>
-        <div class="header-meta">
-            Generated {timestamp}
-        </div>
-    </div>
-
+        body = f"""
     <div class="cards">
         <div class="card">
             <div class="card-label">Orders Tested</div>
@@ -745,12 +789,9 @@ class OptimusResult:
             </table>
         </div>
     </div>
+"""
 
-    <div class="footer">
-        OptimusPy v2.0 — TM1 Cube Dimension Order Optimizer
-    </div>
-</div>
-
+        scripts = f"""
 <script>
 const data = {json.dumps(chart_data)};
 
@@ -1016,8 +1057,11 @@ document.querySelectorAll('th.sortable').forEach(th => {{
 
 renderTable();
 </script>
-</body>
-</html>"""
+"""
+
+        html = report_page(f"OptimusPy Report — {report_subject}",
+                           f"Optimization Report — {report_subject}",
+                           f"Generated {timestamp}", body, scripts)
 
         os.makedirs(os.path.dirname(str(file_name)), exist_ok=True)
         with open(str(file_name), "w", encoding="utf-8") as f:

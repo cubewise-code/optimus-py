@@ -44,11 +44,11 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
     | `-t`, `--process` | `"processes"`, a list |
 
     Every field is listed in the [JSON Config Reference](docs/advanced/json-config-reference.md).
-4. **Look for results in a folder per instance.** Each run writes `results/<instance>/<instance>_<cube>_<timestamp>.html`, plus a `.csv` or `.xlsx` of the same name, relative to the folder you run from (for the bundle, the executable's folder). 1.x wrote `results/<instance>_<cube>_<view>_<process>_<timestamp>` as `.csv` or `.xlsx`, plus a `.png` chart. See [Results Page](docs/ui/results-page.md).
+4. **Look for results in a folder per instance.** Each run writes `results/<instance>/<instance>_<cube>_<timestamp>.html`, plus a `.csv` or `.xlsx` of the same name, relative to the folder you run from (for the bundle, the executable's folder). 1.x wrote `results/<instance>_<cube>_<view>_<process>_<timestamp>` as `.csv` or `.xlsx`, plus a `.png` chart. See [Reports Page](docs/ui/reports-page.md).
 
 ### New
 
-- **Web UI.** Start it with `optimuspy ui`, or double-click the executable. It opens at `http://127.0.0.1:8765` and has these pages: Optimize, Results, Sync Order, Optimize DB and Settings, plus a Jobs list. See [UI Overview](docs/ui/overview.md).
+- **Web UI.** Start it with `optimuspy ui`, or double-click the executable. It opens at `http://127.0.0.1:8765` and has these pages: Optimize, Reports, Sync Order, Optimize DB and Settings, plus a Jobs list. See [UI Overview](docs/ui/overview.md).
 - **Modes.**
   - `optimize` benchmarks orders for one cube, in one of these modes:
     - Greedy (with an optional Fast mode);
@@ -66,7 +66,9 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
     - `--restore-chores` re-enables chores that a crashed run left disabled.
 - **Several views and TI processes per run.** `views` and `processes` take lists, and `process_parameters` sets parameters for each process. Each one runs `executions` times, and the median counts. See [Multi-View / Multi-Process](docs/advanced/multi-view-multi-process.md).
 - **Dimension position rules.** `dimension_position_rules` keeps a dimension at a fixed position while the rest are tested, and `orders_to_ignore` skips orders you don't want tested. See [Dimension Position Rules](docs/advanced/dimension-position-rules.md).
-- **HTML report for every run.** It shows summary cards, the recommended order, a chart of memory against query time relative to the original order, the best orders, and the full table. See [Results Page](docs/ui/results-page.md).
+- **HTML report for every run.** It shows summary cards, the recommended order, a chart of memory against query time relative to the original order, the best orders, and the full table. See [Reports Page](docs/ui/reports-page.md).
+- **An Optimize DB report.** Each Optimize DB run ends with `optdb_report_<plan-id>.html` next to its plan and run files, and the CLI prints its path. It shows the cubes reordered, reverted, failed and not started, the expected saving, a chart of the memory saved per cube, each cube's orders and outcome, what the plan skipped, the chores and the run settings. See [Reading the Optimize DB report](docs/ui/reports-page.md#reading-the-optimize-db-report).
+- **Reports page.** Every run's report and data files, by instance, then cube, then run, with Optimize DB runs under their instance. A run without a report yet gets one from *Build report*. See [Reports Page](docs/ui/reports-page.md).
 - **Checkpoint and resume.** Run the same `optimize` command again and it continues where a stopped or failed run left off. `--no-resume` starts over. `--tm1-checkpoint` keeps the checkpoint in TM1's file storage instead of a local file, for environments without local storage such as Atmosphere. See [Checkpoints & Resume](docs/advanced/checkpoints-resume.md).
 - **Sync Order and exported orders.**
   - The Sync Order page copies storage orders from one instance to another.

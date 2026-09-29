@@ -22,7 +22,10 @@ Three artifacts, one job each:
   original order (for revert), pre-reorder RAM, measured `%`, durations, and the
   chore lifecycle state. Written after every transition, so it doubles as the
   resume point and the crash-time record of which chores are still disabled.
-* **report** — the console summary rendered from the run.
+* **report** (`optdb_report_<plan_id>.html`) — the run read back as a page:
+  what was reordered, reverted or failed, the expected saving, what the plan
+  skipped and the chores. Written when the run ends, from the plan and the run
+  alone. The console summary says the same in a few lines.
 
 The time budget is checked only *between* cubes. An in-flight
 `tm1.ReorderDimensions` is a blocking server-side rebuild with no safe abort, so
@@ -32,6 +35,7 @@ guarantee an end time.
 """
 import fnmatch
 import glob
+import html
 import json
 import logging
 import math
@@ -44,12 +48,14 @@ from typing import Callable, List, Optional, Tuple
 from optimuspy.core import RESULT_PATH, _dimension_metadata
 from optimuspy.metrics import (detect_is_v12, memory_by_cube_bytes, ram_source_ready,
                                read_cube_memory_bytes)
+from optimuspy.results import report_page
 
 PLAN_SCHEMA = 1
 RUN_SCHEMA = 1
 
 PLAN_PREFIX = "optdb_plan_"
 RUN_PREFIX = "optdb_run_"
+REPORT_PREFIX = "optdb_report_"
 
 # Reconnect ladder for a dropped connection. Three attempts, then the run is
 # failed — a server that is still unreachable after four minutes is down, and
@@ -397,6 +403,10 @@ def plan_path(plan_id: str, instance: str, result_path: Path = RESULT_PATH) -> P
 
 def run_path(plan_id: str, instance: str, result_path: Path = RESULT_PATH) -> Path:
     return Path(result_path) / instance / f"{RUN_PREFIX}{plan_id}.json"
+
+
+def report_path(plan_id: str, instance: str, result_path: Path = RESULT_PATH) -> Path:
+    return Path(result_path) / instance / f"{REPORT_PREFIX}{plan_id}.html"
 
 
 def write_json(path: Path, payload: dict):
@@ -845,37 +855,46 @@ def optimize_db(connect: Callable[[], object], config: dict = None, plan: dict =
         run["status"] = "running"
         save = _saver(path, run)
         save()
+    else:
+        if plan is None:
+            validate_db_config(config)
+            options = resolve_options(config)
+            instance = config["instance"]
+            with connect() as tm1:
+                is_v12 = detect_is_v12(tm1)
+                plan = create_plan(tm1, instance, options, is_v12)
+            plan["is_v12"] = is_v12
+            write_json(plan_path(plan["plan_id"], instance, result_path), plan)
+            logging.info(f"Plan written to {plan_path(plan['plan_id'], instance, result_path)}")
+
+        if dry_run:
+            return plan
+
+        if not plan["cubes"]:
+            logging.info("Plan contains no cubes to reorder — nothing to do")
+            return plan
+
+        run = new_run(plan, result_path)
+        run["is_v12"] = plan.get("is_v12", False)
+        path = run_path(plan["plan_id"], plan["instance"], result_path)
+        save = _saver(path, run)
+        save()
+        logging.info(f"Optimize DB run '{plan['plan_id']}' started — "
+                     f"{len(plan['cubes'])} cubes, {run['options']['time_limit_hours']:.2f}h limit, "
+                     f"state in {path}")
+
+    try:
         return execute_plan(connect, plan, run, save, cancel_event=cancel_event,
                             is_v12=run.get("is_v12", False))
-
-    if plan is None:
-        validate_db_config(config)
-        options = resolve_options(config)
-        instance = config["instance"]
-        with connect() as tm1:
-            is_v12 = detect_is_v12(tm1)
-            plan = create_plan(tm1, instance, options, is_v12)
-        plan["is_v12"] = is_v12
-        write_json(plan_path(plan["plan_id"], instance, result_path), plan)
-        logging.info(f"Plan written to {plan_path(plan['plan_id'], instance, result_path)}")
-
-    if dry_run:
-        return plan
-
-    if not plan["cubes"]:
-        logging.info("Plan contains no cubes to reorder — nothing to do")
-        return plan
-
-    run = new_run(plan, result_path)
-    run["is_v12"] = plan.get("is_v12", False)
-    path = run_path(plan["plan_id"], plan["instance"], result_path)
-    save = _saver(path, run)
-    save()
-    logging.info(f"Optimize DB run '{plan['plan_id']}' started — "
-                 f"{len(plan['cubes'])} cubes, {run['options']['time_limit_hours']:.2f}h limit, "
-                 f"state in {path}")
-    return execute_plan(connect, plan, run, save, cancel_event=cancel_event,
-                        is_v12=run["is_v12"])
+    finally:
+        # After the run artifact's last save, on every way out. The report is a
+        # reading of the run: failing to write it never changes the outcome.
+        report = report_path(run["plan_id"], run["instance"], result_path)
+        try:
+            write_report(plan, run, report)
+            logging.info(f"Report written to {report}")
+        except Exception as e:
+            logging.warning(f"Could not write the report {report}: {e}")
 
 
 def _saver(path: Path, run: dict) -> Callable[[], None]:
@@ -971,3 +990,320 @@ def format_run_summary(run: dict) -> str:
                      f"'optimuspy optimize-db --restore-chores {run['plan_id']}'")
     lines.append("")
     return "\n".join(lines)
+
+
+# The words the Optimize DB page uses for a run's status (OPTDB_RUN_STATUS in
+# app.js), so the page and the report say the same thing.
+RUN_STATUS_LABELS = {
+    "running": "Running",
+    "completed": "Completed",
+    "stopped_time_limit": "Stopped — time limit",
+    "cancelled": "Stopped — cancelled",
+    "failed": "Failed",
+}
+
+# Cube status in the report: the label and the badge it is shown in.
+_CUBE_STATUS = {
+    "done": ("Reordered", "badge-best"),
+    "reverted": ("Reverted", "badge-warning"),
+    "failed": ("Failed", "badge-failed"),
+    "pending": ("Not started", "badge-iteration"),
+    "in_flight": ("In progress", "badge-original"),
+    "skipped": ("Already in target order", "badge-neutral"),
+}
+
+_RUN_STATUS_BADGE = {
+    "completed": "badge-best", "running": "badge-original",
+    "stopped_time_limit": "badge-warning", "cancelled": "badge-warning",
+}
+
+_OPTION_LABELS = (
+    ("order", "Cube order", lambda v: "smallest to largest" if v == "asc" else "largest to smallest"),
+    ("time_limit_hours", "Time limit", lambda v: f"{v:g} h, checked before each cube"),
+    ("min_cube_mb", "Minimum cube size", lambda v: f"{v:g} MB"),
+    ("string_policy", "String dimensions", lambda v: v),
+    ("exclude_cubes", "Excluded cubes", lambda v: ", ".join(v) if v else "none"),
+    ("include_optimized", "Include optimized cubes", lambda v: "yes" if v else "no"),
+    ("revert_on_regression", "Revert a cube that got worse", lambda v: "yes" if v else "no"),
+    ("disable_active_chores", "Disable active chores", lambda v: "yes" if v else "no"),
+    ("max_consecutive_failures", "Stop after consecutive failures", lambda v: str(v)),
+)
+
+
+def _when(timestamp: Optional[float]) -> str:
+    return time.strftime("%Y-%m-%d %H:%M", time.localtime(timestamp)) if timestamp else "—"
+
+
+def _measured(pct: Optional[float]) -> bool:
+    return pct is not None and not math.isnan(pct)
+
+
+def write_report(plan: dict, run: dict, path: Path):
+    """Write the run's HTML report to `path`, from the plan and the run alone.
+
+    Pure apart from the one file it writes: nothing here reads TM1. The totals
+    are `_finalize_totals`' own, worked out on a copy so the run is left as it was.
+    """
+    esc = html.escape
+    counted = dict(run)
+    _finalize_totals(counted)
+    totals = counted["totals"]
+    options = plan.get("options") or run.get("options") or {}
+    status = run.get("status")
+    status_label = RUN_STATUS_LABELS.get(status, status or "—")
+    instance = run.get("instance") or plan.get("instance") or ""
+
+    model_bytes = plan.get("total_model_ram_bytes") or 0
+    saved = totals["bytes_saved"]
+    share = f"{saved / 1024 ** 2:,.1f} MB"
+    if model_bytes:
+        share += f", {saved / model_bytes:.1%} of the model's {_gb(model_bytes):.2f} GB"
+    limit = options.get("time_limit_hours")
+    elapsed = format_duration(totals["elapsed_s"]) if run.get("finished_at") else "—"
+
+    def card(label, value, sub=""):
+        sub_html = f'<div class="card-sub">{sub}</div>' if sub else ""
+        return (f'<div class="card"><div class="card-label">{label}</div>'
+                f'<div class="card-value">{value}</div>{sub_html}</div>')
+
+    cards = "".join([
+        card("Reordered", totals["cubes_reordered"]),
+        card("Reverted", totals["cubes_reverted"], "Used more memory, put back"),
+        card("Failed", totals["cubes_failed"]),
+        card("Not started", totals["cubes_pending"]),
+        card("Expected saving", f"{_gb(saved):.2f} GB", share),
+        card("Time taken", elapsed, f"of the {limit:g} h limit" if limit is not None else ""),
+    ])
+
+    # One row per cube, in the order the run took them.
+    rows = []
+    for position, entry in enumerate(plan.get("cubes", []), 1):
+        state = run.get("cubes", {}).get(entry["cube"], {})
+        cube_status = state.get("status", "pending")
+        pct = state.get("pct_change")
+        before = state.get("ram_before", entry.get("ram_bytes")) or 0
+        rows.append({
+            "pos": position,
+            "cube": entry["cube"],
+            "before": before / 1024 ** 2,
+            "pct": pct if _measured(pct) else None,
+            "derived": bool(state.get("derived")),
+            "saved": before * -pct / 100 / 1024 ** 2 if cube_status == "done" and _measured(pct) else None,
+            "duration": state.get("duration_s"),
+            "status": cube_status,
+            "statusLabel": _CUBE_STATUS.get(cube_status, (cube_status, ""))[0],
+            "badge": _CUBE_STATUS.get(cube_status, ("", "badge-neutral"))[1],
+            "original": state.get("original_order") or entry.get("current_order") or [],
+            "target": state.get("target_order") or entry.get("target_order") or [],
+            "error": state.get("revert_error") or state.get("error"),
+            "revertFailed": bool(state.get("revert_error")),
+        })
+
+    # The chart: memory saved per reordered cube, largest first, then what each
+    # reverted cube reported before it was put back.
+    bars = sorted(((r["cube"], r["saved"], 0) for r in rows if r["saved"]), key=lambda b: -b[1])
+    bars += sorted(((r["cube"], 0, r["before"] * r["pct"] / 100) for r in rows
+                    if r["status"] == "reverted" and r["pct"] is not None), key=lambda b: -b[2])
+    if bars:
+        chart = (f'<div class="chart-container" style="height:{max(160, 60 + 28 * len(bars))}px">'
+                 f'<canvas id="savingChart"></canvas></div>')
+    else:
+        chart = '<p class="muted">No cube was reordered with a reported change in memory.</p>'
+
+    # What the plan left out, grouped by reason.
+    by_reason = {}
+    for skipped in plan.get("skipped", []):
+        bucket = by_reason.setdefault(skipped["reason"], {"cubes": [], "bytes": 0.0})
+        bucket["cubes"].append(skipped["cube"])
+        bucket["bytes"] += skipped.get("ram_bytes") or 0
+    if by_reason:
+        skip_rows = "".join(
+            f'<tr><td>{esc(SKIP_LABELS.get(reason, reason).capitalize())}</td>'
+            f'<td class="num">{len(b["cubes"])}</td>'
+            f'<td class="num">{(b["bytes"] / 1024 ** 2):,.1f} MB</td>'
+            f'<td><details><summary class="muted">Cubes</summary>{esc(", ".join(b["cubes"]))}</details></td></tr>'
+            for reason, b in sorted(by_reason.items(), key=lambda kv: -kv[1]["bytes"]))
+        skipped_html = (f'<table><thead><tr><th>Reason</th><th class="num">Cubes</th>'
+                        f'<th class="num">Memory</th><th></th></tr></thead><tbody>{skip_rows}</tbody></table>')
+    else:
+        skipped_html = '<p class="muted">The plan skipped no cube.</p>'
+
+    chores = run.get("chores") or {}
+    disabled = chores.get("deactivated") or []
+    failed = chores.get("failed") or []
+    if not options.get("disable_active_chores"):
+        chores_html = "<p>Chores were left running.</p>"
+    elif not disabled:
+        chores_html = "<p>No chore was active, so none was disabled.</p>"
+    elif chores.get("state") == "restored":
+        chores_html = (f"<p>{len(disabled)} chore(s) were disabled for the run and re-enabled "
+                       f"afterwards: {esc(', '.join(disabled))}.</p>")
+    else:
+        still = failed or disabled
+        chores_html = (f'<p class="error-text">{len(still)} chore(s) are still disabled: '
+                       f'{esc(", ".join(still))}. Re-enable them from the Optimize DB page, or with '
+                       f'<code>optimuspy optimize-db --restore-chores {esc(run.get("plan_id", ""))} '
+                       f'--instance {esc(instance)}</code>.</p>')
+
+    settings_rows = "".join(
+        f'<tr><td>{label}</td><td>{esc(render(options[key]))}</td></tr>'
+        for key, label, render in _OPTION_LABELS if key in options)
+
+    body = f"""
+    <div class="cards">{cards}</div>
+    <div class="note">
+        The expected saving is the sum of the memory reductions TM1 reported for each cube.
+        The instance's memory only goes down after TM1 is restarted, so restart it before
+        measuring the result.
+    </div>
+    <div class="panel">
+        <h2>Memory saved per cube</h2>
+        {chart}
+    </div>
+    <div class="panel">
+        <h2>Cubes, in the order the run took them</h2>
+        <div class="table-scroll">
+            <table>
+                <thead><tr>
+                    <th style="width:30px"></th>
+                    <th class="sortable sorted" data-sort="pos" style="width:56px;white-space:nowrap"># <span class="sort-arrow">&#9650;</span></th>
+                    <th class="sortable" data-sort="cube">Cube <span class="sort-arrow"></span></th>
+                    <th class="sortable num" data-sort="before">Memory before <span class="sort-arrow"></span></th>
+                    <th class="sortable num" data-sort="pct">% change <span class="sort-arrow"></span></th>
+                    <th class="sortable num" data-sort="saved">Saved (MB) <span class="sort-arrow"></span></th>
+                    <th class="sortable num" data-sort="duration">Time taken <span class="sort-arrow"></span></th>
+                    <th class="sortable" data-sort="statusLabel">Status <span class="sort-arrow"></span></th>
+                </tr></thead>
+                <tbody id="tbody"></tbody>
+            </table>
+        </div>
+    </div>
+    <div class="panel">
+        <h2>Skipped by the plan</h2>
+        {skipped_html}
+    </div>
+    <div class="panel">
+        <h2>Chores</h2>
+        {chores_html}
+    </div>
+    <div class="panel">
+        <h2>Run settings</h2>
+        <table><tbody>{settings_rows}</tbody></table>
+    </div>"""
+
+    def as_js(value) -> str:
+        return json.dumps(value).replace("</", "<\\/")
+
+    scripts = f"""
+<script>
+const bars = {as_js(bars)};
+if (bars.length && typeof Chart !== 'undefined') {{
+    new Chart(document.getElementById('savingChart'), {{
+        type: 'bar',
+        data: {{
+            labels: bars.map(b => b[0]),
+            datasets: [
+                {{ label: 'Saved (MB)', data: bars.map(b => b[1]), backgroundColor: 'rgba(34,197,94,0.7)', borderColor: '#16A34A', borderWidth: 1 }},
+                {{ label: 'Increase reported, then reverted (MB)', data: bars.map(b => b[2]), backgroundColor: 'rgba(245,158,11,0.7)', borderColor: '#D97706', borderWidth: 1 }},
+            ],
+        }},
+        options: {{
+            indexAxis: 'y',
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {{ legend: {{ position: 'top' }} }},
+            scales: {{
+                x: {{ stacked: true, title: {{ display: true, text: 'MB' }} }},
+                y: {{ stacked: true }},
+            }},
+        }},
+    }});
+}}
+</script>
+<script>
+const rows = {as_js(rows)};
+const esc = s => String(s).replace(/[&<>"]/g, c => ({{'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}})[c]);
+const num = (v, digits) => v === null || v === undefined ? '—' : v.toLocaleString(undefined, {{ minimumFractionDigits: digits, maximumFractionDigits: digits }});
+function duration(s) {{
+    if (s === null || s === undefined) return '—';
+    if (s < 90) return s.toFixed(0) + 's';
+    if (s < 5400) return (s / 60).toFixed(1) + 'm';
+    return (s / 3600).toFixed(2) + 'h';
+}}
+function chips(dims) {{ return dims.map(d => `<span class="df-chip">${{esc(d)}}</span>`).join('<span class="df-arrow">&#9654;</span>'); }}
+const tbody = document.getElementById('tbody');
+let sortCol = 'pos', sortAsc = true;
+
+function renderTable() {{
+    const sorted = [...rows].sort((a, b) => {{
+        let va = a[sortCol], vb = b[sortCol];
+        if (va === null) return 1;
+        if (vb === null) return -1;
+        if (typeof va === 'string') {{ va = va.toLowerCase(); vb = vb.toLowerCase(); }}
+        return sortAsc ? (va > vb ? 1 : -1) : (va < vb ? 1 : -1);
+    }});
+    tbody.innerHTML = sorted.map(r => {{
+        const pct = r.pct === null
+            ? (r.derived ? '<span title="The response was lost to a dropped connection and memory could not be read afterwards">not measured</span>' : '—')
+            : `<span class="${{r.pct < 0 ? 'negative' : r.pct > 0 ? 'positive' : ''}}">${{r.pct > 0 ? '+' : ''}}${{r.pct.toFixed(2)}}%</span>`
+              + (r.derived ? ' <span class="badge badge-neutral" title="The response was lost to a dropped connection; this change comes from a memory read afterwards">recovered</span>' : '');
+        const newLabel = r.status === 'reverted' ? 'New order, put back to the original' : r.status === 'done' ? 'New order' : 'Target order';
+        const error = r.error ? `<div class="error-text">${{r.revertFailed ? 'Could not put it back: ' : ''}}${{esc(r.error)}}</div>` : '';
+        return `
+        <tr class="data-row" onclick="toggleDetail(this)">
+            <td><span class="expand-icon">&#9654;</span></td>
+            <td class="num">${{r.pos}}</td>
+            <td>${{esc(r.cube)}}${{error}}</td>
+            <td class="num">${{num(r.before, 1)}} MB</td>
+            <td class="num">${{pct}}</td>
+            <td class="num">${{num(r.saved, 1)}}</td>
+            <td class="num">${{duration(r.duration)}}</td>
+            <td><span class="badge ${{r.badge}}">${{esc(r.statusLabel)}}</span></td>
+        </tr>
+        <tr class="detail-row">
+            <td colspan="8">
+                <div class="detail-panel" style="grid-template-columns:1fr">
+                    <div class="detail-block"><h4>Original order</h4><div class="dim-flow">${{chips(r.original)}}</div></div>
+                    <div class="detail-block"><h4>${{newLabel}}</h4><div class="dim-flow">${{chips(r.target)}}</div></div>
+                </div>
+            </td>
+        </tr>`;
+    }}).join('');
+}}
+
+function toggleDetail(row) {{
+    row.classList.toggle('open');
+    const detail = row.nextElementSibling;
+    if (detail && detail.classList.contains('detail-row')) detail.classList.toggle('visible');
+}}
+
+document.querySelectorAll('th.sortable').forEach(th => {{
+    th.addEventListener('click', () => {{
+        const col = th.dataset.sort;
+        if (sortCol === col) sortAsc = !sortAsc;
+        else {{ sortCol = col; sortAsc = true; }}
+        document.querySelectorAll('th.sortable').forEach(t => {{
+            t.classList.remove('sorted');
+            t.querySelector('.sort-arrow').textContent = '';
+        }});
+        th.classList.add('sorted');
+        th.querySelector('.sort-arrow').textContent = sortAsc ? '\\u25B2' : '\\u25BC';
+        renderTable();
+    }});
+}});
+
+renderTable();
+</script>"""
+
+    badge = _RUN_STATUS_BADGE.get(status, "badge-failed")
+    heading = (f'{esc(instance)} / Optimize DB '
+               f'<span class="badge {badge}" style="font-size:12px;vertical-align:middle">{esc(status_label)}</span>')
+    meta = (f'Plan {esc(run.get("plan_id") or plan.get("plan_id") or "—")}<br>'
+            f'Ran {_when(run.get("started_at"))} to {_when(run.get("finished_at"))}')
+    page = report_page(f"OptimusPy Report — {esc(instance)} / Optimize DB", heading, meta, body, scripts)
+
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(page, encoding="utf-8")
+    tmp.replace(path)

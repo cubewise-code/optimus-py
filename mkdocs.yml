@@ -145,7 +145,7 @@ nav:
   - Web UI:
       - Overview: ui/overview.md
       - Optimize Page: ui/optimize-page.md
-      - Results Page: ui/results-page.md
+      - Reports Page: ui/reports-page.md
       - Sync Order Page: ui/sync-order-page.md
       - Optimize DB Page: ui/optimize-db-page.md
       - Settings Page: ui/settings-page.md

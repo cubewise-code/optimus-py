@@ -14,6 +14,7 @@ import urllib.request
 import pytest
 from TM1py.Exceptions import TM1pyRestException
 
+from optimuspy import optimize_db as odb
 from optimuspy import ui
 from optimuspy.core import load_settings
 from optimuspy.executors import OptimizationCancelled
@@ -746,3 +747,164 @@ def test_a_chosen_folder_survives_a_restart(ui_server, tmp_path):
     _, _, text = request("GET", f"{restarted}/api/saved-cubes")
     assert [c["filename"] for c in json.loads(text)["saved_cubes"]] == ["sales.json"]
     assert ui.cube_configs_dir() == folder
+
+
+# --- reports -----------------------------------------------------------------
+
+def _touch(tmp_path, relative, text="x"):
+    path = tmp_path / "results" / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8")
+    return path
+
+
+def _names(files):
+    return [f["filename"] for f in files]
+
+
+def _reports(base):
+    status, _, text = request("GET", f"{base}/api/reports")
+    assert status == 200
+    return {i["name"]: i for i in json.loads(text)["instances"]}
+
+
+def _plan_and_run(plan_id=PLAN_ID):
+    """A one-cube plan and the finished run of it, as Optimize DB writes them."""
+    options = odb.resolve_options({"instance": "Planning Prod"})
+    records = [{"cube": "Sales", "ram_bytes": 2 * 1024 ** 3, "storage_order": ["A", "B", "C"],
+                "dimensions": {d: {"name": d, "leaf_elements": n, "has_strings": False}
+                               for d, n in (("A", 3), ("B", 2), ("C", 1))}}]
+    plan = odb.build_plan("Planning Prod", plan_id, options, records, 4 * 1024 ** 3, [])
+    run = odb.new_run(plan)
+    run["cubes"]["Sales"].update(status="done", pct_change=-25.0, duration_s=3.0)
+    run.update(status="completed", finished_at=run["started_at"] + 10)
+    return plan, run
+
+
+def test_reports_are_grouped_by_instance_cube_and_run(ui_server, tmp_path):
+    base, _ = ui_server(PLAN_INI)
+    inst = "Planning Prod"
+    for stamp in ("2026-09-01_10-00-00", "2026-09-02_10-00-00"):
+        _touch(tmp_path, f"{inst}/{inst}_Sales_{stamp}.html")
+        _touch(tmp_path, f"{inst}/{inst}_Sales_{stamp}.csv")
+    _touch(tmp_path, f"{inst}/{inst}_Ventas_por mes_2026-09-03_10-00-00.html")
+    _touch(tmp_path, f"{inst}/{inst}_Ventas_por mes_2026-09-03_10-00-00.xlsx")
+    with_report, without_report, plan_only = (f"{inst}_2026-09-0{d}_10-00-00" for d in (4, 5, 6))
+    for plan_id in (with_report, without_report):
+        _write_json(_plan_file(tmp_path, plan_id), {"plan_id": plan_id})
+        _write_json(_run_file(tmp_path, plan_id), {"plan_id": plan_id, "status": "completed",
+                                                   "started_at": 0})
+    _touch(tmp_path, f"{inst}/optdb_report_{with_report}.html")
+    _write_json(_plan_file(tmp_path, plan_only), {"plan_id": plan_only})
+    _touch(tmp_path, "checkpoint_Sales.json")
+    _touch(tmp_path, f"{inst}/notes.txt")
+    _touch(tmp_path, "Sales_2025-01-01_10-00-00.csv")
+
+    tree = _reports(base)
+    assert list(tree) == [inst, ""]
+    prod = tree[inst]
+
+    assert [c["cube"] for c in prod["cubes"]] == ["Sales", "Ventas_por mes"]
+    sales = prod["cubes"][0]["runs"]
+    assert [r["id"] for r in sales] == ["2026-09-02_10-00-00", "2026-09-01_10-00-00"]
+    assert sales[0]["kind"] == "cube"
+    assert sales[0]["report"]["filename"] == f"{inst}/{inst}_Sales_2026-09-02_10-00-00.html"
+    assert _names(sales[0]["data"]) == [f"{inst}/{inst}_Sales_2026-09-02_10-00-00.csv"]
+    ventas = prod["cubes"][1]["runs"][0]
+    assert ventas["report"]["type"] == "html" and [d["type"] for d in ventas["data"]] == ["xlsx"]
+
+    db = {r["id"]: r for r in prod["optimize_db"]}
+    assert db[with_report]["kind"] == "optimize_db" and db[with_report]["status"] == "completed"
+    assert db[with_report]["report"]["filename"] == f"{inst}/optdb_report_{with_report}.html"
+    assert _names(db[with_report]["data"]) == [f"{inst}/optdb_plan_{with_report}.json",
+                                               f"{inst}/optdb_run_{with_report}.json"]
+    assert db[without_report]["kind"] == "optimize_db" and db[without_report]["report"] is None
+    assert db[plan_only]["kind"] == "plan_only" and db[plan_only]["report"] is None
+    assert _names(db[plan_only]["data"]) == [f"{inst}/optdb_plan_{plan_only}.json"]
+    assert "status" not in db[plan_only]
+
+    assert _names(prod["other"]) == [f"{inst}/notes.txt"]
+    legacy = tree[""]
+    assert [c["cube"] for c in legacy["cubes"]] == ["Sales"]
+    assert _names(legacy["cubes"][0]["runs"][0]["data"]) == ["Sales_2025-01-01_10-00-00.csv"]
+    assert "checkpoint" not in json.dumps(tree)
+
+
+def test_a_run_file_that_does_not_parse_still_lists_without_a_status(ui_server, tmp_path):
+    base, _ = ui_server(PLAN_INI)
+    _write_json(_plan_file(tmp_path), {"plan_id": PLAN_ID})
+    _touch(tmp_path, f"Planning Prod/optdb_run_{PLAN_ID}.json", "{not json")
+
+    run = _reports(base)["Planning Prod"]["optimize_db"][0]
+    assert run["kind"] == "optimize_db" and run["id"] == PLAN_ID
+    assert "status" not in run
+    assert run["started"] is not None  # from the plan id
+
+
+def test_no_results_folder_is_no_reports(ui_server):
+    base, _ = ui_server(PLAN_INI)
+    assert _reports(base) == {}
+
+
+def test_runs_are_listed_only_by_the_reports_endpoint(ui_server):
+    base, _ = ui_server(PLAN_INI)
+    status, _, _ = request("GET", f"{base}/api/results")
+    assert status == 404
+
+
+def test_build_report_writes_the_missing_report_and_names_it(ui_server, tmp_path):
+    base, _ = ui_server(PLAN_INI)
+    plan, run = _plan_and_run()
+    _write_json(_plan_file(tmp_path), plan)
+    _write_json(_run_file(tmp_path), run)
+
+    status, _, text = request("POST", f"{base}/api/optimize-db/report", body={"plan_id": PLAN_ID})
+    assert status == 200
+    filename = json.loads(text)["filename"]
+    assert filename == f"Planning Prod/optdb_report_{PLAN_ID}.html"
+    report = (tmp_path / "results" / filename).read_text(encoding="utf-8")
+    assert "Planning Prod / Optimize DB" in report and "Sales" in report and "Completed" in report
+    assert _reports(base)["Planning Prod"]["optimize_db"][0]["report"]["filename"] == filename
+
+
+def test_build_report_with_no_run_is_not_found(ui_server, tmp_path):
+    base, _ = ui_server(PLAN_INI)
+    _write_json(_plan_file(tmp_path), _plan_and_run()[0])
+    status, _, _ = request("POST", f"{base}/api/optimize-db/report", body={"plan_id": PLAN_ID})
+    assert status == 404
+    assert not (tmp_path / "results" / "Planning Prod" / f"optdb_report_{PLAN_ID}.html").exists()
+
+
+def test_build_report_waits_for_a_run_in_progress(ui_server, tmp_path, monkeypatch):
+    base, _ = ui_server(PLAN_INI)
+    plan, run = _plan_and_run()
+    run["status"] = "running"
+    _write_json(_plan_file(tmp_path), plan)
+    _write_json(_run_file(tmp_path), run)
+    jobs = ui.JobManager()
+    monkeypatch.setattr(ui, "job_manager", jobs)
+    job = jobs.get(jobs.start("optimize-db", PLAN_ID, "Planning Prod", _hold_until_cancelled))
+    try:
+        status, _, _ = request("POST", f"{base}/api/optimize-db/report", body={"plan_id": PLAN_ID})
+        assert status == 409
+        assert not (tmp_path / "results" / "Planning Prod" / f"optdb_report_{PLAN_ID}.html").exists()
+    finally:
+        jobs.cancel(job.job_id)
+        wait_done(job)
+
+
+@pytest.mark.parametrize("body", [{}, {"plan_id": "../../secret"}, {"plan_id": 7}])
+def test_build_report_refuses_a_malformed_plan_id(ui_server, body):
+    base, _ = ui_server(PLAN_INI)
+    status, _, _ = request("POST", f"{base}/api/optimize-db/report", body=body)
+    assert status == 400
+
+
+def test_a_data_file_is_served_as_json(ui_server, tmp_path):
+    base, _ = ui_server(PLAN_INI)
+    _write_json(_run_file(tmp_path), {"plan_id": PLAN_ID, "instance": "Ventas €"})
+    filename = urllib.parse.quote(f"Planning Prod/optdb_run_{PLAN_ID}.json", safe="")
+    status, headers, text = request("GET", f"{base}/api/result/{filename}")
+    assert status == 200
+    assert headers["Content-Type"] == "application/json; charset=utf-8"
+    assert json.loads(text)["instance"] == "Ventas €"

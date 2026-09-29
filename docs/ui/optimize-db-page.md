@@ -53,4 +53,6 @@ When the run ends, the summary shows the cubes reordered and reverted and the **
 
 The table at the bottom lists every Optimize DB run recorded for the instance, newest first, with its status and outcome. A run that didn't complete (stopped on the time limit, cancelled, failed) has a **Resume** button, which does what `--resume <plan-id>` does: it continues in the time that was left of the original limit. A run that left chores disabled shows a **Chores still disabled** warning with a **Re-enable chores** button, which does what `--restore-chores <plan-id>` does.
 
-The plan and run files themselves are in `results/<instance>/`, named `optdb_plan_<plan-id>.json` and `optdb_run_<plan-id>.json`. See [Artifacts](../modes/optimize-db.md#artifacts).
+Every run has a **Report** button, which opens the run's HTML report in a new tab. A run whose report file is missing gets it built from its plan and run files first. See [Reading the Optimize DB report](reports-page.md#reading-the-optimize-db-report).
+
+The plan, run and report files themselves are in `results/<instance>/`, named `optdb_plan_<plan-id>.json`, `optdb_run_<plan-id>.json` and `optdb_report_<plan-id>.html`, and the [Reports page](reports-page.md) lists them under *Optimize DB (all cubes)*. See [Artifacts](../modes/optimize-db.md#artifacts).

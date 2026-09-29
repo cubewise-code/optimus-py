@@ -13,6 +13,6 @@ What the report tells you, and where the cube ends up.
 - **"Not measurable".** If no tested order changed memory at all, the log warns that the cube wasn't measurable: the orders can't be told apart on memory, so pick one yourself from the timings.
 - **Where the cube ends up.** With auto-apply (`"update": true`; the UI writes `"auto_apply": true`, which means the same) the best order is applied. Otherwise the original is put back and you apply the winner yourself, with `set` or Sync Order. See [Taking an Order to Production](taking-an-order-to-production.md).
 
-Every part of the report is described on the [Results Page](../ui/results-page.md), and the selection rule on [How the best order is chosen](../concepts/how-it-works.md#how-the-best-order-is-chosen).
+Every part of the report is described on the [Reports Page](../ui/reports-page.md#reading-the-single-cube-report), and the selection rule on [How the best order is chosen](../concepts/how-it-works.md#how-the-best-order-is-chosen).
 
 **Next:** [Taking an Order to Production →](taking-an-order-to-production.md)

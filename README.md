@@ -26,7 +26,7 @@ Or double-click the executable. The UI opens at `http://127.0.0.1:8765`. Then:
 1. Choose your instance in the sidebar.
 2. On the *Optimize* page, click a cube.
 3. On *Configure*, keep *Greedy*, pick a view and click *Save & Start Optimization*.
-4. When it ends, open the HTML report on the cube's *Results* tab.
+4. When it ends, open the HTML report from the cube's *Reports* tab.
 
 ## Run it on the command line
 

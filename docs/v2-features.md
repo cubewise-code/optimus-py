@@ -12,12 +12,12 @@ New to OptimusPy? We'd recommend starting with the [User Guide](guide/choose-a-m
 
 ## New
 
-- **Web UI.** Start it with `optimuspy ui`, or double-click the executable. It opens at `http://127.0.0.1:8765` with these pages: Optimize, Results, Sync Order, Optimize DB and Settings, plus a Jobs list. See the [UI Overview](ui/overview.md).
+- **Web UI.** Start it with `optimuspy ui`, or double-click the executable. It opens at `http://127.0.0.1:8765` with these pages: Optimize, Reports, Sync Order, Optimize DB and Settings, plus a Jobs list. See the [UI Overview](ui/overview.md).
 - **Modes.** `optimize` benchmarks orders for one cube, in one of four ways: [Greedy](modes/optimize-mode.md) (with an optional Fast mode), [Predefined](modes/predefined-orders.md) (orders you list), [Position](modes/position-optimization.md) (the best dimension for one slot) and [Dimension](modes/dimension-optimization.md) (the best slot for one dimension). Alongside it, [`set`](modes/set-mode.md) applies one order without benchmarking, [`scan`](modes/scan-mode.md) lists the cubes worth optimizing, and [`optimize-db`](modes/optimize-db.md) reorders every cube on an instance by leaf-element count within a time limit, benchmarking nothing.
 - **Several views and TI processes per run.** `views` and `processes` take lists, and `process_parameters` sets parameters per process. Each runs `executions` times, and the median counts, so one slow execution doesn't skew the result. See [Multi-View / Multi-Process](advanced/multi-view-multi-process.md).
 - **A cardinality-aware greedy.** The search uses each dimension's leaf count to skip the orders that theory rules out by a wide margin, and only measures the ones that are genuinely close. A dimension far larger than the rest is placed once rather than tested everywhere. See [Cardinality-Aware Greedy](concepts/cardinality-aware-greedy.md).
 - **Dimension position rules.** `dimension_position_rules` keeps a dimension at a fixed position while the rest are tested, and `orders_to_ignore` skips orders you don't want tested. See [Dimension Position Rules](advanced/dimension-position-rules.md).
-- **An HTML report for every run.** Summary cards, the recommended order, a chart of memory against query time relative to the original order, a podium with the best order per metric, and the full sortable table. See the [Results Page](ui/results-page.md).
+- **An HTML report for every run.** Summary cards, the recommended order, a chart of memory against query time relative to the original order, a podium with the best order per metric, and the full sortable table. See the [Reports Page](ui/reports-page.md).
 - **Checkpoint and resume.** Run the same `optimize` command again and it continues where a stopped or failed run left off, including the order that was in flight. `--no-resume` starts over, and `--tm1-checkpoint` keeps the checkpoint in TM1's file storage for environments without a persistent disk. See [Checkpoints & Resume](advanced/checkpoints-resume.md).
 - **Sync Order and exported orders.** The Sync Order page copies storage orders from one instance to another, and can export them to `exports/` as JSON configs that `optimuspy set` applies. See the [Sync Order Page](ui/sync-order-page.md) and [Exporting & Importing Orders](advanced/exporting-importing-orders.md).
 - **Settings page.** It links the `config.ini` you already keep for RushTI or your scripts, or copies it into `config/config.ini`, then shows each instance read-only with *Test Connection*. The choice is shared with the CLI. See the [Settings Page](ui/settings-page.md).
@@ -78,7 +78,7 @@ New to OptimusPy? We'd recommend starting with the [User Guide](guide/choose-a-m
     | `-t`, `--process` | `"processes"`, a list |
 
     Every field is listed in the [JSON Config Reference](advanced/json-config-reference.md).
-4. **Look for results in a folder per instance.** Each run writes `results/<instance>/<instance>_<cube>_<timestamp>.html`, plus a `.csv` or `.xlsx` of the same name. See the [Results Page](ui/results-page.md).
+4. **Look for results in a folder per instance.** Each run writes `results/<instance>/<instance>_<cube>_<timestamp>.html`, plus a `.csv` or `.xlsx` of the same name. See the [Reports Page](ui/reports-page.md).
 
 ## Design notes
 

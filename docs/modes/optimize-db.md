@@ -89,13 +89,14 @@ The exit code is `0` when the run completed or stopped on the time limit, `1` ot
 
 ## Artifacts
 
-Both files land in `results/<instance>/`, keyed by a plan id of `<instance>_<YYYY-MM-DD_HH-MM-SS>`.
+The files land in `results/<instance>/`, keyed by a plan id of `<instance>_<YYYY-MM-DD_HH-MM-SS>`. The report is the one to read; the two JSON files stay beside it as the run's data, and the [Reports page](../ui/reports-page.md) lists all three as one run.
 
 | Artifact | Where | What it holds |
 |---|---|---|
 | **Plan** | `results/<instance>/optdb_plan_<plan_id>.json` | What would run, in what order, with what target order per cube, plus the full skip ledger and a snapshot of the chores that were active when the plan was built. Written by `--dry-run` and by a normal run before anything is touched. |
 | **Run** | `results/<instance>/optdb_run_<plan_id>.json` | Live execution state: per-cube status, original order (for revert), pre-reorder RAM, measured `%`, durations, and the chore lifecycle state. Rewritten after every transition, so it doubles as the resume point and the crash-time record of which chores are still disabled. |
-| **Console summary** | stdout | The plan table on `--dry-run`, otherwise the run summary when the run ends. |
+| **Report** | `results/<instance>/optdb_report_<plan_id>.html` | The run as a page: the cubes reordered, reverted, failed and not started, the expected saving, a chart of the memory saved per cube, each cube's orders and outcome, the skip ledger, the chores and the run settings. Written when the run ends, however it ends, and again when a resumed run ends. `--dry-run` writes none. See [Reading the Optimize DB report](../ui/reports-page.md#reading-the-optimize-db-report). |
+| **Console summary** | stdout | The plan table on `--dry-run`, otherwise the run summary when the run ends, followed by the report's path. |
 
 The plan table lists every cube to reorder with its RAM and target order, then the skip ledger grouped by reason, then the active chores. One thing to bear in mind is that the chore list is the snapshot you review, not the list the run acts on (see [Chores](#chores)). The run summary reports cubes reordered, reverted, skipped, failed and not started, plus the expected saving.
 

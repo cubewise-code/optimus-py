@@ -54,7 +54,7 @@ The executable ships without a `config.ini`. Create `config/config.ini` next to 
 | **Instance switcher** | Pick the active TM1 connection. It is the instance the Optimize page works on; Sync Order and Optimize DB pick their own. |
 | **Home** | Connect to an instance, and read *Tips & Getting Started*: the steps of a run, the optimization modes and tips on dimension order. It's where the UI opens, and it stays reachable after you connect. |
 | **Optimize** | Scan candidates and run benchmarks for one or many cubes. |
-| **Results** | Browse generated HTML / CSV / XLSX reports. |
+| **Reports** | Every run's HTML report and data files, by instance, cube and run. |
 | **Sync Order** | Promote dimension orders from a source instance to a target instance. |
 | **Optimize DB** | Reorder every cube on an instance by leaf-element count, fewest first, within a time limit. See the [Optimize DB Page](optimize-db-page.md). |
 | **Settings** | At the bottom of the sidebar: choose the `config.ini`, test connections, theme, and local cache. |
@@ -85,7 +85,7 @@ In sidebar order:
 
 - **Home**: instance tiles to connect, and the getting-started guide.
 - **[Optimize](optimize-page.md)**: the main workflow, scan, configure, run.
-- **[Results](results-page.md)**: generated HTML reports and raw data.
+- **[Reports](reports-page.md)**: every run's report and data files, by instance, cube and run.
 - **[Sync Order](sync-order-page.md)**: drag-and-drop cross-instance promotion.
 - **[Optimize DB](optimize-db-page.md)**: reorder every cube on an instance within a time limit.
 - **[Settings](settings-page.md)**: connections, theme, cache and saved configs.

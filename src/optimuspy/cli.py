@@ -22,6 +22,7 @@ from optimuspy.optimize_db import (
     format_run_summary,
     optimize_db,
     read_json,
+    report_path,
     restore_chores_for_plan,
 )
 
@@ -34,6 +35,15 @@ def tm1_connector(config_ini_path: str, instance: str, password: str = None):
     """
     params = tm1_params(config_ini_path, instance, password)  # an unknown instance fails here
     return lambda: TM1Service(**params)
+
+
+def _print_run_summary(run: dict) -> int:
+    """Print the run summary and where its report is. Returns the exit code."""
+    print(format_run_summary(run))
+    report = report_path(run["plan_id"], run["instance"])
+    if report.is_file():
+        print(f"  Report: {report}\n")
+    return 0 if run.get("status") in ("completed", "stopped_time_limit") else 1
 
 
 def _run_optimize_db(parser, cmd_args, config_ini_path: str) -> int:
@@ -52,8 +62,7 @@ def _run_optimize_db(parser, cmd_args, config_ini_path: str) -> int:
         logging.info(f"Starting OptimusPy v2.0. Mode: optimize-db (resume "
                      f"{cmd_args.resume_plan_id})")
         run = optimize_db(connect, resume_plan_id=cmd_args.resume_plan_id)
-        print(format_run_summary(run))
-        return 0 if run.get("status") in ("completed", "stopped_time_limit") else 1
+        return _print_run_summary(run)
 
     plan, config = None, None
     if cmd_args.plan_path:
@@ -81,8 +90,7 @@ def _run_optimize_db(parser, cmd_args, config_ini_path: str) -> int:
     if isinstance(result.get("cubes"), list):
         print(format_plan(result))
         return 0
-    print(format_run_summary(result))
-    return 0 if result.get("status") in ("completed", "stopped_time_limit") else 1
+    return _print_run_summary(result)
 
 
 def print_banner():

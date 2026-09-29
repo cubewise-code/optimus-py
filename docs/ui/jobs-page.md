@@ -21,7 +21,7 @@ The log stream comes over Server-Sent Events. Each iteration logs a line ending 
 !!! tip "Activity Monitor in the sidebar"
     While a job runs, the sidebar shows it in compact form. Click it to open that job's page from anywhere.
 
-History resets when the UI server restarts. The result files themselves are persistent; see the [Results page](results-page.md).
+History resets when the UI server restarts. The reports and data files themselves are persistent; see the [Reports page](reports-page.md).
 
 ## Stopping a running optimization
 

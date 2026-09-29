@@ -264,7 +264,7 @@ const OptimusPy = (function () {
     },
     cancelJob(id) { return this._fetch("POST", `/api/job/${id}/cancel`); },
     getJobs() { return this._fetch("GET", "/api/jobs"); },
-    getResults() { return this._fetch("GET", "/api/results"); },
+    getReports() { return this._fetch("GET", "/api/reports"); },
     transferScan(instance, password, ramPercent) {
       return this._fetch("POST", "/api/transfer/scan", { instance, password, ram_percent: ramPercent });
     },
@@ -285,6 +285,7 @@ const OptimusPy = (function () {
     },
     optimizeDbRuns() { return this._fetch("POST", "/api/optimize-db/runs", {}); },
     optimizeDbRunState(planId) { return this._fetch("GET", `/api/optimize-db/run/${encodeURIComponent(planId)}`); },
+    optimizeDbReport(planId) { return this._fetch("POST", "/api/optimize-db/report", { plan_id: planId }); },
     optimizeDbRestoreChores(instance, password, planId) {
       return this._fetch("POST", "/api/optimize-db/restore-chores", { instance, password, plan_id: planId });
     },
@@ -1528,6 +1529,12 @@ const OptimusPy = (function () {
         return;
       }
 
+      // Route: #/results?… → #/reports?…: the Reports page answers to both
+      if (segments[0] === "results") {
+        window.location.replace(`#/reports${queryStr ? `?${queryStr}` : ""}`);
+        return;
+      }
+
       // Route: #/nav?cube=X&tab=Y
       if (segments[0] === "nav") {
         pageName = "nav";
@@ -1557,7 +1564,7 @@ const OptimusPy = (function () {
       });
 
       // Update title
-      const titles = { home: "Home", nav: query.cube || "Optimize", results: "Results", jobs: "Jobs", settings: "Settings", transfer: "Sync Order", "optimize-db": "Optimize DB" };
+      const titles = { home: "Home", nav: query.cube || "Optimize", reports: "Reports", jobs: "Jobs", settings: "Settings", transfer: "Sync Order", "optimize-db": "Optimize DB" };
       document.title = `OptimusPy — ${titles[pageName] || "Dashboard"}`;
 
       // Mount
@@ -1661,7 +1668,7 @@ const OptimusPy = (function () {
         { n: "2", title: "Scan", desc: "The cube list on the left scans the instance and ranks cubes by RAM. Use the RAM threshold and Rescan to change what it shows." },
         { n: "3", title: "Configure", desc: "Select a cube, choose an optimization mode (Greedy, Predefined, Position, or Dimension), pick views to benchmark, and set the number of executions per permutation." },
         { n: "4", title: "Optimize", desc: "Start the optimization. OptimusPy will test dimension orderings, measuring RAM and query time for each. You can stop the process at any time." },
-        { n: "5", title: "Review", desc: "Check the Results tab for CSV/HTML reports showing all tested permutations and the recommended order." },
+        { n: "5", title: "Review", desc: "Open the cube's report from the Reports tab: every order tested and the recommended one, with the CSV or XLSX data beside it." },
       ];
       steps.forEach(s => {
         const row = el("div", { style: "display:flex;gap:10px;margin-bottom:10px" });
@@ -1771,7 +1778,7 @@ const OptimusPy = (function () {
       }
 
       const cubeName = params.cubeName || query.cube || null;
-      const tab = query.tab || null;
+      const tab = query.tab === "results" ? "reports" : (query.tab || null);
 
       // If same cube, just update workspace tab
       if (cubeName && cubeName === this._selectedCube && tab) {
@@ -2029,7 +2036,7 @@ const OptimusPy = (function () {
 
       // Tabs bar
       const tabsEl = el("div", { className: "tabs", role: "tablist", "aria-label": "Cube workspace tabs" });
-      const tabNames = ["overview", "configure", "optimize", "results"];
+      const tabNames = ["overview", "configure", "optimize", "reports"];
       tabNames.forEach((t, idx) => {
         const label = t.charAt(0).toUpperCase() + t.slice(1);
         const isActive = t === tab;
@@ -2061,15 +2068,15 @@ const OptimusPy = (function () {
         tabsEl.appendChild(tabBtn);
       });
 
-      // Check for results availability and add "View Results" action
-      const hasResults = this._cubeHasResults(this._selectedCube);
+      // Check for reports availability and add "View Prior Reports" action
+      const hasReports = this._cubeHasReports(this._selectedCube);
       const actionsRow = el("div", { className: "flex items-center gap-2 mb-4", style: "margin-top:-4px" });
-      const viewResultsBtn = el("button", {
-        className: `btn btn-ghost btn-sm${hasResults ? "" : " disabled"}`,
-        disabled: !hasResults,
-        onClick: () => { if (hasResults) Router.navigate(`#/results?cube=${encodeURIComponent(this._selectedCube)}`); },
-      }, el("span", { html: Icons.externalLink }), "View Prior Results");
-      actionsRow.appendChild(viewResultsBtn);
+      const viewReportsBtn = el("button", {
+        className: `btn btn-ghost btn-sm${hasReports ? "" : " disabled"}`,
+        disabled: !hasReports,
+        onClick: () => { if (hasReports) Router.navigate(`#/reports?cube=${encodeURIComponent(this._selectedCube)}`); },
+      }, el("span", { html: Icons.externalLink }), "View Prior Reports");
+      actionsRow.appendChild(viewReportsBtn);
 
       // Help button
       const helpBtn = el("button", { className: "btn btn-ghost btn-sm", onClick: () => HomePage._showHelpDrawer() },
@@ -2095,13 +2102,13 @@ const OptimusPy = (function () {
           ));
         }); break;
         case "optimize": CubeWorkspace._renderOptimize(tabPane); break;
-        case "results": CubeWorkspace._renderResults(tabPane); break;
+        case "reports": CubeWorkspace._renderReports(tabPane); break;
       }
       container.appendChild(tabPane);
     },
 
-    _cubeHasResults(cubeName) {
-      // Check if there are result files for this cube in the results API cache
+    _cubeHasReports(cubeName) {
+      // Check if there are report files for this cube in the reports API cache
       // We'll do a quick check — if scanData has the cube or savedCubes has it
       return state.savedCubes.some(sc => sc.cube === cubeName);
     },
@@ -2126,7 +2133,7 @@ const OptimusPy = (function () {
   };
 
   // ==================================================================
-  // Page: CubeWorkspace (4 tabs: Overview, Configure, Optimize, Results)
+  // Page: CubeWorkspace (4 tabs: Overview, Configure, Optimize, Reports)
   // ==================================================================
   const CubeWorkspace = {
     _cubeName: null,
@@ -2946,40 +2953,29 @@ const OptimusPy = (function () {
       }
     },
 
-    // ---- Results Tab (per-cube) ----
-    async _renderResults(container) {
-      container.appendChild(el("div", { className: "text-secondary text-sm" }, "Loading results..."));
+    // ---- Reports Tab (per-cube): this cube's runs on the connected instance ----
+    async _renderReports(container) {
+      container.appendChild(el("div", { className: "text-secondary text-sm" }, "Loading reports..."));
       try {
-        const data = await Api.getResults();
-        const results = (data.results || []).filter(r => r.cube === this._cubeName);
+        const data = await Api.getReports();
+        const instance = (data.instances || []).find(i => i.name === state.activeInstance);
+        const group = instance && instance.cubes.find(c => c.cube === this._cubeName);
         container.innerHTML = "";
 
-        if (results.length === 0) {
+        if (!group) {
           container.appendChild(el("div", { className: "empty-state" },
-            el("div", { className: "empty-state-title" }, "No results yet"),
-            el("div", { className: "empty-state-text" }, "Run an optimization to see results here."),
+            el("div", { className: "empty-state-title" }, "No reports yet"),
+            el("div", { className: "empty-state-text" }, "Run an optimization of this cube to get its report here."),
           ));
           return;
         }
 
-        const tbl = createTable({
-          columns: [
-            { key: "instance", label: "Instance", render: r => el("span", { className: "text-secondary text-sm" }, r.instance || "—") },
-            { key: "filename", label: "File", render: r => el("span", { className: "font-medium" }, (r.filename || "").split("/").pop()) },
-            { key: "type", label: "Type", render: r => el("span", { className: "badge badge-neutral" }, r.type.toUpperCase()) },
-            { key: "size", label: "Size", align: "right", value: r => formatBytes(r.size) },
-            { key: "modified", label: "Date", value: r => formatDate(r.modified) },
-            { key: "actions", label: "", sortable: false, render: r => {
-              return el("a", { href: `/api/result/${encodeURIComponent(r.filename)}`, target: "_blank", className: "btn btn-ghost btn-sm", html: Icons.externalLink + " Open" });
-            }},
-          ],
-          data: results,
-          filterable: false,
-        });
-        container.appendChild(tbl.el);
+        const runs = el("div", { className: "report-runs card" });
+        group.runs.forEach(run => runs.appendChild(buildRunRow(run)));
+        container.appendChild(runs);
       } catch (err) {
         container.innerHTML = "";
-        container.appendChild(el("div", { className: "text-secondary" }, "Failed to load results: " + err.message));
+        container.appendChild(el("div", { className: "text-secondary" }, "Failed to load reports: " + err.message));
       }
     },
 
@@ -3012,52 +3008,224 @@ const OptimusPy = (function () {
   };
 
   // ==================================================================
-  // Page: Results (global)
+  // Page: Reports — every run's report and data files, by instance, cube and run
   // ==================================================================
-  const ResultsPage = {
-    mount() {
-      const page = $("#page-results");
+  const RUN_KIND_LABELS = { cube: "Optimize", optimize_db: "Optimize DB", plan_only: "Plan only" };
+
+  function resultUrl(filename) {
+    return `/api/result/${encodeURIComponent(filename)}`;
+  }
+
+  // Opens an Optimize DB run's report in a new tab, having the server build it
+  // first when the run has none. The tab is opened before the request, while the
+  // click still counts, so the browser doesn't treat it as a pop-up.
+  async function openOptimizeDbReport(planId) {
+    const tab = window.open("", "_blank");
+    try {
+      const resp = await Api.optimizeDbReport(planId);
+      if (tab) tab.location.href = resultUrl(resp.filename);
+      else window.open(resultUrl(resp.filename), "_blank");
+      return resp.filename;
+    } catch (err) {
+      if (tab) tab.close();
+      Toast.error(err.message);
+      return null;
+    }
+  }
+
+  function dataFileLabel(file) {
+    const name = file.filename.split("/").pop();
+    if (name.startsWith("optdb_plan_")) return "Plan data";
+    if (name.startsWith("optdb_run_")) return "Run data";
+    return (file.type || "file").toUpperCase();
+  }
+
+  // One run: when it ran and what it was, its report as the main action and its
+  // data files as small links. The Reports page and the Optimize page's
+  // Reports tab both show runs this way.
+  function buildRunRow(run) {
+    const row = el("div", { className: "report-run" });
+    row.appendChild(el("div", { className: "report-run-when" }, run.started ? formatDate(run.started) : "—"));
+
+    const kind = el("div", { className: "report-run-kind" },
+      el("span", { className: "badge badge-neutral" }, RUN_KIND_LABELS[run.kind] || run.kind));
+    if (run.kind === "optimize_db" && run.status) kind.appendChild(optdbStatusBadge(run.status));
+    row.appendChild(kind);
+
+    const actions = el("div", { className: "report-run-actions" });
+    if (run.report) {
+      actions.appendChild(el("a", {
+        href: resultUrl(run.report.filename), target: "_blank", className: "btn btn-primary btn-sm",
+        html: Icons.externalLink + " Open report",
+      }));
+    } else if (run.kind === "optimize_db") {
+      const build = el("button", { className: "btn btn-secondary btn-sm" }, "Build report");
+      build.addEventListener("click", async () => {
+        build.disabled = true;
+        const filename = await openOptimizeDbReport(run.id);
+        if (filename) row.replaceWith(buildRunRow(Object.assign({}, run, { report: { filename } })));
+        else build.disabled = false;
+      });
+      actions.appendChild(build);
+    } else {
+      actions.appendChild(el("span", { className: "text-xs text-tertiary" },
+        run.kind === "plan_only" ? "Never run, so no report" : "No report"));
+    }
+    (run.data || []).forEach(file => actions.appendChild(el("a", {
+      href: resultUrl(file.filename), target: "_blank", className: "report-data-link",
+      title: `${file.filename.split("/").pop()} · ${formatBytes(file.size)}`,
+    }, dataFileLabel(file))));
+    row.appendChild(actions);
+    return row;
+  }
+
+  const ReportsPage = {
+    _tree: null,
+    _filter: "",
+    // Groups opened this session, as "<instance>/<group>" keys.
+    _expanded: new Set(),
+
+    mount(params, query) {
+      const page = $("#page-reports");
       page.innerHTML = "";
 
       page.appendChild(el("div", { className: "page-header" },
-        el("h1", { className: "page-title" }, "Results"),
-        el("p", { className: "page-subtitle" }, "All optimization results across cubes"),
+        el("h1", { className: "page-title" }, "Reports"),
+        el("p", { className: "page-subtitle" }, "Every run's report and data files, by instance, cube and run"),
       ));
 
-      this._loadResults(page);
+      const filter = el("input", {
+        type: "text", className: "form-input reports-filter", value: this._filter,
+        placeholder: "Filter by instance or cube", "aria-label": "Filter by instance or cube",
+      });
+      const list = el("div", { className: "reports-list" });
+      filter.addEventListener("input", () => { this._filter = filter.value; this._render(list); });
+      page.appendChild(filter);
+      page.appendChild(list);
+
+      this._load(list, query.cube || null);
     },
 
-    async _loadResults(page) {
+    async _load(list, focusCube) {
+      list.appendChild(el("div", { className: "text-secondary text-sm" }, "Loading reports\u2026"));
       try {
-        const data = await Api.getResults();
-        const results = data.results || [];
-
-        if (results.length === 0) {
-          page.appendChild(el("div", { className: "empty-state" },
-            el("div", { className: "empty-state-title" }, "No results"),
-            el("div", { className: "empty-state-text" }, "Run cube optimizations to see results here."),
-          ));
-          return;
-        }
-
-        const tbl = createTable({
-          columns: [
-            { key: "instance", label: "Instance", render: r => el("span", { className: "text-secondary text-sm" }, r.instance || "—") },
-            { key: "cube", label: "Cube", render: r => el("a", { href: `#/cube/${encodeURIComponent(r.cube)}?tab=results`, className: "font-medium" }, r.cube) },
-            { key: "filename", label: "File", value: r => (r.filename || "").split("/").pop() },
-            { key: "type", label: "Type", render: r => el("span", { className: "badge badge-neutral" }, r.type.toUpperCase()) },
-            { key: "size", label: "Size", align: "right", sortValue: r => r.size, value: r => formatBytes(r.size) },
-            { key: "modified", label: "Date", sortValue: r => r.modified, value: r => formatDate(r.modified) },
-            { key: "actions", label: "", sortable: false, render: r => {
-              return el("a", { href: `/api/result/${encodeURIComponent(r.filename)}`, target: "_blank", className: "btn btn-ghost btn-sm", html: Icons.externalLink + " Open" });
-            }},
-          ],
-          data: results,
-        });
-        page.appendChild(tbl.el);
+        this._tree = await Api.getReports();
       } catch (err) {
-        Toast.error("Failed to load results: " + err.message);
+        list.innerHTML = "";
+        list.appendChild(el("div", { className: "text-warning text-sm" }, "Could not load the reports: " + err.message));
+        return;
       }
+
+      // A link to one cube opens its group: on the connected instance when it has
+      // the cube, otherwise on every instance that does.
+      let focusKey = null;
+      if (focusCube) {
+        const having = this._instances().filter(i => i.cubes.some(c => c.cube === focusCube));
+        const own = having.find(i => i.name === state.activeInstance);
+        (own ? [own] : having).forEach(i => this._expanded.add(`${i.name}/cube:${focusCube}`));
+        if (having.length) focusKey = `${(own || having[0]).name}/cube:${focusCube}`;
+      }
+      this._render(list);
+      if (focusKey) {
+        const target = [...list.querySelectorAll(".report-group")].find(g => g.dataset.key === focusKey);
+        if (target) target.scrollIntoView({ block: "start" });
+      }
+    },
+
+    // The connected instance first, then the rest as the server sorted them.
+    _instances() {
+      const all = (this._tree && this._tree.instances) || [];
+      const active = state.connected ? all.filter(i => i.name === state.activeInstance) : [];
+      return active.concat(all.filter(i => !active.includes(i)));
+    },
+
+    _render(list) {
+      list.innerHTML = "";
+      const instances = this._instances();
+      if (instances.length === 0) {
+        list.appendChild(el("div", { className: "empty-state" },
+          el("div", { className: "empty-state-title" }, "No reports yet"),
+          el("div", { className: "empty-state-text" },
+            "Run an optimization on the Optimize page for one cube's report, or run Optimize DB for a report on the whole instance."),
+          el("div", { className: "empty-state-action flex gap-2" },
+            el("a", { href: "#/nav", className: "btn btn-secondary btn-sm" }, "Optimize"),
+            el("a", { href: "#/optimize-db", className: "btn btn-secondary btn-sm" }, "Optimize DB"),
+          ),
+        ));
+        return;
+      }
+
+      const q = this._filter.trim().toLowerCase();
+      let shown = 0;
+      instances.forEach(inst => {
+        const label = inst.name || "(no instance)";
+        const whole = !q || label.toLowerCase().includes(q);
+        const cubes = whole ? inst.cubes : inst.cubes.filter(c => c.cube.toLowerCase().includes(q));
+        if (!whole && cubes.length === 0) return;
+        shown++;
+
+        const card = el("div", { className: "card report-instance" });
+        const runCount = inst.cubes.reduce((n, c) => n + c.runs.length, 0) + inst.optimize_db.length;
+        card.appendChild(el("div", { className: "card-header" },
+          el("div", { className: "flex items-center gap-2" },
+            el("div", { className: "card-title" }, label),
+            state.connected && inst.name === state.activeInstance
+              ? el("span", { className: "badge badge-info" }, "Connected") : null,
+          ),
+          el("span", { className: "text-xs text-tertiary" }, `${runCount} run${runCount === 1 ? "" : "s"}`),
+        ));
+
+        // While filtering, the cubes that match are opened.
+        cubes.forEach(c => card.appendChild(this._group(inst.name, `cube:${c.cube}`, c.cube,
+          c.runs, !whole, c.runs.map(buildRunRow))));
+        if (whole && inst.optimize_db.length) {
+          card.appendChild(this._group(inst.name, "optimize_db", "Optimize DB (all cubes)",
+            inst.optimize_db, false, inst.optimize_db.map(buildRunRow)));
+        }
+        if (whole && inst.other.length) {
+          card.appendChild(this._group(inst.name, "other", "Other files", null, false,
+            inst.other.map(file => el("div", { className: "report-run" },
+              el("div", { className: "report-run-when" }, formatDate(file.modified)),
+              el("div", { className: "report-run-kind report-file-name" }, file.filename),
+              el("div", { className: "report-run-actions" },
+                el("span", { className: "text-xs text-tertiary" }, formatBytes(file.size)),
+                el("a", { href: resultUrl(file.filename), target: "_blank", className: "report-data-link" }, "Open"),
+              ),
+            ))));
+        }
+        list.appendChild(card);
+      });
+
+      if (shown === 0) {
+        list.appendChild(el("div", { className: "text-secondary text-sm" },
+          `No instance or cube matches \u201c${this._filter.trim()}\u201d.`));
+      }
+    },
+
+    // A collapsible group of rows. `runs` is null for the other files.
+    _group(instance, id, title, runs, forceOpen, rows) {
+      const key = `${instance}/${id}`;
+      const open = forceOpen || this._expanded.has(key);
+      const group = el("div", { className: "report-group", dataset: { key } });
+      const body = el("div", { className: "report-runs" }, ...rows);
+      body.hidden = !open;
+      const count = runs ? `${runs.length} run${runs.length === 1 ? "" : "s"}` : `${rows.length} file${rows.length === 1 ? "" : "s"}`;
+      const latest = runs && runs[0] && runs[0].started ? ` \u00b7 latest ${formatDate(runs[0].started)}` : "";
+      const toggle = el("button", {
+        className: "report-group-toggle", "aria-expanded": String(open),
+        onClick: () => {
+          body.hidden = !body.hidden;
+          toggle.setAttribute("aria-expanded", String(!body.hidden));
+          if (body.hidden) this._expanded.delete(key); else this._expanded.add(key);
+        },
+      },
+        el("span", { className: "report-group-chevron", html: Icons.chevronRight }),
+        el("span", { className: "report-group-title" }, title),
+        el("span", { className: "text-xs text-tertiary" }, count + latest),
+      );
+      group.appendChild(toggle);
+      group.appendChild(body);
+      return group;
     },
 
     unmount() {},
@@ -3527,6 +3695,13 @@ const OptimusPy = (function () {
     cancelled: "Stopped — cancelled",
     failed: "Failed",
   };
+
+  function optdbStatusBadge(status) {
+    const cls = status === "completed" ? "badge-success"
+      : status === "running" ? "badge-info"
+        : status === "stopped_time_limit" ? "badge-warning" : "badge-error";
+    return el("span", { className: `badge ${cls}` }, OPTDB_RUN_STATUS[status] || status || "—");
+  }
 
   const OPTDB_CUBE_BADGES = {
     pending: "badge-neutral", in_flight: "badge-info", done: "badge-success",
@@ -4192,14 +4367,7 @@ const OptimusPy = (function () {
 
       const tbl = createTable({
         columns: [
-          {
-            key: "status", label: "Status", render: r => {
-              const cls = r.status === "completed" ? "badge-success"
-                : r.status === "running" ? "badge-info"
-                  : r.status === "stopped_time_limit" ? "badge-warning" : "badge-error";
-              return el("span", { className: `badge ${cls}` }, OPTDB_RUN_STATUS[r.status] || r.status || "—");
-            },
-          },
+          { key: "status", label: "Status", render: r => optdbStatusBadge(r.status) },
           { key: "plan_id", label: "Plan", value: r => r.plan_id || "—" },
           { key: "instance", label: "Instance", value: r => r.instance || "—" },
           { key: "started_at", label: "Started", value: r => r.started_at ? formatDate(r.started_at) : "—" },
@@ -4212,6 +4380,13 @@ const OptimusPy = (function () {
             key: "chores_state", label: "Chores", render: r => r.chores_pending_restore
               ? el("span", { className: "badge badge-warning" }, "disabled")
               : el("span", { className: "text-xs text-tertiary" }, r.chores_state || "untouched"),
+          },
+          {
+            key: "report", label: "", sortable: false,
+            render: r => el("button", {
+              className: "btn btn-ghost btn-sm",
+              onClick: () => openOptimizeDbReport(r.plan_id),
+            }, el("span", { html: Icons.externalLink }), "Report"),
           },
           {
             key: "resume", label: "", sortable: false,
@@ -4602,7 +4777,7 @@ const OptimusPy = (function () {
     // Register pages
     Router.register("home", HomePage);
     Router.register("nav", NavPage);
-    Router.register("results", ResultsPage);
+    Router.register("reports", ReportsPage);
     Router.register("jobs", JobsPage);
     Router.register("settings", SettingsPage);
     Router.register("transfer", TransferPage);

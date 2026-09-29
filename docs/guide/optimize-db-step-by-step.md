@@ -16,6 +16,7 @@ Optimize DB doesn't benchmark. It sorts each cube's dimensions by leaf count, fe
 2. Click *Build plan*. Nothing on the server changes. Review the cubes it will reorder, their new orders, and the cubes it skips and why.
 3. Click *Run plan* and confirm. Progress shows cube by cube. *Stop after current cube* ends the run once the cube in progress finishes.
 4. After a stop or the time limit, *Previous runs* offers *Resume*, which continues in the time that was left. If a run ended without re-enabling chores, the page offers *Re-enable chores*.
+5. See the outcome in the run's report: *Report* in *Previous runs*, or the run under *Optimize DB (all cubes)* on the [Reports page](../ui/reports-page.md). It lists what was reordered, reverted or failed, and the expected saving.
 
 ## On the command line
 
@@ -27,7 +28,7 @@ optimuspy optimize-db --resume <plan id>              # continue a stopped run
 optimuspy optimize-db --restore-chores <plan id>      # re-enable chores a crashed run left off
 ```
 
-`samples/optimize_db.json` shows every option. The plan and run files are written to `results/<instance>/`.
+`samples/optimize_db.json` shows every option. The plan, the run and the report are written to `results/<instance>/`, and the run summary ends with the report's path.
 
 !!! note
     After an Optimize DB run, restart TM1 before you benchmark cubes with `optimize`.

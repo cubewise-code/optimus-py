@@ -6,7 +6,9 @@ lost to a dropped connection.
 """
 import json
 import logging
+import re
 import time
+from pathlib import Path
 
 import pytest
 
@@ -594,3 +596,103 @@ def test_list_runs_warns_about_a_run_file_it_cannot_read(tmp_path, caplog):
     with caplog.at_level(logging.WARNING):
         assert odb.list_runs(tmp_path) == []
     assert f"{odb.RUN_PREFIX}broken.json" in caplog.text
+
+
+# --- the report ------------------------------------------------------------
+
+def _report_rows(path):
+    """The per-cube rows the report's table is rendered from."""
+    text = path.read_text(encoding="utf-8")
+    start = text.index("const rows = ") + len("const rows = ")
+    return {r["cube"]: r["statusLabel"] for r in json.loads(text[start:text.index(";\n", start)])}
+
+
+def mixed_outcome_server():
+    """Four cubes that end reordered, reverted, failed and not started."""
+    return FakeServer(
+        orders={name: ["A", "B", "C"] for name in ("Kept", "Worse", "Locked", "Huge")},
+        ram={"Kept": 10 * GB, "Worse": 11 * GB, "Locked": 12 * GB, "Huge": 1000 * GB},
+        behaviour={"Kept": {"duration": 100.0}, "Worse": {"duration": 100.0, "pct": 4.2},
+                   "Locked": {"duration": 100.0, "fail": True}},
+    )
+
+
+def test_a_finished_run_leaves_a_report_naming_each_cube_with_its_status(tmp_path, frozen_clock):
+    server = mixed_outcome_server()
+    frozen_clock["server"] = server
+    plan = make_plan(server)
+    # Enough for the three small cubes; the large one is priced far past the limit.
+    plan["options"]["time_limit_hours"] = 1000 / 3600
+
+    result = odb.optimize_db(server.connect, plan=plan, result_path=tmp_path)
+    assert result["status"] == "stopped_time_limit"
+
+    report = odb.report_path(plan["plan_id"], "srv", tmp_path)
+    assert report.parent == odb.run_path(plan["plan_id"], "srv", tmp_path).parent
+    assert _report_rows(report) == {"Kept": "Reordered", "Worse": "Reverted",
+                                    "Locked": "Failed", "Huge": "Not started"}
+    assert "Stopped — time limit" in report.read_text(encoding="utf-8")
+
+
+def test_the_reported_saving_and_share_are_the_run_totals(tmp_path, frozen_clock):
+    server = mixed_outcome_server()
+    frozen_clock["server"] = server
+    plan = make_plan(server)
+    plan["options"]["time_limit_hours"] = 1000 / 3600
+
+    result = odb.optimize_db(server.connect, plan=plan, result_path=tmp_path)
+    saved = result["totals"]["bytes_saved"]
+    assert saved == pytest.approx(1 * GB)  # only Kept counts: 10 GB at -10%
+    text = odb.report_path(plan["plan_id"], "srv", tmp_path).read_text(encoding="utf-8")
+    assert f"{saved / GB:.2f} GB" in text
+    assert f"{saved / plan['total_model_ram_bytes']:.1%} of the model's" in text
+
+
+def test_a_report_that_cannot_be_written_leaves_the_outcome_alone(tmp_path, frozen_clock, monkeypatch, caplog):
+    server = three_cube_server()
+    frozen_clock["server"] = server
+    plan = make_plan(server)
+
+    def refuse(*args):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(odb, "write_report", refuse)
+    with caplog.at_level(logging.WARNING):
+        result = odb.optimize_db(server.connect, plan=plan, result_path=tmp_path)
+    assert result["status"] == "completed"
+    assert json.loads(odb.run_path("p1", "srv", tmp_path).read_text())["status"] == "completed"
+    assert not odb.report_path("p1", "srv", tmp_path).exists()
+    assert "disk full" in caplog.text
+
+
+def test_a_dry_run_writes_no_report(tmp_path, frozen_clock):
+    server = three_cube_server()
+    frozen_clock["server"] = server
+    plan = make_plan(server)
+
+    odb.optimize_db(server.connect, plan=plan, dry_run=True, result_path=tmp_path)
+    assert server.reorders == []
+    assert list(tmp_path.rglob("*")) == []
+
+
+def test_a_resumed_run_rewrites_its_report_when_it_finishes(tmp_path, frozen_clock):
+    server = three_cube_server(Medium={"probe_raises_once": True})
+    frozen_clock["server"] = server
+    plan = make_plan(server)
+    odb.write_json(odb.plan_path(plan["plan_id"], "srv", tmp_path), plan)
+    report = odb.report_path(plan["plan_id"], "srv", tmp_path)
+
+    with pytest.raises(KeyError):
+        odb.optimize_db(server.connect, plan=plan, result_path=tmp_path)
+    assert _report_rows(report) == {"Small": "Reordered", "Medium": "Not started", "Big": "Not started"}
+
+    odb.optimize_db(server.connect, resume_plan_id=plan["plan_id"], result_path=tmp_path)
+    assert _report_rows(report) == {"Small": "Reordered", "Medium": "Reordered", "Big": "Reordered"}
+    assert "Completed" in report.read_text(encoding="utf-8")
+
+
+def test_the_report_words_a_run_status_as_the_optimize_db_page_does():
+    app_js = (Path(odb.__file__).parent / "static" / "app.js").read_text(encoding="utf-8")
+    block = re.search(r"const OPTDB_RUN_STATUS = \{(.*?)\};", app_js, re.S).group(1)
+    page = dict(re.findall(r'(\w+): "([^"]+)"', block))
+    assert page == odb.RUN_STATUS_LABELS

@@ -38,8 +38,8 @@ from optimuspy.core import (
 from optimuspy.executors import OptimizationCancelled
 from optimuspy.metrics import detect_is_v12
 from optimuspy.optimize_db import (
-    find_run, list_runs, optimize_db, plan_path, read_json, restore_chores_for_plan,
-    validate_db_config
+    PLAN_PREFIX, REPORT_PREFIX, RUN_PREFIX, find_run, list_runs, optimize_db, plan_path,
+    read_json, report_path, restore_chores_for_plan, validate_db_config, write_report
 )
 
 # config.ini keys that carry a credential. The server never sends them to the browser.
@@ -366,6 +366,108 @@ def _recent_result_files(instance: str, cube: str) -> list:
     return result_files
 
 
+# The timestamp every run's file names end in, e.g. `_2026-09-29_13-59-34`.
+RUN_TIMESTAMP = re.compile(r"_(\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2})$")
+
+
+def _stamp_time(stamp: str):
+    with suppress(ValueError):
+        return time.mktime(time.strptime(stamp, "%Y-%m-%d_%H-%M-%S"))
+    return None
+
+
+def _reports_tree() -> dict:
+    """Every file under results/, grouped by instance, then cube or Optimize DB, then run.
+
+    Built from the files alone. A single-cube run is `<instance>_<cube>_<timestamp>`:
+    its `.html` is the report and anything else of that name is its data. An
+    Optimize DB run is its plan id: `optdb_report_` is the report, and the
+    `optdb_plan_` and `optdb_run_` JSON files are the data; a plan with no run
+    file is a plan only. Checkpoints are left out, and a file that matches
+    neither naming is listed under the instance's other files. Files directly in
+    results/ belong to the instance "".
+    """
+    root = Path(RESULT_PATH)
+    folders = {}
+    if root.is_dir():
+        for entry in root.iterdir():
+            if entry.is_dir():
+                folders.setdefault(entry.name, []).extend(f for f in entry.iterdir() if f.is_file())
+            elif entry.is_file():
+                folders.setdefault("", []).append(entry)
+
+    db_kinds = ((PLAN_PREFIX, ".json", "plan"), (RUN_PREFIX, ".json", "run"),
+                (REPORT_PREFIX, ".html", "report"))
+    instances = []
+    for name, files in folders.items():
+        cube_runs, db_runs, other = {}, {}, []
+        for f in files:
+            if f.name.startswith("checkpoint"):
+                continue
+            stat = f.stat()
+            info = {"filename": f.relative_to(root).as_posix(), "type": f.suffix[1:],
+                    "size": stat.st_size, "modified": stat.st_mtime}
+            db = next(((f.stem[len(prefix):], kind) for prefix, suffix, kind in db_kinds
+                       if f.name.startswith(prefix) and f.suffix == suffix), None)
+            if db:
+                db_runs.setdefault(db[0], {})[db[1]] = (f, info)
+                continue
+            # <instance>_<cube>_<timestamp>: the cube may hold underscores and
+            # spaces, so the instance comes off the front and the stamp off the end.
+            stem = f.stem
+            prefix = f"{name}_" if name else ""
+            match = RUN_TIMESTAMP.search(stem) if stem.startswith(prefix) else None
+            cube = stem[len(prefix):match.start()] if match else ""
+            if not cube:
+                other.append(info)
+                continue
+            run = cube_runs.setdefault((cube, match.group(1)), {
+                "kind": "cube", "id": match.group(1), "started": _stamp_time(match.group(1)),
+                "report": None, "data": []})
+            if f.suffix == ".html":
+                run["report"] = info
+            else:
+                run["data"].append(info)
+
+        cubes = {}
+        for (cube, _), run in cube_runs.items():
+            run["data"].sort(key=lambda d: d["filename"])
+            cubes.setdefault(cube, []).append(run)
+
+        optimize_db_runs = []
+        for plan_id, found in db_runs.items():
+            run = {"kind": "optimize_db" if ("run" in found or "report" in found) else "plan_only",
+                   "id": plan_id, "started": None,
+                   "report": found["report"][1] if "report" in found else None,
+                   "data": [found[kind][1] for kind in ("plan", "run") if kind in found]}
+            if "run" in found:
+                # The run file alone says how the run went. One that can't be
+                # read still lists, without a status.
+                with suppress(Exception):
+                    state = read_json(found["run"][0])
+                    run["status"] = state.get("status")
+                    run["started"] = state.get("started_at")
+            if run["started"] is None:
+                match = RUN_TIMESTAMP.search(plan_id)
+                run["started"] = _stamp_time(match.group(1)) if match else None
+            optimize_db_runs.append(run)
+
+        def newest_first(runs):
+            return sorted(runs, key=lambda r: r["started"] or 0, reverse=True)
+
+        if cubes or optimize_db_runs or other:
+            instances.append({
+                "name": name,
+                "cubes": [{"cube": cube, "runs": newest_first(runs)}
+                          for cube, runs in sorted(cubes.items(), key=lambda kv: kv[0].lower())],
+                "optimize_db": newest_first(optimize_db_runs),
+                "other": sorted(other, key=lambda o: o["filename"]),
+            })
+    # By name, with the files directly in results/ last.
+    instances.sort(key=lambda i: (i["name"] == "", i["name"].lower()))
+    return {"instances": instances}
+
+
 # Singleton
 job_manager = JobManager()
 
@@ -445,8 +547,8 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
             return self._handle_list_saved_cubes()
         elif path == "/api/folders":
             return self._send_json(200, _folders_state())
-        elif path == "/api/results":
-            return self._handle_list_results()
+        elif path == "/api/reports":
+            return self._send_json(200, _reports_tree())
         elif path.startswith("/api/result/"):
             return self._handle_serve_result(path[len("/api/result/"):])
         elif path == "/api/jobs":
@@ -506,6 +608,8 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
             return self._handle_optimize_db_run(body)
         elif path == "/api/optimize-db/runs":
             return self._handle_optimize_db_runs()
+        elif path == "/api/optimize-db/report":
+            return self._handle_optimize_db_report(body)
         elif path == "/api/optimize-db/restore-chores":
             return self._handle_optimize_db_restore_chores(body)
         else:
@@ -1071,6 +1175,35 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
             return self._send_json(404, {"error": f"No Optimize DB run for plan '{plan_id}'"})
         self._send_json(200, {"run": run})
 
+    def _handle_optimize_db_report(self, body: dict):
+        """Write a run's report from its plan and run files, when it has none yet."""
+        plan_id = body.get("plan_id")
+        if not isinstance(plan_id, str) or not plan_id or Path(plan_id).name != plan_id:
+            return self._send_json(400, {"error": "Missing or malformed 'plan_id'"})
+        try:
+            _, run = find_run(plan_id)
+        except FileNotFoundError:
+            return self._send_json(404, {"error": f"No Optimize DB run for plan '{plan_id}'"})
+        except Exception as e:
+            return self._send_json(500, {"error": f"The run file for '{plan_id}' can't be read: {_error_text(e)}"})
+        if any(job["mode"] == "optimize-db" and job["label"] == plan_id and job["status"] == "running"
+               for job in job_manager.summaries()):
+            return self._send_json(409, {"error": "This run is still in progress. Its report is written when it ends."})
+        instance = run.get("instance") or ""
+        report = report_path(plan_id, instance)
+        if not report.is_file():
+            try:
+                plan = read_json(plan_path(plan_id, instance))
+            except FileNotFoundError:
+                return self._send_json(404, {"error": f"No plan file for '{plan_id}', so there is nothing to build the report from"})
+            except Exception as e:
+                return self._send_json(500, {"error": f"The plan file for '{plan_id}' can't be read: {_error_text(e)}"})
+            try:
+                write_report(plan, run, report)
+            except Exception as e:
+                return self._send_json(500, {"error": f"Could not write the report: {_error_text(e)}"})
+        self._send_json(200, {"filename": report.relative_to(RESULT_PATH).as_posix()})
+
     def _handle_optimize_db_restore_chores(self, body: dict):
         instance = body.get("instance")
         password = body.get("password")
@@ -1083,34 +1216,6 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"restored": restored})
         except Exception as e:
             self._send_json(500, {"error": f"Chore restore failed: {_error_text(e)}"})
-
-    def _handle_list_results(self):
-        results = []
-        ts_pattern = re.compile(r'_\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}$')
-        if RESULT_PATH.exists():
-            files = [f for f in RESULT_PATH.rglob("*") if f.is_file()]
-            for f in sorted(files, key=lambda x: x.stat().st_mtime, reverse=True):
-                if f.name.startswith("checkpoint"):
-                    continue
-                # Instance is the immediate parent dir (or "" for legacy top-level files)
-                parent = f.parent
-                instance = parent.name if parent != RESULT_PATH else ""
-                # Extract cube name: strip instance prefix (if present) and trailing timestamp
-                stem = f.stem
-                if instance and stem.startswith(f"{instance}_"):
-                    stem = stem[len(instance) + 1:]
-                m = ts_pattern.search(stem)
-                cube_name = stem[:m.start()] if m else stem
-                rel = f.relative_to(RESULT_PATH).as_posix()
-                results.append({
-                    "filename": rel,
-                    "cube": cube_name,
-                    "instance": instance,
-                    "size": f.stat().st_size,
-                    "modified": f.stat().st_mtime,
-                    "type": f.suffix[1:],
-                })
-        self._send_json(200, {"results": results})
 
     def _handle_list_jobs(self):
         self._send_json(200, {"jobs": job_manager.summaries()})
@@ -1141,6 +1246,7 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
             ".csv": "text/csv",
             ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             ".png": "image/png",
+            ".json": "application/json; charset=utf-8",
         }
         ct = content_types.get(safe.suffix, "application/octet-stream")
 
