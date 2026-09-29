@@ -47,11 +47,10 @@ const FEATURES = [
 }`,
     link: DOCS.optimize, cta: 'Optimize mode' },
   { key: 'resume', icon: RotateCw, title: 'Checkpoint and resume', short: 'Stopped runs pick up where they left off.',
-    body: 'Every tested order is saved as it finishes. Run the same command again to continue. The checkpoint can also live in TM1\'s file storage.',
+    body: 'A reorder can take a long time on a big cube, and a connection can drop along the way. Every tested order is saved as it finishes, so running the same command again picks up where it left off, including an order that was mid-reorder when it stopped.',
     kind: 'code', lang: 'terminal',
     code: `optimuspy optimize sales.json               # continues
-optimuspy optimize sales.json --no-resume   # starts over
-optimuspy optimize sales.json --tm1-checkpoint`,
+optimuspy optimize sales.json --no-resume   # starts over`,
     link: DOCS.checkpoints, cta: 'Checkpoints & resume' },
   { key: 'report', icon: FileBarChart, title: 'HTML report', short: 'Best overall, fastest and smallest.',
     body: 'Every run writes an HTML report: summary cards, the recommended order, a memory against time chart relative to the original, and the full table. A CSV or XLSX comes alongside.',
