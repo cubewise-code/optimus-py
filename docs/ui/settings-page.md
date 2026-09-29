@@ -25,7 +25,7 @@ The card shows, from top to bottom:
 
 The choice is saved in [`config/settings.ini`](../getting-started/settings.md), so the command line uses the same file: `optimuspy optimize x.json` without `--config` reads the file you picked here. See [TM1 Connection](../getting-started/tm1-connection.md#which-configini-is-read) for the order in which the choices apply.
 
-After you switch files, the UI disconnects and forgets the passwords typed in the Connect dialog, because the same instance name can point at a different server in the new file.
+After you switch files, the UI disconnects, forgets the passwords typed in the Connect dialog and clears the [cache](#cache), because the same instance name can point at a different server in the new file.
 
 If the file in use is missing or doesn't parse, the card says so in place of the tabs. If there's no `config.ini` yet, it tells you to point to one above, or to create `config/config.ini` from `config/config.ini.example`.
 
