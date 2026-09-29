@@ -75,7 +75,7 @@ The Optimize DB report has the same look as the single-cube report, with its own
 From top to bottom:
 
 1. **Header**: the instance, the plan id, when the run started and ended, and its status: Completed, Stopped — time limit, Stopped — cancelled, Failed or Running.
-2. **Stat cards**: the cubes reordered, reverted, failed and not started; the **expected saving**, in GB and MB and as a share of the model's memory when the plan was built; and the time taken against the time limit.
+2. **Stat cards**: the cubes reordered, reverted, failed and not started; the **expected saving** (in GB, or in MB when it's under a gigabyte) and its share of the model's memory when the plan was built; and the time taken against the time limit.
 3. **A note** that the saving is what TM1 reported for each cube, and that the instance's memory only goes down after TM1 is restarted. See [After the run](../modes/optimize-db.md#after-the-run).
 4. **Memory saved per cube**: a bar chart, largest saving first. A cube that was reverted shows the increase TM1 reported in another color, which is why it was put back. Like the single-cube chart, it needs internet access for its library.
 5. **Cubes, in the order the run took them**: memory before, % change, memory saved, time taken and status, with the columns sortable. Click a row to see the cube's original and new dimension orders. An error, or a failure to put a cube back, shows under the cube's name. A `% change` marked **recovered** was measured from a memory read after a dropped connection took TM1's own answer with it.

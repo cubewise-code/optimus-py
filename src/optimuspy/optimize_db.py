@@ -1055,9 +1055,9 @@ def write_report(plan: dict, run: dict, path: Path):
 
     model_bytes = plan.get("total_model_ram_bytes") or 0
     saved = totals["bytes_saved"]
-    share = f"{saved / 1024 ** 2:,.1f} MB"
-    if model_bytes:
-        share += f", {saved / model_bytes:.1%} of the model's {_gb(model_bytes):.2f} GB"
+    # Under a gigabyte the card reads in MB, so a small model doesn't show 0.00 GB.
+    saved_text = f"{_gb(saved):.2f} GB" if saved >= 1024 ** 3 else f"{saved / 1024 ** 2:,.1f} MB"
+    share = f"{saved / model_bytes:.1%} of the model's {_gb(model_bytes):.2f} GB" if model_bytes else ""
     limit = options.get("time_limit_hours")
     elapsed = format_duration(totals["elapsed_s"]) if run.get("finished_at") else "—"
 
@@ -1071,7 +1071,7 @@ def write_report(plan: dict, run: dict, path: Path):
         card("Reverted", totals["cubes_reverted"], "Used more memory, put back"),
         card("Failed", totals["cubes_failed"]),
         card("Not started", totals["cubes_pending"]),
-        card("Expected saving", f"{_gb(saved):.2f} GB", share),
+        card("Expected saving", saved_text, share),
         card("Time taken", elapsed, f"of the {limit:g} h limit" if limit is not None else ""),
     ])
 

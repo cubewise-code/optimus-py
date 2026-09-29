@@ -798,6 +798,7 @@ def test_reports_are_grouped_by_instance_cube_and_run(ui_server, tmp_path):
     _write_json(_plan_file(tmp_path, plan_only), {"plan_id": plan_only})
     _touch(tmp_path, "checkpoint_Sales.json")
     _touch(tmp_path, f"{inst}/notes.txt")
+    _touch(tmp_path, f"{inst}/optdb_run_{with_report}.tmp")
     _touch(tmp_path, "Sales_2025-01-01_10-00-00.csv")
 
     tree = _reports(base)
@@ -828,6 +829,7 @@ def test_reports_are_grouped_by_instance_cube_and_run(ui_server, tmp_path):
     assert [c["cube"] for c in legacy["cubes"]] == ["Sales"]
     assert _names(legacy["cubes"][0]["runs"][0]["data"]) == ["Sales_2025-01-01_10-00-00.csv"]
     assert "checkpoint" not in json.dumps(tree)
+    assert ".tmp" not in json.dumps(tree)
 
 
 def test_a_run_file_that_does_not_parse_still_lists_without_a_status(ui_server, tmp_path):

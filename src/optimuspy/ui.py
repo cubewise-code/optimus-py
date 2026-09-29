@@ -402,9 +402,13 @@ def _reports_tree() -> dict:
     for name, files in folders.items():
         cube_runs, db_runs, other = {}, {}, []
         for f in files:
-            if f.name.startswith("checkpoint"):
+            # A `.tmp` file is a save in progress, gone once it lands.
+            if f.name.startswith("checkpoint") or f.suffix == ".tmp":
                 continue
-            stat = f.stat()
+            try:
+                stat = f.stat()
+            except FileNotFoundError:
+                continue
             info = {"filename": f.relative_to(root).as_posix(), "type": f.suffix[1:],
                     "size": stat.st_size, "modified": stat.st_mtime}
             db = next(((f.stem[len(prefix):], kind) for prefix, suffix, kind in db_kinds
