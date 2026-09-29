@@ -1447,8 +1447,14 @@ const OptimusPy = (function () {
       if (nav) nav.innerHTML = "";
     },
 
+    // While a job runs, the monitor asks the server again every few seconds, so
+    // it clears when the job ends even if no page is following that job.
+    _activityPoll: null,
+
     async updateActivityMonitor() {
       const container = $("#sidebarActivity");
+      clearTimeout(this._activityPoll);
+      this._activityPoll = null;
       try {
         const data = await Api.getJobs();
         const jobs = data.jobs || [];
@@ -1465,13 +1471,17 @@ const OptimusPy = (function () {
           ));
           container.classList.remove("hidden");
           container.onclick = () => Router.navigate(jobLink(running));
+          this._activityPoll = setTimeout(() => this.updateActivityMonitor(), 5000);
         } else {
           container.classList.add("hidden");
           container.innerHTML = "";
           container.onclick = null;
         }
       } catch {
-        // Non-critical
+        // Non-critical; a monitor still showing a job tries again.
+        if (!container.classList.contains("hidden")) {
+          this._activityPoll = setTimeout(() => this.updateActivityMonitor(), 5000);
+        }
       }
     },
   };
@@ -2068,15 +2078,23 @@ const OptimusPy = (function () {
         tabsEl.appendChild(tabBtn);
       });
 
-      // Check for reports availability and add "View Prior Reports" action
-      const hasReports = this._cubeHasReports(this._selectedCube);
+      // "View Prior Reports" starts disabled and is enabled once the cube turns
+      // out to have runs on the connected instance.
+      const cubeName = this._selectedCube;
       const actionsRow = el("div", { className: "flex items-center gap-2 mb-4", style: "margin-top:-4px" });
       const viewReportsBtn = el("button", {
-        className: `btn btn-ghost btn-sm${hasReports ? "" : " disabled"}`,
-        disabled: !hasReports,
-        onClick: () => { if (hasReports) Router.navigate(`#/reports?cube=${encodeURIComponent(this._selectedCube)}`); },
+        className: "btn btn-ghost btn-sm disabled",
+        disabled: true,
+        onClick: () => Router.navigate(`#/reports?cube=${encodeURIComponent(cubeName)}`),
       }, el("span", { html: Icons.externalLink }), "View Prior Reports");
       actionsRow.appendChild(viewReportsBtn);
+      Api.getReports().then(data => {
+        const instance = (data.instances || []).find(i => i.name === state.activeInstance);
+        if (instance && instance.cubes.some(c => c.cube === cubeName)) {
+          viewReportsBtn.disabled = false;
+          viewReportsBtn.classList.remove("disabled");
+        }
+      }).catch(() => { /* the button stays disabled */ });
 
       // Help button
       const helpBtn = el("button", { className: "btn btn-ghost btn-sm", onClick: () => HomePage._showHelpDrawer() },
@@ -2105,12 +2123,6 @@ const OptimusPy = (function () {
         case "reports": CubeWorkspace._renderReports(tabPane); break;
       }
       container.appendChild(tabPane);
-    },
-
-    _cubeHasReports(cubeName) {
-      // Check if there are report files for this cube in the reports API cache
-      // We'll do a quick check — if scanData has the cube or savedCubes has it
-      return state.savedCubes.some(sc => sc.cube === cubeName);
     },
 
     // ---- Panel visibility ----

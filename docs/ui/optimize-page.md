@@ -57,7 +57,7 @@ The job's status, elapsed time and live log, with a **Stop** button while it run
 
 ### Reports
 
-The cube's runs on the connected instance, newest first: each run's **Open report**, and its CSV or XLSX as a small link beside it. **View Prior Reports**, above the tabs, opens the [Reports page](reports-page.md) with the cube's group open.
+The cube's runs on the connected instance, newest first: each run's **Open report**, and its CSV or XLSX as a small link beside it. **View Prior Reports**, above the tabs, opens the [Reports page](reports-page.md) with the cube's group open; it's available once the cube has a report.
 
 ## Stopping a job
 
