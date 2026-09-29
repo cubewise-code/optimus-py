@@ -40,7 +40,7 @@ For each mode you can:
 - Tick **Fast mode (seed & refine)** for the shorter greedy fold
 - Tick **Auto-apply best** to write the best order back to the cube
 - Set **dimensions to exclude** (kept fixed during the search)
-- Set **dimension position rules** (lock specific dims to specific positions)
+- Set **dimension position rules** (lock specific dims to specific positions). **Add Rule** asks for a dimension and a **Lock to Position**: *First*, *Last*, or a *Position* numbered from 1 like the Overview table. The config counts from 0, so *Position 3* is written as `2`. One rule per dimension and one per position.
 - List **orders to ignore** (orders the greedy search should skip)
 
 **Reset** puts the form back to its defaults.

@@ -915,6 +915,13 @@ const OptimusPy = (function () {
       });
     }
 
+    // A rule's slot as the page shows it: numbered from 1, like the Overview table.
+    function _positionLabel(position) {
+      if (position === "first") return "First";
+      if (position === "last") return "Last";
+      return `Position ${position + 1}`;
+    }
+
     // ── Modal: add a dimension position rule ──
     function _showPositionRuleModal() {
       const includedDims = _dims.filter(d => d.included).map(d => d.name);
@@ -927,11 +934,13 @@ const OptimusPy = (function () {
       });
       body.appendChild(dimSelect);
 
-      body.appendChild(el("label", { className: "form-label mb-1" }, "Never in Position"));
+      // Slots are numbered from 1 here, like the Overview table; the config
+      // counts from 0, so the option's value is one less than its label.
+      body.appendChild(el("label", { className: "form-label mb-1" }, "Lock to Position"));
       const posSelect = el("select", { className: "form-input mb-3" });
       posSelect.appendChild(el("option", { value: "first" }, "First"));
-      for (let i = 2; i < includedDims.length; i++) {
-        posSelect.appendChild(el("option", { value: String(i) }, `Position ${i}`));
+      for (let i = 1; i < _dims.length - 1; i++) {
+        posSelect.appendChild(el("option", { value: String(i) }, `Position ${i + 1}`));
       }
       posSelect.appendChild(el("option", { value: "last" }, "Last"));
       body.appendChild(posSelect);
@@ -943,13 +952,20 @@ const OptimusPy = (function () {
           el("button", { className: "btn btn-ghost", onClick: () => Modal.close() }, "Cancel"),
           el("button", { className: "btn btn-primary", onClick: () => {
             const dim = dimSelect.value;
-            const pos = posSelect.value;
-            const exists = _positionRules.some(r => r.dimension === dim && r.position === pos);
-            if (!exists) {
-              _positionRules.push({ dimension: dim, position: pos });
-              fire();
-              render();
+            // "first" and "last" are names; any other slot must be a JSON number.
+            const pos = ["first", "last"].includes(posSelect.value) ? posSelect.value : Number(posSelect.value);
+            // One rule per dimension and one per slot: the run refuses anything else.
+            if (_positionRules.some(r => r.dimension === dim)) {
+              Toast.error(`${dim} already has a position rule`);
+              return;
             }
+            if (_positionRules.some(r => r.position === pos)) {
+              Toast.error(`${_positionLabel(pos)} is already taken by another rule`);
+              return;
+            }
+            _positionRules.push({ dimension: dim, position: pos });
+            fire();
+            render();
             Modal.close();
           }}, "Add Rule"),
         ],
@@ -966,14 +982,12 @@ const OptimusPy = (function () {
 
       // Dimension position rules section
       container.appendChild(el("div", { className: "section-divider mt-4" }, "Dimension Position Rules (optional)"));
-      container.appendChild(el("div", { className: "form-hint mb-2" }, "Prevent specific dimensions from being placed in certain positions"));
+      container.appendChild(el("div", { className: "form-hint mb-2" }, "Lock specific dimensions to a position; the search moves only the others"));
 
       const rulesList = el("div");
       _positionRules.forEach((rule, ri) => {
         const row = el("div", { className: "selection-row" });
-        const label = rule.position === "first" ? "Never First"
-                    : rule.position === "last" ? "Never Last"
-                    : `Never Position ${rule.position}`;
+        const label = `Locked ${_positionLabel(rule.position)}`;
         const nameSpan = el("span", { className: "selection-row-name" });
         nameSpan.appendChild(el("span", { className: "badge" }, rule.dimension));
         nameSpan.appendChild(document.createTextNode(` \u2014 ${label}`));

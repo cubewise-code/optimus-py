@@ -32,6 +32,8 @@ Multiple rules may target different dimensions; they cannot target the same posi
 
 A `position` must be a JSON number, not a string: write `3`, not `"3"`. Both name the same slot, so OptimusPy says exactly that rather than reporting an unreadable position at a value you can see is a number.
 
+In the UI, the Configure tab's **Add Rule** numbers the positions from 1, like the Overview table, and writes them from 0: *Position 3* becomes `"position": 2`. See the [Optimize Page](../ui/optimize-page.md).
+
 !!! warning "0-based here, 1-based in `optimize_position`"
 
     `position` counts from **0**: `3` is the fourth slot. The separate [`optimize_position`](../modes/position-optimization.md) field counts from **1**, where `3` is the third slot. Each matches its own long-standing documentation, so neither is a defect, but if you use both fields in one config, convert between them. `"first"` and `"last"` mean the same thing in both.
