@@ -2532,7 +2532,7 @@ const OptimusPy = (function () {
           const filename = `${config.cube}_${config.instance}.json`;
           const resp = await Api.saveConfig(config, filename);
           Sidebar.loadSavedCubes();
-          Toast.success(`Config saved to ${resp.path}`);
+          showRunFromTiModal(resp);
         } catch (err) {
           Toast.error(err.message);
         }
@@ -2545,6 +2545,34 @@ const OptimusPy = (function () {
       layout.appendChild(leftCol);
       layout.appendChild(rightCol);
       container.appendChild(layout);
+
+      // After Save Config Only: where the file went, and the TI code that runs it.
+      function showRunFromTiModal(resp) {
+        const copyBtn = el("button", { className: "btn btn-primary" }, "Copy TI code");
+        copyBtn.addEventListener("click", async () => {
+          try {
+            await navigator.clipboard.writeText(resp.ti_snippet);
+            Toast.success("TI code copied");
+          } catch (err) {
+            Toast.error("Couldn't copy. Select the code and copy it by hand.");
+          }
+        });
+        Modal.open({
+          title: "Config saved",
+          body: el("div", null,
+            el("p", null, "Saved to ", el("code", null, resp.path), "."),
+            el("p", { className: "mt-4" }, "To run it from a TI process on this server, paste this into the Prolog:"),
+            el("pre", { className: "json-preview mt-2" }, resp.ti_snippet),
+            el("p", { className: "text-sm mt-2" },
+              "ExecuteCommand doesn't pass OptimusPy's result back to TI. To see how the run went, read ",
+              el("code", null, resp.log_path), "."),
+          ),
+          footer: [
+            el("button", { className: "btn btn-secondary", onClick: () => Modal.close() }, "Close"),
+            copyBtn,
+          ],
+        });
+      }
 
       const self = this;
       function buildConfig() {

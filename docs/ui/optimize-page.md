@@ -47,7 +47,21 @@ For each mode you can:
 
 ![Configure tab in Greedy mode with one view and a dimension position rule in the Config Preview](../assets/images/optimuspy/ui/optimize-configure-tab.png)
 
-The **Config Preview** beside the form shows the generated JSON config (it's identical to what the CLI consumes). **Save & Start Optimization** saves it to the cube configs folder, `cube-configs/` by default, starts the job in the background and opens the Optimize tab. **Save Config Only** saves it without starting, and the toast shows the file's full path. The [Folders card](settings-page.md#folders) on Settings changes the folder.
+The **Config Preview** beside the form shows the generated JSON config (it's identical to what the CLI consumes). **Save & Start Optimization** saves it to the cube configs folder, `cube-configs/` by default, starts the job in the background and opens the Optimize tab. **Save Config Only** saves it without starting. The [Folders card](settings-page.md#folders) on Settings changes the folder.
+
+### Running a saved config from a TI process
+
+After **Save Config Only**, a pop-up shows the file's full path and the TI code that runs it, with a **Copy TI code** button:
+
+```
+sCommand = '"C:\OptimusPy\optimuspy.exe" optimize "C:\OptimusPy\cube-configs\Sales_tm1srv01.json"';
+# 1 waits for OptimusPy to finish; 0 starts it and carries on.
+ExecuteCommand(sCommand, 1);
+```
+
+Paste it into the Prolog of a TI process on the same TM1 server. The code names the `optimuspy.exe` the UI is running from, so it assumes OptimusPy is installed on the TM1 server, and it reads the same `config.ini` as the UI. The password therefore has to be stored in `config.ini`: the one typed into the UI isn't saved.
+
+`ExecuteCommand` doesn't pass OptimusPy's exit code back to TI, so to see how a run went, read `logs/optimuspy.log` in the OptimusPy folder (the pop-up shows its full path).
 
 ![Config Preview with the Save & Start Optimization and Save Config Only buttons](../assets/images/optimuspy/ui/optimize-config-preview.png)
 
