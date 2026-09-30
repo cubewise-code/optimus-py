@@ -5,6 +5,7 @@ the results folder, or jobs whose work is a stand-in function.
 """
 import json
 import logging
+import sys
 import threading
 import time
 import urllib.error
@@ -648,6 +649,38 @@ def test_saved_cube_configs_go_to_cube_configs_by_default(ui_server, tmp_path):
     saved = tmp_path / "cube-configs" / "sales.json"
     assert json.loads(text)["path"] == str(saved)
     assert json.loads(saved.read_text(encoding="utf-8")) == CUBE_CONFIG
+
+
+def test_saving_a_config_returns_the_ti_code_that_runs_it(ui_server, tmp_path, monkeypatch):
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    exe = tmp_path / "optimuspy.exe"
+    monkeypatch.setattr(sys, "executable", str(exe))
+    base, _ = ui_server(INI)
+    _, _, text = request("POST", f"{base}/api/config", body={"config": CUBE_CONFIG, "filename": "sales"})
+    payload = json.loads(text)
+    saved = tmp_path / "cube-configs" / "sales.json"
+    assert payload["command"] == f'"{exe}" optimize "{saved}"'
+    command = payload["command"]
+    assert f"sCommand = '{command}';" in payload["ti_snippet"]
+    assert "ExecuteCommand(sCommand, 1);" in payload["ti_snippet"]
+    assert payload["log_path"] == str(tmp_path / "logs" / "optimuspy.log")
+
+
+def test_the_run_command_names_the_config_ini_only_when_the_ui_was_started_with_it(ui_server, tmp_path):
+    base, ini = ui_server(INI, source="flag")
+    _, _, text = request("POST", f"{base}/api/config", body={"config": CUBE_CONFIG, "filename": "sales"})
+    assert json.loads(text)["command"].endswith(f'--config "{ini}"')
+    assert ' -m optimuspy optimize ' in json.loads(text)["command"]
+
+    base, _ = ui_server(INI, source="linked")
+    _, _, text = request("POST", f"{base}/api/config", body={"config": CUBE_CONFIG, "filename": "sales"})
+    assert "--config" not in json.loads(text)["command"]
+
+
+def test_a_quote_in_the_command_is_doubled_in_the_ti_code():
+    command = '"/opt/optimuspy" optimize "/data/Bob' + "'" + 's/sales.json"'
+    assert ui.ti_snippet(command).startswith(
+        "sCommand = '\"/opt/optimuspy\" optimize \"/data/Bob''s/sales.json\"';")
 
 
 def test_a_chosen_folder_is_used_to_save_list_and_delete(ui_server, tmp_path):

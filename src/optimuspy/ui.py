@@ -112,6 +112,30 @@ _config_ini_path = DEFAULT_CONFIG_INI
 _config_source = "default"
 
 
+def run_command(config_path) -> str:
+    """The command line that runs a saved cube config, for a TI's ExecuteCommand.
+
+    It names this install: the executable itself when running as the bundle,
+    else this Python with -m optimuspy. --config is added only when the UI was
+    started with it, because the settings link and config/config.ini are found
+    from the install folder the executable changes into.
+    """
+    launcher = [f'"{sys.executable}"'] if getattr(sys, "frozen", False) else [f'"{sys.executable}"', "-m", "optimuspy"]
+    parts = launcher + ["optimize", f'"{os.path.abspath(config_path)}"']
+    if _config_source == "flag":
+        parts += ["--config", f'"{os.path.abspath(_config_ini_path)}"']
+    return " ".join(parts)
+
+
+def ti_snippet(command: str) -> str:
+    """TI code that runs the command. A quote inside a TI string is doubled."""
+    return (
+        "sCommand = '" + command.replace("'", "''") + "';\n"
+        "# 1 waits for OptimusPy to finish; 0 starts it and carries on.\n"
+        "ExecuteCommand(sCommand, 1);"
+    )
+
+
 def _resolve_static_dir() -> Path:
     """Resolve the static/ directory — works for pip install and PyInstaller frozen exe."""
     return Path(__file__).parent / "static"
@@ -893,7 +917,10 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
         except OSError as e:
             return self._send_json(500, {"error": _error_text(e)})
 
-        self._send_json(200, {"path": os.path.abspath(config_path), "filename": safe_name})
+        command = run_command(config_path)
+        self._send_json(200, {"path": os.path.abspath(config_path), "filename": safe_name,
+                              "command": command, "ti_snippet": ti_snippet(command),
+                              "log_path": str(get_logfile_path())})
 
     def _handle_delete_config(self, filename: str):
         safe_name = "".join(c for c in filename if c.isalnum() or c in "._-")
