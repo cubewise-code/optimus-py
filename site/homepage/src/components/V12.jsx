@@ -8,7 +8,7 @@ const METRIC_SERVICE_URL = 'https://tm1py.org/latest/reference/services/metricse
 const POINTS = [
   'One code path for both versions: every mode, the UI and Optimize DB work the same on v11 and v12.',
   'Memory is read through TM1py\'s MetricService, the same call on v11 and v12.',
-  'On v11, VMM and VMT are raised so cached views don\'t hide the real query time, then put back, even if the run fails.',
+  'Cube size matters even more on v12: with high availability every replica holds its own copy of your cubes, so smaller cubes mean smaller replicas and lower running costs.',
 ]
 
 function Node({ children, className = '' }) {
