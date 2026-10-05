@@ -35,7 +35,7 @@ jobs:
         run: echo "short=$(git rev-parse --short HEAD)" >> $env:GITHUB_OUTPUT
 
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: build-${{ steps.sha.outputs.short }}
           name: Build ${{ steps.sha.outputs.short }}
@@ -72,7 +72,7 @@ jobs:
         run: echo "short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
       - name: Upload to Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           tag_name: build-${{ steps.sha.outputs.short }}
           name: Build ${{ steps.sha.outputs.short }}
