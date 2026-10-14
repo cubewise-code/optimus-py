@@ -12,6 +12,7 @@ A checkpoint records:
 |---|---|
 | `version` | `3`. A version mismatch starts fresh; there is no in-place upgrade from v2. |
 | `cube_name`, `instance` | Identity checks. |
+| `run_stamp` | The stamp of the run that wrote it, also in the file name (`results/<instance>/checkpoint_<instance>_<cube>_<run stamp>.json`). A resumed run takes it, so its report and checkpoint keep the name the run started with. A TM1-blob checkpoint is named by cube alone, since it lives on its instance; its stamp is read from here. |
 | `config_fingerprint` | SHA-256 over the JSON config. A changed config invalidates the checkpoint. A checkpoint written by an early 2.0 build, whose fingerprint also covered the leaf-count tolerance constants, does not match and the run starts fresh. |
 | `executor_type` | Which mode wrote it. |
 | `initial_dimension_order` | **The true original order.** The source of truth for the RAM baseline and the end-of-run restore. |
