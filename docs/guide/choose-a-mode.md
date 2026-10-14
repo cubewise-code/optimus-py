@@ -30,7 +30,7 @@ The best approach is to start with the question you're trying to answer. Most pe
 | Find the best dimension for one slot, or the best slot for one dimension | `optimize`, Position or Dimension | Only if auto-apply is on |
 | Apply an order you already know | `set` | Yes |
 | Copy orders from one server to another | Sync Order page | Yes, on the target |
-| Improve every cube on an instance, unattended | `optimize-db` | Yes, keeping only changes that didn't use more memory |
+| Improve every cube on an instance, unattended | `optimize-db` (leaf count, or Last slot only for the cubes you pick) | Yes, keeping only changes that didn't use more memory |
 
 Once you know which mode you need, its reference page has the details: [Optimize](../modes/optimize-mode.md), [Predefined Orders](../modes/predefined-orders.md), [Position](../modes/position-optimization.md), [Dimension](../modes/dimension-optimization.md), [Set](../modes/set-mode.md), [Scan](../modes/scan-mode.md), [Optimize DB](../modes/optimize-db.md) and the [Sync Order page](../ui/sync-order-page.md).
 

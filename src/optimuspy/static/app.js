@@ -280,8 +280,10 @@ const OptimusPy = (function () {
     optimizeDbPlan(instance, password, options) {
       return this._fetch("POST", "/api/optimize-db/plan", Object.assign({ instance, password }, options));
     },
-    optimizeDbRun(instance, password, planId) {
-      return this._fetch("POST", "/api/optimize-db/run", { instance, password, plan_id: planId });
+    optimizeDbRun(instance, password, planId, methods) {
+      const body = { instance, password, plan_id: planId };
+      if (methods) body.methods = methods;
+      return this._fetch("POST", "/api/optimize-db/run", body);
     },
     optimizeDbRuns() { return this._fetch("POST", "/api/optimize-db/runs", {}); },
     optimizeDbRunState(planId) { return this._fetch("GET", `/api/optimize-db/run/${encodeURIComponent(planId)}`); },
@@ -4079,6 +4081,8 @@ const OptimusPy = (function () {
         `Cubes to reorder (${cubes.length})`));
       queueCard.appendChild(el("div", { className: "text-sm text-secondary mb-2" },
         `Plan ${plan.plan_id} — reordered top to bottom, ${plan.options && plan.options.order === "desc" ? "largest cube first" : "smallest cube first"}.`));
+      queueCard.appendChild(el("div", { className: "form-hint mb-2" },
+        "Leaf count applies the smallest-to-largest order in one reorder, without measuring. Last slot only measures every dimension in the last slot and keeps the best: one reorder per dimension, for a cube whose densest dimension is not its largest, such as a fully populated months dimension."));
       if (cubes.length === 0) {
         queueCard.appendChild(el("div", { className: "text-secondary text-sm" }, "No cube qualifies — nothing would be reordered."));
       } else {
@@ -4089,8 +4093,25 @@ const OptimusPy = (function () {
             { key: "cube", label: "Cube", render: r => el("span", { className: "font-medium" }, r.cube) },
             { key: "ram_bytes", label: "Memory", align: "right", value: r => formatBytes(r.ram_bytes || 0), sortValue: r => r.ram_bytes || 0 },
             {
+              key: "method", label: "Method", sortable: false,
+              render: r => {
+                const select = el("select", { className: "form-input", style: "min-width:140px;padding:4px 8px", "aria-label": `Method for ${r.cube}` },
+                  el("option", { value: "leaf_count" }, "Leaf count"),
+                  el("option", { value: "last_slot" }, "Last slot only"));
+                select.value = r.method || "leaf_count";
+                select.addEventListener("change", () => {
+                  plan.cubes[r.position - 1].method = select.value;
+                  this._renderPlan(container);
+                });
+                return select;
+              },
+            },
+            {
               key: "target_order", label: "New dimension order", sortable: false,
-              render: r => el("span", { className: "optdb-order" }, (r.target_order || []).join(" \u2192 ")),
+              render: r => (r.method === "last_slot"
+                ? el("span", { className: "text-secondary text-sm" },
+                    `Measured: each of the ${(r.current_order || []).length} dimensions is tried in the last slot, the best one is kept`)
+                : el("span", { className: "optdb-order" }, (r.target_order || []).join(" \u2192 "))),
             },
           ],
           data: rows,
@@ -4153,21 +4174,26 @@ const OptimusPy = (function () {
         Toast.error("The run settings changed after this plan was built — build the plan again before running it");
         return;
       }
+      const methods = {};
+      (plan.cubes || []).forEach(c => { methods[c.cube] = c.method || "leaf_count"; });
+      const measured = Object.values(methods).filter(m => m === "last_slot").length;
       this._confirmRun(plan.instance, plan.plan_id,
-        `Reorder ${(plan.cubes || []).length} cube(s) on '${plan.instance}' exactly as listed in plan ${plan.plan_id}? Each cube is locked on the server while TM1 reorders it.`,
-        btn);
+        `Reorder ${(plan.cubes || []).length} cube(s) on '${plan.instance}' exactly as listed in plan ${plan.plan_id}?` +
+        (measured ? ` ${measured} of them measure their last slot, one reorder per dimension.` : "") +
+        " Each cube is locked on the server while TM1 reorders it.",
+        btn, methods);
     },
 
     // Start plan `planId`: a fresh run, or the continuation of one already on
     // disk — the server decides which. Shared by Run plan and every Resume button.
-    _confirmRun(instance, planId, message, btn) {
+    _confirmRun(instance, planId, message, btn, methods) {
       Modal.confirm(message, async () => {
         if (!(await Credentials.ensure(instance))) return;
         const label = btn.textContent;
         btn.disabled = true;
         btn.textContent = "Starting…";
         try {
-          const resp = await Api.optimizeDbRun(instance, Credentials.get(instance), planId);
+          const resp = await Api.optimizeDbRun(instance, Credentials.get(instance), planId, methods);
           this._jobId = resp.job_id;
           this._jobStartedAt = resp.started_at;
           this._planId = planId;
@@ -4221,6 +4247,7 @@ const OptimusPy = (function () {
         columns: [
           { key: "position", label: "#", align: "right" },
           { key: "cube", label: "Cube" },
+          { key: "method", label: "Method", value: r => r.method === "last_slot" ? "Last slot only" : "Leaf count" },
           { key: "status", label: "Status", render: r => el("span",
             { className: `badge ${OPTDB_CUBE_BADGES[r.status] || "badge-neutral"}` }, r.status === "in_flight" ? "reordering" : r.status) },
           { key: "pct_change", label: "RAM change", align: "right",
@@ -4247,17 +4274,17 @@ const OptimusPy = (function () {
       const statusText = el("span", { className: "text-sm font-medium" }, "Idle");
       const timerEl = el("span", { className: "terminal-timer" }, "00:00");
       const stopBtn = el("button", { className: "btn btn-danger btn-sm", style: "display:none;margin-left:auto" },
-        "Stop after current cube");
+        "Stop after the current reorder");
       stopBtn.addEventListener("click", async () => {
         stopBtn.disabled = true;
         stopBtn.textContent = "Stopping\u2026";
         try {
           await Api.cancelJob(this._jobId);
-          Toast.info("Stopping — the cube being reordered finishes first");
+          Toast.info("Stopping — the reorder in progress finishes first");
         } catch (e) {
           Toast.error("Cancel failed: " + e.message);
           stopBtn.disabled = false;
-          stopBtn.textContent = "Stop after current cube";
+          stopBtn.textContent = "Stop after the current reorder";
         }
       });
       statusBar.appendChild(statusDot);

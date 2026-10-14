@@ -45,7 +45,9 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
+from optimuspy import core
 from optimuspy.core import RESULT_PATH, _dimension_metadata
+from optimuspy.executors import OptimizationCancelled
 from optimuspy.metrics import (detect_is_v12, memory_by_cube_bytes, ram_source_ready,
                                read_cube_memory_bytes)
 from optimuspy.results import report_page
@@ -78,9 +80,19 @@ DEFAULT_OPTIONS = {
     "revert_on_regression": True,
     "disable_active_chores": False,
     "max_consecutive_failures": 3,
+    "last_slot_cubes": [],
 }
 
 STRING_POLICIES = ("skip_any", "pin_last")
+
+# How a cube is reordered. `leaf_count` applies the leaf-count-ascending order:
+# one reorder, nothing measured. `last_slot` measures every dimension in the last
+# free slot and keeps the winner: one reorder per dimension, the case for a cube
+# whose densest dimension is not its largest (a small, fully populated month
+# dimension is the usual one). Every cube is `leaf_count` unless the
+# instructions' `last_slot_cubes` or the operator's choice on the plan says so.
+METHODS = ("leaf_count", "last_slot")
+METHOD_LABELS = {"leaf_count": "Leaf count", "last_slot": "Last slot only"}
 CUBE_ORDERS = ("asc", "desc")
 
 SKIP_LABELS = {
@@ -126,9 +138,10 @@ def validate_db_config(config: dict):
     if policy not in STRING_POLICIES:
         raise ValueError(f"'string_policy' must be one of {list(STRING_POLICIES)}")
 
-    excluded = config.get("exclude_cubes", [])
-    if not isinstance(excluded, list) or any(not isinstance(c, str) for c in excluded):
-        raise ValueError("'exclude_cubes' must be a list of cube names")
+    for key in ("exclude_cubes", "last_slot_cubes"):
+        names = config.get(key, [])
+        if not isinstance(names, list) or any(not isinstance(c, str) for c in names):
+            raise ValueError(f"'{key}' must be a list of cube names")
 
     min_mb = config.get("min_cube_mb", DEFAULT_OPTIONS["min_cube_mb"])
     if not isinstance(min_mb, (int, float)) or isinstance(min_mb, bool) or min_mb < 0:
@@ -150,6 +163,7 @@ def resolve_options(config: dict) -> dict:
         if key in config:
             options[key] = config[key]
     options["exclude_cubes"] = list(options["exclude_cubes"])
+    options["last_slot_cubes"] = list(options["last_slot_cubes"])
     options["time_limit_hours"] = float(options["time_limit_hours"])
     options["min_cube_mb"] = float(options["min_cube_mb"])
     return options
@@ -234,6 +248,12 @@ def build_plan(instance: str, plan_id: str, options: dict, cube_records: List[di
     queue, skipped = [], []
     for record in cube_records:
         target, reason = resolve_target_order(record, options)
+        method = ("last_slot" if _is_excluded(record["cube"], options.get("last_slot_cubes", []))
+                  else "leaf_count")
+        if reason == "already_in_target_order" and method == "last_slot":
+            # Already in leaf-count order says nothing about which dimension
+            # belongs last, which is the question a last-slot cube asks.
+            target, reason = list(record["storage_order"]), None
         if reason:
             skipped.append({
                 "cube": record["cube"],
@@ -245,7 +265,10 @@ def build_plan(instance: str, plan_id: str, options: dict, cube_records: List[di
             "cube": record["cube"],
             "ram_bytes": record["ram_bytes"],
             "current_order": list(record["storage_order"]),
+            # The leaf-count order. A last-slot cube's order is only known once it
+            # has been measured; this one is kept so the choice can be switched back.
             "target_order": target,
+            "method": method,
         })
 
     queue.sort(key=lambda c: (c["ram_bytes"], c["cube"]), reverse=options["order"] == "desc")
@@ -265,6 +288,27 @@ def build_plan(instance: str, plan_id: str, options: dict, cube_records: List[di
         "cubes": queue,
         "skipped": skipped,
     }
+
+
+def plan_method(entry: dict) -> str:
+    """A plan written before methods existed reorders every cube by leaf count."""
+    return entry.get("method", "leaf_count")
+
+
+def apply_methods(plan: dict, methods: dict) -> dict:
+    """Set the method of named cubes in the plan — the operator's choice on screen.
+
+    Every name must be a cube the plan reorders and every value a known method,
+    so a stale page cannot quietly run something nobody looked at.
+    """
+    entries = {c["cube"]: c for c in plan["cubes"]}
+    for cube, method in (methods or {}).items():
+        if cube not in entries:
+            raise ValueError(f"'{cube}' is not a cube in plan '{plan['plan_id']}'")
+        if method not in METHODS:
+            raise ValueError(f"'{method}' is not a method — use one of {list(METHODS)}")
+        entries[cube]["method"] = method
+    return plan
 
 
 # ---------------------------------------------------------------------------
@@ -471,8 +515,11 @@ def new_run(plan: dict, result_path: Path = RESULT_PATH) -> dict:
         "status": "running",
         "chores": {"state": "untouched", "deactivated": []},
         "cubes": {c["cube"]: {"status": "pending", "ram_before": c["ram_bytes"],
+                              "method": plan_method(c),
                               "original_order": c["current_order"],
-                              "target_order": c["target_order"],
+                              # A last-slot cube's order is the one it measured best.
+                              "target_order": (c["target_order"] if plan_method(c) == "leaf_count"
+                                               else None),
                               "pct_change": None, "derived": False,
                               "duration_s": None, "error": None}
                   for c in plan["cubes"]},
@@ -620,8 +667,17 @@ def execute_plan(connect: Callable[[], object], plan: dict, run: dict,
             logging.info(f"Starting {decision}")
 
             try:
-                tm1, outcome = _reorder_cube(tm1, connect, cube, entry, state,
-                                             options, is_v12, save)
+                if plan_method(entry) == "last_slot":
+                    tm1, outcome = _last_slot_cube(tm1, connect, cube, run["instance"], state,
+                                                   is_v12, save, cancel_event)
+                else:
+                    tm1, outcome = _reorder_cube(tm1, connect, cube, entry, state,
+                                                 options, is_v12, save)
+            except OptimizationCancelled:
+                status = "cancelled"
+                logging.info(f"Optimize DB stopped during '{cube}' — its original order was "
+                             f"put back; a resume continues its sweep where it stopped")
+                break
             except OptimizeDbAborted:
                 status = "failed"
                 save()
@@ -637,7 +693,10 @@ def execute_plan(connect: Callable[[], object], plan: dict, run: dict,
                     break
             else:
                 consecutive_failures = 0
-                if state.get("duration_s") and not state.get("derived"):
+                # Throughput samples time one reorder per cube. A last-slot cube
+                # runs one per dimension, so its duration would skew the estimate.
+                if (state.get("duration_s") and not state.get("derived")
+                        and plan_method(entry) == "leaf_count"):
                     run["samples"].append([entry["ram_bytes"], state["duration_s"]])
         else:
             status = "completed"
@@ -725,6 +784,76 @@ def _reorder_cube(tm1, connect, cube: str, entry: dict, state: dict,
     return tm1, "done"
 
 
+def _optimize_last_slot(tm1, instance: str, cube: str, cancel_event, is_v12: bool) -> Optional[dict]:
+    """Measure every dimension in the cube's last free slot and apply the winner.
+
+    The single-cube optimizer does the work (Position optimization on that slot,
+    applied), so a last-slot cube gets what any optimization gets: its own report,
+    a checkpoint that a later run resumes, and the original order put back when
+    the run fails or is stopped. Returns the optimizer's outcome, or None when it
+    did not finish.
+    """
+    order = list(tm1.cubes.get_storage_dimension_order(cube_name=cube))
+    # A last dimension with string elements never moves, so the slot measured is
+    # the one before it.
+    locked = not core.is_dimension_only_numeric(tm1, order[-1])
+    position = len(order) - (2 if locked else 1)
+    cube_config = {"instance": instance, "cube": cube, "views": [], "executions": 1,
+                   "output": "csv", "update": True, "optimize_position": position,
+                   "source": "optimize-db"}
+    outcome = {}
+    finished = core._execute_optimize_mode(
+        tm1, cube, instance, [], [], 1, "csv", True, False, [], [], [],
+        optimize_position=position, initial_dimension_order=order,
+        cube_config=cube_config, cancel_event=cancel_event, is_v12=is_v12,
+        outcome=outcome)
+    return outcome if finished and "applied_order" in outcome else None
+
+
+def _last_slot_cube(tm1, connect, cube: str, instance: str, state: dict, is_v12: bool,
+                    save: Callable[[], None], cancel_event=None):
+    """Run one last-slot cube. Returns `(service, outcome)`: `done` or `failed`.
+
+    Raises OptimizationCancelled when the run is stopped mid-sweep; the cube is
+    left `pending`, so a resume picks it up from its checkpoint.
+    """
+    current = list(tm1.cubes.get_storage_dimension_order(cube_name=cube))
+    state.update(status="in_flight", original_order=current, started_at=time.time())
+    save()
+
+    started = time.time()
+    try:
+        outcome = _optimize_last_slot(tm1, instance, cube, cancel_event, is_v12)
+        error = None if outcome else "the last-slot search did not finish — see the log"
+    except OptimizationCancelled:
+        state.update(status="pending", duration_s=None)
+        save()
+        raise
+    except Exception as e:
+        outcome, error = None, str(e)
+    duration = time.time() - started
+
+    if outcome is None:
+        state.update(status="failed", error=error, duration_s=duration)
+        logging.error(f"'{cube}' failed its last-slot search; its checkpoint is kept, "
+                      f"so resuming the run continues it")
+        try:
+            tm1.cubes.get_storage_dimension_order(cube_name=cube)
+        except Exception:
+            tm1 = _reconnect(connect)
+        return tm1, "failed"
+
+    before, after = outcome.get("original_ram"), outcome.get("applied_ram")
+    pct = (after / before - 1.0) * 100.0 if before and after is not None else math.nan
+    state.update(status="done", pct_change=pct, derived=False, duration_s=duration,
+                 target_order=outcome["applied_order"], measured=outcome.get("measured"),
+                 report=outcome.get("report"), error=None)
+    logging.info(f"'{cube}' measured {outcome.get('measured', 0)} order(s) in its last slot in "
+                 f"{format_duration(duration)} — {pct:+.2f}% RAM, "
+                 f"last dimension now '{outcome['applied_order'][-1]}'")
+    return tm1, "done"
+
+
 def _recover_outcome(tm1, cube: str, target: List[str], state: dict, is_v12: bool):
     """Work out what happened to a reorder whose response was lost.
 
@@ -802,6 +931,13 @@ def prepare_resume(tm1, plan: dict, run: dict, is_v12: bool = False) -> int:
             logging.warning(f"Could not verify '{cube}' on resume: {e}")
             continue
 
+        if state["status"] == "in_flight" and plan_method(entry) == "last_slot":
+            # Its sweep keeps its own checkpoint; running it again continues it.
+            logging.info(f"'{cube}' was interrupted during its last-slot search — will continue")
+            state.update(status="pending", pct_change=None, duration_s=None, derived=False)
+            reset += 1
+            continue
+
         if state["status"] == "in_flight":
             pct, derived = _recover_outcome(tm1, cube, entry["target_order"], state, is_v12)
             if pct is None:
@@ -814,7 +950,8 @@ def prepare_resume(tm1, plan: dict, run: dict, is_v12: bool = False) -> int:
                              f"{pct:+.2f}% RAM (derived)")
             continue
 
-        expected = entry["target_order"] if state["status"] == "done" else state.get("original_order")
+        expected = ((state.get("target_order") or entry["target_order"]) if state["status"] == "done"
+                    else state.get("original_order"))
         if expected and actual != expected:
             logging.info(f"'{cube}' no longer matches its recorded order — will redo")
             state.update(status="pending", pct_change=None, duration_s=None, derived=False)
@@ -928,13 +1065,17 @@ def format_plan(plan: dict) -> str:
 
     if plan["cubes"]:
         width = max(max(len(c["cube"]) for c in plan["cubes"]), 9)
-        lines.append(f"  {'#':>3}  {'Cube Name':<{width}}  {'RAM (GB)':>9}  Target Order")
-        lines.append(f"  {'─' * 3}  {'─' * width}  {'─' * 9}  {'─' * 40}")
+        lines.append(f"  {'#':>3}  {'Cube Name':<{width}}  {'RAM (GB)':>9}  {'Method':<14}  Target Order")
+        lines.append(f"  {'─' * 3}  {'─' * width}  {'─' * 9}  {'─' * 14}  {'─' * 40}")
         for i, c in enumerate(plan["cubes"], 1):
-            order = " › ".join(c["target_order"])
-            if len(order) > 60:
-                order = order[:57] + "..."
-            lines.append(f"  {i:>3}  {c['cube']:<{width}}  {_gb(c['ram_bytes']):>9.2f}  {order}")
+            if plan_method(c) == "last_slot":
+                order = "measured: every dimension in the last slot, the best one kept"
+            else:
+                order = " › ".join(c["target_order"])
+                if len(order) > 60:
+                    order = order[:57] + "..."
+            lines.append(f"  {i:>3}  {c['cube']:<{width}}  {_gb(c['ram_bytes']):>9.2f}  "
+                         f"{METHOD_LABELS[plan_method(c)]:<14}  {order}")
         lines.append("")
 
     if plan["skipped"]:
@@ -1023,6 +1164,7 @@ _OPTION_LABELS = (
     ("min_cube_mb", "Minimum cube size", lambda v: f"{v:g} MB"),
     ("string_policy", "String dimensions", lambda v: v),
     ("exclude_cubes", "Excluded cubes", lambda v: ", ".join(v) if v else "none"),
+    ("last_slot_cubes", "Last slot only (by instructions)", lambda v: ", ".join(v) if v else "none"),
     ("include_optimized", "Include optimized cubes", lambda v: "yes" if v else "no"),
     ("revert_on_regression", "Revert a cube that got worse", lambda v: "yes" if v else "no"),
     ("disable_active_chores", "Disable active chores", lambda v: "yes" if v else "no"),
@@ -1085,6 +1227,10 @@ def write_report(plan: dict, run: dict, path: Path):
         rows.append({
             "pos": position,
             "cube": entry["cube"],
+            "method": METHOD_LABELS[plan_method(entry)],
+            "lastSlot": plan_method(entry) == "last_slot",
+            "measured": state.get("measured"),
+            "report": state.get("report"),
             "before": before / 1024 ** 2,
             "pct": pct if _measured(pct) else None,
             "derived": bool(state.get("derived")),
@@ -1168,6 +1314,7 @@ def write_report(plan: dict, run: dict, path: Path):
                     <th style="width:30px"></th>
                     <th class="sortable sorted" data-sort="pos" style="width:56px;white-space:nowrap"># <span class="sort-arrow">&#9650;</span></th>
                     <th class="sortable" data-sort="cube">Cube <span class="sort-arrow"></span></th>
+                    <th class="sortable" data-sort="method">Method <span class="sort-arrow"></span></th>
                     <th class="sortable num" data-sort="before">Memory before <span class="sort-arrow"></span></th>
                     <th class="sortable num" data-sort="pct">% change <span class="sort-arrow"></span></th>
                     <th class="sortable num" data-sort="saved">Saved (MB) <span class="sort-arrow"></span></th>
@@ -1230,6 +1377,11 @@ function duration(s) {{
     if (s < 5400) return (s / 60).toFixed(1) + 'm';
     return (s / 3600).toFixed(2) + 'h';
 }}
+// The cube's report sits beside this one. Opened from disk the link is its file
+// name; served by the UI (/api/result/<instance>%2F<file>) it is the encoded path.
+function reportHref(path) {{
+    return location.protocol === 'file:' ? path.split('/').pop() : encodeURIComponent(path);
+}}
 function chips(dims) {{ return dims.map(d => `<span class="df-chip">${{esc(d)}}</span>`).join('<span class="df-arrow">&#9654;</span>'); }}
 const tbody = document.getElementById('tbody');
 let sortCol = 'pos', sortAsc = true;
@@ -1247,13 +1399,15 @@ function renderTable() {{
             ? (r.derived ? '<span title="The response was lost to a dropped connection and memory could not be read afterwards">not measured</span>' : '—')
             : `<span class="${{r.pct < 0 ? 'negative' : r.pct > 0 ? 'positive' : ''}}">${{r.pct > 0 ? '+' : ''}}${{r.pct.toFixed(2)}}%</span>`
               + (r.derived ? ' <span class="badge badge-neutral" title="The response was lost to a dropped connection; this change comes from a memory read afterwards">recovered</span>' : '');
-        const newLabel = r.status === 'reverted' ? 'New order, put back to the original' : r.status === 'done' ? 'New order' : 'Target order';
+        const newLabel = r.status === 'reverted' ? 'New order, put back to the original' : r.status === 'done' ? 'New order' : r.lastSlot ? 'Leaf-count order (not used: this cube measures its last slot)' : 'Target order';
+        const report = r.report ? `<div class="detail-block"><h4>Last-slot measurements</h4><a href="${{esc(reportHref(r.report))}}" target="_blank">Open this cube's report</a></div>` : '';
         const error = r.error ? `<div class="error-text">${{r.revertFailed ? 'Could not put it back: ' : ''}}${{esc(r.error)}}</div>` : '';
         return `
         <tr class="data-row" onclick="toggleDetail(this)">
             <td><span class="expand-icon">&#9654;</span></td>
             <td class="num">${{r.pos}}</td>
             <td>${{esc(r.cube)}}${{error}}</td>
+            <td>${{esc(r.method)}}${{r.measured ? ` <span class="muted">(${{r.measured}} measured)</span>` : ''}}</td>
             <td class="num">${{num(r.before, 1)}} MB</td>
             <td class="num">${{pct}}</td>
             <td class="num">${{num(r.saved, 1)}}</td>
@@ -1261,10 +1415,11 @@ function renderTable() {{
             <td><span class="badge ${{r.badge}}">${{esc(r.statusLabel)}}</span></td>
         </tr>
         <tr class="detail-row">
-            <td colspan="8">
+            <td colspan="9">
                 <div class="detail-panel" style="grid-template-columns:1fr">
                     <div class="detail-block"><h4>Original order</h4><div class="dim-flow">${{chips(r.original)}}</div></div>
                     <div class="detail-block"><h4>${{newLabel}}</h4><div class="dim-flow">${{chips(r.target)}}</div></div>
+                    ${{report}}
                 </div>
             </td>
         </tr>`;

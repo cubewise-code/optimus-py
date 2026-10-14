@@ -1,6 +1,6 @@
 # Optimize DB Page
 
-Reorder every cube on an instance by leaf-element count, fewest first, within a time limit, without benchmarking anything. The page drives the same pass as `optimuspy optimize-db` on the command line: you build a plan, review it, run it, and come back to it if it was interrupted.
+Reorder every cube on an instance within a time limit: by leaf-element count, fewest first, without benchmarking anything, or, for the cubes you pick, by measuring every dimension in the last slot. The page drives the same pass as `optimuspy optimize-db` on the command line: you build a plan, review it, run it, and come back to it if it was interrupted.
 
 For what the pass does and why, see [Optimize DB Mode](../modes/optimize-db.md). For a run start to finish, see [Optimize DB Step by Step](../guide/optimize-db-step-by-step.md).
 
@@ -22,7 +22,7 @@ The card at the top sets the same options as the instructions JSON:
 | **Exclude cubes** | none | `exclude_cubes` |
 | **Already optimized cubes**: *Include optimized* | off | `include_optimized` |
 
-**Cube order** is the order the cubes are processed in, not the dimension order; that is always leaf-element count, fewest first. **Exclude cubes** takes one name or pattern at a time (case-insensitive, `*` and `?` wildcards, e.g. `Sales*`); press Enter to add each one.
+**Cube order** is the order the cubes are processed in, not the dimension order. **Exclude cubes** takes one name or pattern at a time (case-insensitive, `*` and `?` wildcards, e.g. `Sales*`); press Enter to add each one.
 
 A cube is **already optimized** when its storage order differs from its presentation order, which usually means someone chose that order on purpose, often with the [Optimize page](optimize-page.md). The plan skips these cubes by default, so this pass doesn't overwrite a measured order with its one simple rule. Tick **Include optimized** to reorder them like any other cube.
 
@@ -33,7 +33,7 @@ The first time you pick an instance after the page loads, the **Connect to Insta
 **Build plan** only reads from TM1: no reorder, no chore change. It writes the plan file to `results/<instance>/` and shows it on the page:
 
 - Stat cards with the memory of all cubes on the instance, the memory of the cubes to reorder, and the share of all cube memory the plan covers. That share is the number to read first, because it tells you how much of the model the run will and won't touch.
-- **Cubes to reorder**: one row per cube, in the order the run takes them, with its memory and its new dimension order.
+- **Cubes to reorder**: one row per cube, in the order the run takes them, with its memory, its **Method** and its new dimension order. Every cube starts as *Leaf count*. Switch a cube to *Last slot only* to have the run try every dimension in its last slot, measure each, and keep the best; the order column then says it will be measured. That takes one reorder per dimension instead of one. See [Methods](../modes/optimize-db.md#methods).
 - **Skipped cubes**: every cube the plan leaves alone, with the reason (excluded, below the minimum size, already optimized, string elements, already in the target order, and so on). See [Skip reasons](../modes/optimize-db.md#skip-reasons).
 - **Active chores**: the chores that are active right now. This is a snapshot for you to review; the run reads the live state again when it starts.
 
@@ -43,9 +43,9 @@ If no cube qualifies, the page says so and there's nothing to run.
 
 ## Run plan
 
-**Run plan** asks for confirmation, then runs the plan exactly as shown; nothing is re-planned. If you change a run setting after building the plan, the button refuses until you build it again, so what runs is always what you reviewed.
+**Run plan** asks for confirmation, then runs the plan exactly as shown; nothing is re-planned. The confirmation says how many cubes measure their last slot. The method chosen for each cube is saved into the plan file before the run starts, and a plan that has already started keeps the methods it started with. If you change a run setting after building the plan, the button refuses until you build it again, so what runs is always what you reviewed. Changing a cube's method does not need a new plan.
 
-While it runs, the **Run progress** card shows one row per cube with its status, RAM change and time taken, plus the elapsed time and how much of the time limit is left. **Stop after current cube** ends the run before the next cube; the cube being reordered always finishes, because TM1 can't safely abort a reorder. The page finds the running job on the server, so it keeps following it after a reload or from a second tab, and the sidebar's Activity Monitor takes you back to it from any page.
+While it runs, the **Run progress** card shows one row per cube with its method, status, RAM change and time taken, plus the elapsed time and how much of the time limit is left. **Stop after the current reorder** ends the run once the reorder in progress finishes, because TM1 can't safely abort a reorder. For a leaf-count cube that is the end of the cube. For a last-slot cube the sweep stops there, the cube's original order is put back, and the cube stays not started; **Resume** continues its sweep from its checkpoint. The page finds the running job on the server, so it keeps following it after a reload or from a second tab, and the sidebar's Activity Monitor takes you back to it from any page.
 
 When the run ends, the summary shows the cubes reordered and reverted and the **expected saving**. One thing to bear in mind is that this saving is visible only after a TM1 restart, because the memory a reorder frees stays with the process until then. See [After the run](../modes/optimize-db.md#after-the-run).
 

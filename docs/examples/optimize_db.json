@@ -3,6 +3,7 @@
   "time_limit_hours": 10.0,
   "order": "desc",
   "exclude_cubes": ["Staging *", "Audit Trail"],
+  "last_slot_cubes": ["Sales Plan"],
   "min_cube_mb": 50.0,
   "string_policy": "pin_last",
   "include_optimized": false,

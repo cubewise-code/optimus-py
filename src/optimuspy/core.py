@@ -571,7 +571,13 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
                            tm1_checkpoint: bool = False,
                            process_parameters: dict = None,
                            dimension_position_rules: list = None,
-                           cancel_event=None, is_v12: bool = False) -> bool:
+                           cancel_event=None, is_v12: bool = False,
+                           outcome: dict = None) -> bool:
+    """Benchmark orders for one cube; True when the run finished.
+
+    `outcome`, when given, is filled in for a caller that acts on the result
+    (Optimize DB): the original and the applied order, their RAM, and the report.
+    """
     # Stamped when the run starts, not when the module loads: the UI runs many
     # optimizations in one process, and each needs its own report file. A resumed
     # run takes the stamp of the run it continues (below), so one run keeps one
@@ -784,6 +790,14 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
                     f"unmaterialised cube costs the same in every order, so 0.00% is "
                     f"the truthful answer to a question worth nothing. Let a large "
                     f"load settle and re-run.")
+            if outcome is not None:
+                applied = best_permutation if (best_permutation and update) else original_order_result
+                outcome.update(
+                    original_order=list(initial_dimension_order),
+                    original_ram=original_order_result.ram_usage,
+                    applied_order=list(applied.dimension_order),
+                    applied_ram=applied.ram_usage,
+                    measured=len(unique_results) - 1)
             if not best_permutation:
                 tm1.cubes.update_storage_dimension_order(cube_name, initial_dimension_order)
                 logging.info(
@@ -836,6 +850,8 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
                 instance_dir = RESULT_PATH / instance_name
 
                 optimus_result.to_html(instance_dir / f"{file_base}.html", total_duration=context.elapsed)
+                if outcome is not None:
+                    outcome["report"] = f"{instance_name}/{file_base}.html"
 
                 if output.upper() == "XLSX":
                     optimus_result.to_xlsx(instance_dir / f"{file_base}.xlsx")

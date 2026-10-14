@@ -13,7 +13,7 @@ New to OptimusPy? We'd recommend starting with the [User Guide](guide/choose-a-m
 ## New
 
 - **Web UI.** Start it with `optimuspy ui`, or double-click the executable. It opens at `http://127.0.0.1:8765` with these pages: Optimize, Reports, Sync Order, Optimize DB and Settings, plus a Jobs list. See the [UI Overview](ui/overview.md).
-- **Modes.** `optimize` benchmarks orders for one cube, in one of four ways: [Greedy](modes/optimize-mode.md) (with an optional Fast mode), [Predefined](modes/predefined-orders.md) (orders you list), [Position](modes/position-optimization.md) (the best dimension for one slot) and [Dimension](modes/dimension-optimization.md) (the best slot for one dimension). Alongside it, [`set`](modes/set-mode.md) applies one order without benchmarking, [`scan`](modes/scan-mode.md) lists the cubes worth optimizing, and [`optimize-db`](modes/optimize-db.md) reorders every cube on an instance by leaf-element count within a time limit, benchmarking nothing.
+- **Modes.** `optimize` benchmarks orders for one cube, in one of four ways: [Greedy](modes/optimize-mode.md) (with an optional Fast mode), [Predefined](modes/predefined-orders.md) (orders you list), [Position](modes/position-optimization.md) (the best dimension for one slot) and [Dimension](modes/dimension-optimization.md) (the best slot for one dimension). Alongside it, [`set`](modes/set-mode.md) applies one order without benchmarking, [`scan`](modes/scan-mode.md) lists the cubes worth optimizing, and [`optimize-db`](modes/optimize-db.md) reorders every cube on an instance by leaf-element count within a time limit, benchmarking nothing except the last slot of the cubes you pick.
 - **Several views and TI processes per run.** `views` and `processes` take lists, and `process_parameters` sets parameters per process. Each runs `executions` times, and the median counts, so one slow execution doesn't skew the result. See [Multi-View / Multi-Process](advanced/multi-view-multi-process.md).
 - **The same greedy search as 1.x.** It fills the slots from the outside in, last slot first, and measures every remaining dimension at each one; Fast mode stops after the last and first slots. A run logs how many orders it will measure before it starts, and each progress line reads `Iteration k of N`. See [The Greedy Search](concepts/greedy-search.md).
 - **Dimension position rules.** `dimension_position_rules` keeps a dimension at a fixed position while the rest are tested, and `orders_to_ignore` skips orders you don't want tested. See [Dimension Position Rules](advanced/dimension-position-rules.md).
@@ -36,7 +36,7 @@ New to OptimusPy? We'd recommend starting with the [User Guide](guide/choose-a-m
 
 ## Removed
 
-- **Benchmarking every cube with one command.** In 1.x, leaving out `-c` benchmarked every cube that had the given view. 2.0.0 benchmarks one cube per config. To cover a whole instance, use `scan --output` to write a config for each candidate cube, or run `optimize-db`, which reorders every cube but benchmarks nothing.
+- **Benchmarking every cube with one command.** In 1.x, leaving out `-c` benchmarked every cube that had the given view. 2.0.0 benchmarks one cube per config. To cover a whole instance, use `scan --output` to write a config for each candidate cube, or run `optimize-db`, which reorders every cube by leaf count and measures only the last slot of the cubes you pick.
 
 ## Upgrading from 1.x
 

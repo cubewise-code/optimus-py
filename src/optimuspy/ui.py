@@ -38,8 +38,9 @@ from optimuspy.core import (
 from optimuspy.executors import OptimizationCancelled
 from optimuspy.metrics import detect_is_v12
 from optimuspy.optimize_db import (
-    PLAN_PREFIX, REPORT_PREFIX, RUN_PREFIX, find_run, list_runs, optimize_db, plan_path,
-    read_json, report_path, restore_chores_for_plan, validate_db_config, write_report
+    PLAN_PREFIX, REPORT_PREFIX, RUN_PREFIX, apply_methods, find_run, list_runs, optimize_db,
+    plan_method, plan_path, read_json, report_path, restore_chores_for_plan, validate_db_config,
+    write_json, write_report
 )
 
 # config.ini keys that carry a credential. The server never sends them to the browser.
@@ -1126,6 +1127,7 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
     OPTIMIZE_DB_OPTION_KEYS = (
         "time_limit_hours", "order", "exclude_cubes", "min_cube_mb", "string_policy",
         "include_optimized", "revert_on_regression", "disable_active_chores", "max_consecutive_failures",
+        "last_slot_cubes",
     )
 
     def _optimize_db_config(self, body: dict) -> dict:
@@ -1156,8 +1158,12 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
         instance = body.get("instance")
         password = body.get("password")
         plan_id = body.get("plan_id")
+        # The method chosen per cube on the plan table: {cube: "leaf_count" | "last_slot"}.
+        methods = body.get("methods") or {}
         if not instance or not plan_id:
             return self._send_json(400, {"error": "Missing 'instance' or 'plan_id'"})
+        if not isinstance(methods, dict):
+            return self._send_json(400, {"error": "'methods' must map cube names to a method"})
         if instance not in get_tm1_config(_config_ini_path) or Path(plan_id).name != plan_id:
             return self._send_json(400, {"error": "Unknown instance or malformed plan id"})
         # A plan that already has a run on disk was started before: running it
@@ -1170,11 +1176,25 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
             path = plan_path(plan_id, instance)
             if not path.is_file():
                 return self._send_json(404, {"error": f"No plan '{plan_id}' for instance '{instance}'"})
-            source = {"plan": read_json(path)}
+            plan = read_json(path)
+            try:
+                apply_methods(plan, methods)
+            except ValueError as e:
+                return self._send_json(400, {"error": _error_text(e)})
+            # Saved before the run starts: the plan file is what a resume and the
+            # report read, so it must say how each cube was actually run.
+            write_json(path, plan)
+            source = {"plan": plan}
         else:
             if existing.get("instance") != instance:
                 return self._send_json(400, {
                     "error": f"Plan '{plan_id}' belongs to instance '{existing.get('instance')}'"})
+            planned = ({c["cube"]: plan_method(c) for c in read_json(existing["plan_path"])["cubes"]}
+                       if methods else {})
+            if any(planned.get(cube) != method for cube, method in methods.items()):
+                return self._send_json(400, {
+                    "error": f"Plan '{plan_id}' has already started; its cubes keep the methods "
+                             f"they started with"})
             source = {"resume_plan_id": plan_id}
         connect = tm1_connector(_config_ini_path, instance, password)
 
@@ -1239,8 +1259,12 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
         instance = body.get("instance")
         password = body.get("password")
         plan_id = body.get("plan_id")
+        # The method chosen per cube on the plan table: {cube: "leaf_count" | "last_slot"}.
+        methods = body.get("methods") or {}
         if not instance or not plan_id:
             return self._send_json(400, {"error": "Missing 'instance' or 'plan_id'"})
+        if not isinstance(methods, dict):
+            return self._send_json(400, {"error": "'methods' must map cube names to a method"})
         try:
             connect = tm1_connector(_config_ini_path, instance, password)
             restored = restore_chores_for_plan(connect, plan_id)

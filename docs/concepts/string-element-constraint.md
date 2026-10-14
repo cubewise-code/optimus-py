@@ -20,7 +20,7 @@ Only the dimension in the last storage slot is locked, and only when it has stri
 
 > **Changed in 2.0.0.** Earlier versions moved *every* string-bearing dimension to the back of the proposed order, on the assumption that a cube has at most one. On a cube with a shared string-bearing dimension that is not the measure, 1.x relocated it and 2.0.0 searches it like any other dimension. This is the one case where the old and new behavior genuinely differ; the decision is recorded in the repository's ADR 0004.
 
-One thing to bear in mind is that two of OptimusPy's cheaper heuristics still follow the old rule: the **Suggested Order** on the UI's Overview tab and the [Optimize DB](../modes/optimize-db.md) pass both keep a string-bearing dimension last. They're quick guesses that never test anything, so being conservative costs them nothing. The measured greedy is the one that knows better, because it confirms each placement with a real reorder.
+One thing to bear in mind is that two of OptimusPy's cheaper heuristics still follow the old rule: the **Suggested Order** on the UI's Overview tab and the [Optimize DB](../modes/optimize-db.md) leaf-count pass both keep a string-bearing dimension last. They're quick guesses that never test anything, so being conservative costs them nothing. The measured greedy is the one that knows better, because it confirms each placement with a real reorder.
 
 ## What the server does
 

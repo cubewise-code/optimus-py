@@ -13,7 +13,7 @@ optimuspy <mode> [cube_config.json] [options]
 | `optimize` | Benchmark dimension orders (greedy / predefined / position / dimension) |
 | `set` | Apply a specific order without benchmarking |
 | `scan` | Discover candidate cubes in an instance |
-| `optimize-db` | Apply the heuristic order to every cube in an instance under a time limit |
+| `optimize-db` | Apply the leaf-count order to every cube in an instance under a time limit, or measure the last slot of the cubes named in `last_slot_cubes` |
 | `ui` | Open the web UI (takes only `--port` and `--config`) |
 
 ## Global options
@@ -80,7 +80,7 @@ optimuspy optimize-db --resume tm1srv01_2026-09-18_22-00-00 --instance tm1srv01
 optimuspy optimize-db --restore-chores tm1srv01_2026-09-18_22-00-00 --instance tm1srv01
 ```
 
-Instance-scoped: the instructions JSON is **not** the cube config schema. Nothing is benchmarked; every cube gets the cardinality heuristic applied once, one cube at a time, until the time limit is reached.
+Instance-scoped: the instructions JSON is **not** the cube config schema. Every cube gets the cardinality heuristic applied once, one cube at a time, until the time limit is reached, and nothing is benchmarked, except the cubes named in `last_slot_cubes`, which measure every dimension in their last slot and keep the best. See [Methods](../modes/optimize-db.md#methods).
 
 | Option | Description |
 |---|---|
