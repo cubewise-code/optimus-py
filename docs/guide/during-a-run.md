@@ -26,6 +26,6 @@ The full pipeline, including how the cache and VMM/VMT are handled, is on [How I
 
 [Open the diagram full screen](diagrams/greedy-and-fast.html){ target=_blank }
 
-Greedy fills slots from the outside in; Fast starts sorted and fixes the close calls. The details are on [Optimize Mode](../modes/optimize-mode.md) and [Cardinality-Aware Greedy](../concepts/cardinality-aware-greedy.md).
+Greedy fills slots from the outside in, measuring every remaining dimension at each one; Fast stops after the last and first slots. The details are on [Optimize Mode](../modes/optimize-mode.md) and [The Greedy Search](../concepts/greedy-search.md).
 
 **Next:** [Reading the Result →](reading-the-result.md)

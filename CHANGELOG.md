@@ -51,7 +51,7 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
 - **Web UI.** Start it with `optimuspy ui`, or double-click the executable. It opens at `http://127.0.0.1:8765` and has these pages: Optimize, Reports, Sync Order, Optimize DB and Settings, plus a Jobs list. See [UI Overview](docs/ui/overview.md).
 - **Modes.**
   - `optimize` benchmarks orders for one cube, in one of these modes:
-    - Greedy (with an optional Fast mode);
+    - Greedy: fills the slots from the outside in, last slot first, and measures every remaining dimension at each one, as 1.x did. Fast mode stops after the last and first slots. The run logs how many orders it will measure before it starts. See [The Greedy Search](docs/concepts/greedy-search.md);
     - [Predefined](docs/modes/predefined-orders.md): orders you list;
     - [Position](docs/modes/position-optimization.md): the best dimension for one slot;
     - [Dimension](docs/modes/dimension-optimization.md): the best slot for one dimension.

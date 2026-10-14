@@ -1,5 +1,7 @@
 # Cardinality-pruning in the greedy optimizer is keyed to the optimization metric
 
+> **Superseded by [ADR-0005](0005-greedy-measures-every-candidate.md).** Leaf-count pruning was withdrawn: on a real customer cube it kept the dense dimension out of the last slot and left most of the saving unfound. The greedy now measures every candidate at every slot it visits. This record is kept as it was decided.
+
 ## Context
 
 The greedy optimizer's cost is dominated by physical reorders (`update_storage_dimension_order`), and reorders that move a high-**cardinality** dimension are the most expensive. To cut that cost, the size-aware greedy uses each dimension's **cardinality** (leaf-element count — a cheap, reorder-free signal) to *prune* which dimensions are test-reordered into each position, and to *pin* confidently-placed dimensions out of the search entirely.

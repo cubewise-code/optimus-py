@@ -25,16 +25,16 @@ RAM is read from the TM1py Metrics service (`cube_memory_used`) once, for the or
 
 Steps 2 and 7 are wrapped in a `try/finally`, so even if the job fails or is cancelled, VMM/VMT are always restored, and the original dimension order is restored **best-effort** (if the connection has already dropped this is a no-op; the checkpoint retains the original order, so a resume restores it instead).
 
-## The cardinality-aware greedy (two folds)
+## The greedy search
 
-OptimusPy's greedy is **cardinality-aware**: it uses each dimension's leaf-element count and a **leaf-count tolerance ratio (τ)** to skip the storage orders that theory condemns while still measuring the genuinely ambiguous ones. The `fast` flag selects one of two folds:
+The greedy places one storage slot at a time, from the outside in: the last slot, the first, the second-to-last, the second, and so on to the midpoint. At each slot it measures every dimension not yet placed and keeps the winner. The back half is ranked by RAM; the front half by query time when `views` are set, by process time when only `processes` are set, and by RAM otherwise.
 
-- **Thorough (`fast: false`, default)** walks positions outside-in (`N-1, 0, N-2, 1, …`) and, at each, tests only the **τ-frontier** of the unplaced dimensions. A dimension that dominates all others (e.g., a 50,000-leaf dim) is *pinned* to the back in one reorder rather than tested everywhere.
-- **Fast (`fast: true`)** seeds from a cardinality-ascending order over the movable dimensions and then refines only the undecided dimensions across their τ-allowed positions (at most 2 passes).
+- **Thorough (`fast: false`, default)** visits every slot up to the midpoint.
+- **Fast (`fast: true`)** visits only the last free slot and the first free slot, where most of the saving is.
 
-Pruning is keyed to the ranking metric, so **adding a view unlocks front-half pruning**. Uniform cubes (nothing decided) degrade gracefully to a full search.
+Leaf counts do not steer the search. The dimension that belongs last is the densest one, and leaf count measures size, not density.
 
-→ Full explanation: [Cardinality-Aware Greedy Optimization](cardinality-aware-greedy.md).
+→ Full explanation: [The Greedy Search](greedy-search.md).
 
 ## How the best order is chosen
 

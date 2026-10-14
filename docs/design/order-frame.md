@@ -1,6 +1,6 @@
 # The Order Frame
 
-The order frame is the single authority on which dimension orders OptimusPy is allowed to ask a cube for. Every order source consults it (both greedy folds, `predefined_orders`, position optimization, dimension optimization and set mode), and no code enforces the *server* constraint anywhere else. The one user preference enforced outside it is `dimensions_to_exclude` in position optimization, where the executor simply leaves excluded dimensions out of its candidate list.
+The order frame is the single authority on which dimension orders OptimusPy is allowed to ask a cube for. Every order source consults it (the greedy, `predefined_orders`, position optimization, dimension optimization and set mode), and no code enforces the *server* constraint anywhere else. The one user preference enforced outside it is `dimensions_to_exclude` in position optimization, where the executor simply leaves excluded dimensions out of its candidate list.
 
 It is a pure module (`src/optimuspy/order_frame.py`): no `TM1Service`, no I/O, no logging of its own. It returns a verdict and a reason; the caller decides how to report it. That purity is what makes admissibility fully testable offline.
 
@@ -24,7 +24,7 @@ Two things, and nothing else is required:
 - the cube's storage order;
 - one boolean: whether the last slot is locked.
 
-The greedy folds additionally supply the user preferences (`dimensions_to_exclude`, `orders_to_ignore`, `dimension_position_rules`). A caller that supplies only the first two gets the server constraint alone, which is exactly what `predefined_orders` and set mode need.
+The greedy additionally supplies the user preferences (`dimensions_to_exclude`, `orders_to_ignore`, `dimension_position_rules`). A caller that supplies only the first two gets the server constraint alone, which is exactly what `predefined_orders` and set mode need.
 
 The frame reads the run's `initial_dimension_order`, not a fresh server call at the construction site. On resume that variable comes from the checkpoint before the executors are built, so it carries the true original order rather than a crash-reordered one; see [Checkpoint Format and Recovery](checkpoint-resume.md).
 
@@ -36,7 +36,7 @@ Admissibility is not one verdict. It is three, and callers handle them different
 |---|---|---|---|
 | **1, well-formedness** | The candidate is not an order at all: wrong length, unknown dimension name, a duplicate. Almost always a typo. | Every order source | **Fails loudly.** There is nothing coherent to be courteous about, and a silent no-op is the worst available outcome. |
 | **2, the server constraint** | The locked slot. | Every order source | **Skipped with a logged reason**, processing continues. The user asked for something legitimate that TM1 will refuse anyway. In the iterating modes the reason is logged at DEBUG, like tier 3; in set mode, where the skip is the whole outcome, it is logged at WARNING. |
-| **3, user preference** | Position rules, excluded dimensions, ignored orders. | The greedy folds (and `dimensions_to_exclude` in position optimization) | **Skipped, logged at DEBUG only.** |
+| **3, user preference** | Position rules, excluded dimensions, ignored orders. | The greedy (and `dimensions_to_exclude` in position optimization) | **Skipped, logged at DEBUG only.** |
 
 Tier 2 is checked before tier 3, so a refusal always names the strongest reason. Each refusal carries a greppable code (`not_a_permutation`, `locked_slot`, `ignored_order`, `position_rule`) alongside the human-readable sentence.
 
@@ -71,7 +71,7 @@ Three different things hold a dimension in place. The frame distinguishes them b
 
 Everything else is movable, and only movable dimensions are swept. The slots held by the three above are **reserved**: never a sweep target.
 
-Cardinality pinning is a separate idea and lives in the greedy, not the frame: a dimension whose leaf count is ≥ τ× every other's has only one candidate slot left and is placed without being tested. That is the degenerate case of the [leaf-count tolerance](../concepts/cardinality-aware-greedy.md), not a rule about admissibility.
+Leaf counts play no part in this. The greedy measures every movable dimension at every slot it searches; see [The Greedy Search](../concepts/greedy-search.md).
 
 ## Pre-application
 

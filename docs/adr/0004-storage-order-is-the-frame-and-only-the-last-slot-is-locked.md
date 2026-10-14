@@ -1,5 +1,7 @@
 # The storage order is the frame, and the last slot is the only thing locked in it
 
+> **Note, [ADR-0005](0005-greedy-measures-every-candidate.md).** τ-pruning and the two greedy folds were later removed. The front/back split still comes from the full storage order (now `search.midpoint`), and it still decides which metric ranks each slot. Where this record says "both greedy folds", read "the greedy".
+
 ## Context
 
 A TM1 cube has two dimension orders. `get_dimension_names()` returns the **presentation** order — the build order, shown in Architect, conventionally ending with the measure dimension for readability. `get_storage_dimension_order()` returns the **storage** order — what the server physically stores the cube in, what `update_storage_dimension_order` writes, and the only one that determines RAM and query behaviour. Only one of them can be the frame of reference for an optimizer, and reasoning about a cube in the presentation order while the server enforces against the storage order produces a mismatch that is invisible in the results: the engine permutes one list and the server answers about another.

@@ -7,7 +7,7 @@ const GROUPS = [
     title: 'Find the best order for one cube',
     modes: [
       { icon: Sparkles, name: 'Greedy', link: DOCS.optimize,
-        body: 'Searches for the best order from scratch. Fast mode starts from a suggested order and refines it.' },
+        body: 'Searches for the best order from scratch, one slot at a time from the outside in. Fast mode stops after the last and first slots.' },
       { icon: ListChecks, name: 'Predefined', link: DOCS.predefined,
         body: 'Tests only the orders you list, head to head.' },
       { icon: Crosshair, name: 'Position', link: DOCS.position,

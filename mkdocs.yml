@@ -160,7 +160,7 @@ nav:
       - Optimize DB Mode: modes/optimize-db.md
   - Concepts:
       - How It Works: concepts/how-it-works.md
-      - Cardinality-Aware Greedy: concepts/cardinality-aware-greedy.md
+      - The Greedy Search: concepts/greedy-search.md
       - RAM vs Query Tradeoff: concepts/ram-vs-query-tradeoff.md
       - The Locked Slot: concepts/string-element-constraint.md
       - VMM/VMT Handling: concepts/vmm-vmt-handling.md

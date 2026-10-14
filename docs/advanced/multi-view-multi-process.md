@@ -71,7 +71,7 @@ Parameter names and values are passed verbatim to TM1, so a parameter the proces
 }
 ```
 
-Per-iteration cost: `executions × (n_views + n_processes)`. With the example above: `5 × (2 + 1) = 15` operations per iteration, on top of the reorder itself. The number of greedy iterations depends on the cube's cardinality profile (the more dimensions of similar size, the more orderings get tested), so a good habit is to look at how long the first few iterations take and extrapolate from there.
+Per-iteration cost: `executions × (n_views + n_processes)`. With the example above: `5 × (2 + 1) = 15` operations per iteration, on top of the reorder itself. The run logs how many orders it will measure before it starts (65 for a 12-dimension cube, 21 in Fast mode), so multiply that by how long the first few iterations take to estimate the run.
 
 ## Choosing executions
 

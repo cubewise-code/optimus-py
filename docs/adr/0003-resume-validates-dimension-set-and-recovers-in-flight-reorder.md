@@ -1,5 +1,7 @@
 # Checkpoint resume validates the dimension set and recovers the in-flight reorder
 
+> **Note, [ADR-0005](0005-greedy-measures-every-candidate.md).** The greedy is no longer split into Fold A and Fold B. `MainExecutor` runs one outside-in search, and its checkpoint state is `greedy_state`. The resume machinery described here is unchanged.
+
 ## Context
 
 Checkpoints exist so an interrupted optimization — a crash, a dropped TM1 connection, or `Ctrl+C` — can continue without re-running hours of benchmarking. Resume validated a checkpoint by requiring the cube's **current** storage dimension order to *exactly equal* the `initial_dimension_order` captured when the run started.

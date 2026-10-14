@@ -1,78 +1,63 @@
-# Cardinality-Aware Greedy Optimization
+# The Greedy Search
 
-OptimusPy's default optimizer is a **cardinality-aware greedy**. It uses each dimension's leaf-element count to rule out the storage orders that leaf-count theory condemns by a wide margin (so it neither pays their expensive reorders nor wastes iterations on them), while still measuring the orders that are genuinely ambiguous. Measurement stays the arbiter wherever theory is uncertain.
+OptimusPy's default optimizer is an **outside-in greedy**. It places one storage slot at a time, starting at the ends of the order and working toward the middle, and at every slot it measures every dimension that has not been placed yet. Measurement decides every placement. Leaf counts do not.
 
-## The problem it solves
+## The walk
 
-Benchmarking a dimension order means physically reordering the cube on the server (`update_storage_dimension_order`) and measuring the result. Two costs hurt on a large, wide cube:
+Slots are visited in this order: the last slot, the first slot, the second-to-last, the second, and so on, stopping at the midpoint of the cube's full storage order. On a 6-dimension cube the walk is slot 6, slot 1, slot 5, slot 2.
 
-- **Expensive reorders.** A reorder that moves a very high-cardinality dimension (say one with 50,000 leaves) is dramatically more expensive than one that moves a small dimension.
-- **Reorder count.** A cardinality-blind greedy tests roughly `N × (N-1)` orders (210 reorders for a 15-dimension cube), and it will happily test a 50,000-leaf dimension in front positions where theory already says it doesn't belong.
+At each slot:
 
-A cardinality-aware greedy spends its reorders only where they can change the answer.
+1. Every dimension not yet placed is swapped into the slot, one at a time, and measured with a real reorder.
+2. The dimension already in the slot is not re-measured. The order the search is standing on is its result.
+3. The slot keeps the winner, that dimension is taken out of the pool, and the search moves to the next slot.
 
-## Cardinality: the cheap signal
+The ends come first because they matter most. The last slot holds the dimension TM1 indexes deepest, and choosing it well is usually the biggest single saving. The slots in between refine the result.
 
-**Cardinality** is a dimension's number of leaf-level elements. It's cheap to read (no reorder required) and OptimusPy already collects it. It is *not* the same as RAM: a high-cardinality dimension is not necessarily a large memory contributor, because **density/sparsity** matters more, which is exactly why placement is still confirmed by measurement.
+## Which metric ranks a slot
 
-The theoretical RAM-optimal storage order runs cardinality **small → large** and density **dense → sparse**, front → back (small-and-dense first, large-and-sparse last). Cardinality is known cheaply; density is not. So cardinality is treated as a *proxy*: trustworthy when two dimensions are far apart, untrustworthy when they are close (density can flip a near-cardinality pair).
+| Slot | Ranked by |
+|---|---|
+| Back half (after the midpoint) | RAM, always |
+| Front half, with `views` | Query time |
+| Front half, with `processes` and no views | Process time |
+| Front half, RAM only | RAM |
 
-## Leaf-count tolerance (τ)
+The midpoint is half the cube's full dimension count. Excluding a dimension or locking the last slot does not move it, so a slot is always ranked by the same metric.
 
-A single **tolerance ratio τ** turns that proxy into a pruning rule over each pair of dimensions X and Y:
+## Fast mode
 
-- **Decided.** If `leaf(X) / leaf(Y) ≥ τ`, only orders with the larger dimension X *after* the smaller Y are ever tested. The reverse is theory-condemned and skipped (larger ⇒ sparser ⇒ later).
-- **Undecided.** If X and Y are within τ of each other, *both* relative orderings are tested. Measurement, our only view of density, picks the winner.
+`"fast": true` (in the UI, **Fast mode (last and first slot only)**) runs the same walk but stops after its first two slots: the last free slot and the first free slot. Those two slots hold most of the saving, at a fraction of the reorders.
 
-Three properties make this safe:
+## How many reorders
 
-- **No contradictions.** The "decided-after" relation is a strict partial order (antisymmetric, and transitive for τ > 1), so it can never produce a contradictory cycle.
-- **Pinning is emergent.** A 50,000-leaf dimension dominates every other by far more than τ, so at the back-most open position it is the *only* candidate: it is placed once and never test-reordered elsewhere. "Pinning the big dimension to the back" falls straight out of τ; it is not a special case.
-- **Graceful degradation.** If every dimension is within τ of its neighbor, nothing is decided and the search degrades to a full exhaustive walk. Uniform cubes are unaffected by construction: there is no cardinality signal to act on, so none is used.
+A cube with *n* dimensions, none of them held in place, measures *n − 1* orders at the first slot, *n − 2* at the second, and so on.
 
-## Pruning is keyed to the ranking metric
-
-Cardinality predicts *some* of what OptimusPy optimizes for, but not all of it. Pruning is therefore applied only where the ranking metric is something cardinality can predict (the reasoning is recorded in the repository's ADR 0002).
-
-A grounding fact: the greedy's **back-half positions are always ranked by RAM**, regardless of config. Only the front half's ranking changes.
-
-| Position ranking | When | τ applied |
+| Dimensions (none locked, excluded or pinned) | Fast | Thorough |
 |---|---|---|
-| **RAM** | all back-half positions; every position on a RAM-only cube | full strength (`τ_ram`), a strong prior |
-| **Query time** | front-half positions when `views` are set | looser (`τ_query > τ_ram`), a weaker prior, so more neighbors stay in play and measurement decides |
-| **Process time** | front-half positions when only `processes` are set | **not pruned**, because cardinality cannot predict process duration, so the search runs in full |
+| 6 | 9 | 14 |
+| 8 | 13 | 27 |
+| 12 | 21 | 65 |
 
-A process-only cube still prunes and pins its RAM-ranked back half, because that half is optimized for RAM regardless. The practical consequence is that **adding a view unlocks front-half pruning**: it's the user-facing lever for making a slow process-only cube fast.
+The run logs the slots it will visit and the number of orders it will measure before it starts, and each progress line reads `Iteration k of N`. A locked, excluded or pinned dimension takes its slot and itself out of the search, so the count drops. An order listed in `orders_to_ignore` is skipped, so a run can finish below N. On a cube where one reorder takes twenty minutes, a 12-dimension thorough run is a day's work. Run Fast first if time is short.
 
-## The two folds
+## Why every dimension is measured
 
-Both are selected by the `fast` flag, and both reuse the same primitive: sweep a set of candidates, measure, lock the best, continue.
+Leaf count measures a dimension's size, not its density. The dimension that belongs last is the densest one, the one with data in almost every cell, and it can have very few leaves. Months is the classic case: twelve to a few dozen leaves, filled for every product and plant.
 
-### Thorough: `fast: false` (default)
+An earlier 2.0 build tried to save reorders by testing only the dimensions with the largest leaf counts in the last slot. On a production planning cube it never tried the months dimension there. That build found 2% to 31% savings on the cube's instances. Putting months last, the order a full search finds, saved 74% to 78% on every one. The search now measures every candidate, as 1.x did. The decision is recorded in the repository's ADR 0005.
 
-Walks position indices outside-in (`N-1, 0, N-2, 1, …`, stopping at the middle). At each target position it tests only the **τ-frontier** of the still-unplaced dimensions:
+Leaf counts are still used where nothing is measured: scan's suggested order, and [Optimize DB](../modes/optimize-db.md), which applies a leaf-count order to every cube in one pass.
 
-- at a back-most open position, the dimensions within τ of the current maximum cardinality;
-- at a front-most open position, those within τ of the current minimum.
+## What the search never overrides
 
-It locks the measured winner, recomputes the frontier, and continues. Undecided clusters are measured in full; well-separated dimensions collapse to a single candidate (pinned). The iteration count ranges from about 1 for a pinned dimension up to `≈ N²` only where many dimensions are genuinely near-tied, which is unavoidable, because density is unknown there.
+- **The locked slot.** If the dimension in the last storage position has string elements, it never moves and its slot is not searched, see [The Locked Slot](string-element-constraint.md). The walk passes over it: the first slot comes first, then the second-to-last.
+- **Excluded dimensions** (`dimensions_to_exclude`) stay where they are, and their slots are not searched.
+- **Position rules** ([`dimension_position_rules`](../advanced/dimension-position-rules.md)) seat their dimensions before the search starts. If that changes the order, the seated order is measured first and the search starts from it. Their slots are not searched.
+- **Ignored orders** (`orders_to_ignore`) are skipped and never measured.
 
-### Fast: `fast: true`
+## The cost model
 
-Seed-and-refine, aimed at cutting the reorder *count*:
+The RAM baseline is read once, for the original order. Every other order's RAM is derived from the `%` change the server returns for its reorder, so every RAM figure in the report comes from a real reorder.
 
-1. **Seed** from a cardinality-ascending order over the movable dimensions and apply it, in one reorder. The locked slot, excluded dimensions and dimensions pinned by a position rule stay where they are; everything else is sorted by leaf count. A numeric measure is *not* special-cased: it is placed by cardinality like any other dimension (a small measure belongs at the *front* for RAM, because the last slot is best used by the largest dense dimension), and neither is a string-bearing dimension that isn't in the locked slot.
-2. **Coordinate-descent refinement.** For each *undecided* dimension (one with a within-τ neighbor), find its best position among only its **τ-allowed positions**, the contiguous span between the dimensions that must sit after it and those that must sit before it. Both the *accept metric* and the *τ used to prune that span* are chosen per dimension by its region (RAM on the back half, query or process on the front), exactly as in the [ranking table](#pruning-is-keyed-to-the-ranking-metric) above, so a query-improving move that would regress RAM at the back is rejected. Decided and pinned dimensions are skipped. Refinement runs largest-cardinality-first, because a larger dimension moves RAM more.
-3. **Iterate to stable**, capped at two passes, stopping early if a pass improves nothing.
-
-Because it seeds from a good order and only refines the genuinely undecided dimensions, the fast fold is both quicker and higher quality than a cardinality-blind "test the outer positions only" mode.
-
-## What τ never overrides
-
-- **Manual constraints win.** `dimensions_to_exclude` (keep a dimension fixed) and [`dimension_position_rules`](../advanced/dimension-position-rules.md) are hard constraints layered on top; τ-pruning operates only within the freedom they leave. Excluded dimensions are never moved and nothing is placed on top of them.
-- **The locked slot stays put.** If the dimension in the cube's *last storage position* has string elements, that position is locked (TM1's single hard storage-order rule: `CellPutS` and string writes target the last dimension), see [The Locked Slot](string-element-constraint.md). τ never proposes a swap that would move that dimension, and no dimension is ever swept *into* its slot (or an excluded dimension's). A numeric measure carries no such constraint and is free to sit wherever cardinality places it, and so is a string-bearing dimension that is *not* last, which is placed by cardinality like any other.
-- **The cost model stays honest.** The RAM baseline is read once (the original order); every other order's RAM is *derived* from the `%` change that each reorder returns. Every RAM figure therefore comes from a real reorder. Pinning saves the *alternatives*: a pinned dimension that isn't already in its slot is still placed by a real reorder, and one that's already there costs nothing.
-
-## Tuning
-
-τ is an internal constant, not user-exposed, because the graceful-degradation behavior and the manual constraints already cover the escape cases. The values, validated against the sample cubes, are `τ_ram = 4×`, `τ_query = 10×`, and a two-pass cap for the fast fold. Standalone [Position](../modes/position-optimization.md) and [Dimension](../modes/dimension-optimization.md) optimization remain exhaustive; τ-pruning is used only by the greedy folds.
+[Position](../modes/position-optimization.md) and [Dimension](../modes/dimension-optimization.md) optimization search a single slot or a single dimension in full, the same way.
