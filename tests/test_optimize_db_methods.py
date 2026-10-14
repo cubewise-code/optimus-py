@@ -73,6 +73,35 @@ def test_a_plan_written_before_methods_reorders_by_leaf_count():
     assert odb.plan_method({"cube": "Sales", "target_order": ["A"]}) == "leaf_count"
 
 
+# --- the call into the single-cube optimizer ------------------------------------
+
+@pytest.mark.parametrize("locked, slot", [(False, 3), (True, 2)])
+def test_the_optimizer_is_pointed_at_the_last_free_slot(monkeypatch, locked, slot):
+    # `optimize_position` is 1-based; a 0-based index here measured the slot
+    # before the last on a live server.
+    order = ["A", "B", "C", "M"]
+    seen = {}
+
+    class Cubes:
+        def get_storage_dimension_order(self, cube_name):
+            return list(order)
+
+    class Tm1:
+        cubes = Cubes()
+
+    def fake_optimize(tm1, cube_name, instance, *args, **kwargs):
+        seen.update(kwargs)
+        kwargs["outcome"].update(applied_order=list(order))
+        return True
+
+    monkeypatch.setattr(odb.core, "is_dimension_only_numeric", lambda tm1, dim: not locked)
+    monkeypatch.setattr(odb.core, "_execute_optimize_mode", fake_optimize)
+
+    assert odb._optimize_last_slot(Tm1(), "srv", "Sales", None, False) is not None
+    assert odb.core.resolve_position(seen["optimize_position"], len(order)) == slot
+    assert seen["cube_config"]["optimize_position"] == seen["optimize_position"]
+
+
 # --- running -------------------------------------------------------------------
 
 def _last_slot_plan(server, cubes=("Medium",)):

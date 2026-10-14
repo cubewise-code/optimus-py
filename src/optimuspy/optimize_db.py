@@ -795,9 +795,9 @@ def _optimize_last_slot(tm1, instance: str, cube: str, cancel_event, is_v12: boo
     """
     order = list(tm1.cubes.get_storage_dimension_order(cube_name=cube))
     # A last dimension with string elements never moves, so the slot measured is
-    # the one before it.
+    # the one before it. `optimize_position` is 1-based, as in a cube config.
     locked = not core.is_dimension_only_numeric(tm1, order[-1])
-    position = len(order) - (2 if locked else 1)
+    position = len(order) - (1 if locked else 0)
     cube_config = {"instance": instance, "cube": cube, "views": [], "executions": 1,
                    "output": "csv", "update": True, "optimize_position": position,
                    "source": "optimize-db"}
