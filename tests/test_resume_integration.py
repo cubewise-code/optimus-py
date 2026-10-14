@@ -4,7 +4,7 @@ Drives real executors + a real CheckpointManager (local file) + real
 _evaluate_permutation against a FakeTM1 that models per-order RAM and can drop
 the connection mid-reorder. Mirrors core's resume orchestration (validate by
 set, source the original from the checkpoint, run ResumeRecovery for the
-in-flight order) and proves the shared-layer fix covers greedy Fold A and a
+in-flight order) and proves the shared-layer fix covers the greedy search and a
 targeted mode (predefined), plus the landed recovery branch and original-order
 preservation.
 """
@@ -190,25 +190,24 @@ def test_predefined_resume_after_drop_completes_and_recovers(tmp_path):
 
 
 # --------------------------------------------------------------------------- #
-# Greedy Fold A — drop mid-fold, then resume; best is unchanged.
+# Greedy search — drop mid-search, then resume; best is unchanged.
 # --------------------------------------------------------------------------- #
-def _fold_a_factory(dims, card, last_slot_locked):
+def _greedy_factory(dims, last_slot_locked):
     frame = OrderFrame(dims, last_slot_locked)
 
     def factory(context, tm1, mgr):
         return MainExecutor(
             tm1, "C", [], [], dims, 1, last_slot_locked, context, fast=False,
-            checkpoint_manager=mgr, cardinality=card, order_frame=frame)
+            checkpoint_manager=mgr, order_frame=frame)
     return factory
 
 
-def test_fold_a_resume_after_drop_matches_uninterrupted_best(tmp_path):
+def test_greedy_resume_after_drop_matches_uninterrupted_best(tmp_path):
     dims = ["A", "B", "C", "D", "E", "M"]
-    card = {"A": 100, "B": 105, "C": 110, "D": 115, "E": 120, "M": 3}
     locked = True  # the storage-last dim "M" has string elements
     ram_of = (lambda o: 100.0 - 10 * list(o).index("E")
               + list(o).index("M") + 0.5 * list(o).index("A"))
-    factory = _fold_a_factory(dims, card, locked)
+    factory = _greedy_factory(dims, locked)
 
     # 1) uninterrupted reference
     ctx = ExecutionContext()
@@ -220,7 +219,7 @@ def test_fold_a_resume_after_drop_matches_uninterrupted_best(tmp_path):
     ref_results = ex.execute()
     ref_best = _best_order(original, ref_results)
 
-    # 2) fresh run that drops partway through the fold
+    # 2) fresh run that drops partway through the search
     mgr2 = CheckpointManager("C", "inst", "fp", tmp_path / "run")
     tm1b = FakeTM1(ram_of, dims, fail_after=5)  # a handful of reorders in, then drop
     ctx2 = ExecutionContext()
@@ -229,7 +228,7 @@ def test_fold_a_resume_after_drop_matches_uninterrupted_best(tmp_path):
     ex2.set_resume_context(dims, original2, [], resuming=False)
     with pytest.raises(RuntimeError):
         ex2.execute()
-    dropped_order = list(tm1b._order)  # cube left reordered by the fold
+    dropped_order = list(tm1b._order)  # cube left reordered by the search
 
     # 3) resume on a fresh connection; validate accepts the reordered cube (same set)
     tm1c = FakeTM1(ram_of, dropped_order, fail_after=None)

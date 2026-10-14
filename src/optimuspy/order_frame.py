@@ -12,13 +12,13 @@ the order source. This is a *server* constraint — TM1 rejects the write regard
 locked dimension is skipped with a logged reason. Nothing is ever relocated.
 
 Everything else the frame knows — position rules, excluded dimensions, ignored
-orders — is a *user preference*, supplied by the greedy folds only. A TM1 developer
+orders — is a *user preference*, supplied by the greedy search only. A TM1 developer
 who names an explicit order in `predefined_orders` or set mode gets it, subject to
 the lock alone.
 
 Pure: no `TM1Service`, no I/O, and no logging of its own — `admits` returns the
 reason and the caller decides how to report it. Offline-testable in the same
-category as `tau.py`.
+category as `search.py`.
 
 See CONTEXT.md ("Order admissibility") and docs/concepts/string-element-constraint.md.
 """
@@ -50,7 +50,7 @@ class OrderFrame:
     """A cube's storage order plus the rules that decide which orders are allowed.
 
     Non-greedy callers construct it with the storage order and the lock alone, so
-    only the server constraint applies. The greedy folds additionally supply the
+    only the server constraint applies. The greedy search additionally supplies the
     user preferences.
     """
 

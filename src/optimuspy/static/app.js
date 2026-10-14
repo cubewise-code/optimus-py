@@ -1694,7 +1694,7 @@ const OptimusPy = (function () {
       howTo.appendChild(el("div", { style: "margin-top:14px;padding-top:14px;border-top:1px solid var(--border-secondary)" }));
       howTo.appendChild(el("div", { style: "font-weight:600;font-size:13px;color:var(--text-primary);margin-bottom:8px" }, "Optimization Modes"));
       const modes = [
-        { badge: "Greedy", color: "var(--accent)", desc: "Cardinality-aware outside-in search: uses leaf-count tolerance (τ) to test only the orderings measurement must decide and pins clearly-placed dimensions. Toggle Fast mode for the seed-and-refine fold. Best general-purpose approach." },
+        { badge: "Greedy", color: "var(--accent)", desc: "Outside-in search: fills the last slot, then the first, then works inward, measuring every remaining dimension at each slot. Toggle Fast mode to stop after the last and first slots, where the big savings are. Best general-purpose approach." },
         { badge: "Predefined", color: "var(--warning)", desc: "Benchmarks specific dimension orders you define. Use when you have candidate orders from manual analysis." },
         { badge: "Position", color: "var(--success)", desc: "Tests all dimensions for a single position (e.g., find the best last dimension). Quick, targeted optimization." },
         { badge: "Dimension", color: "var(--error)", desc: "Tests all positions for a single dimension. Useful when you know which dimension to focus on." },
@@ -2392,10 +2392,10 @@ const OptimusPy = (function () {
       const fastLabel = el("label", { className: "checkbox-label" });
       const fastCb = el("input", { type: "checkbox" });
       fastLabel.appendChild(fastCb);
-      fastLabel.appendChild(document.createTextNode("Fast mode (seed & refine)"));
-      fastLabel.title = "Seed from the cardinality-suggested order, then refine only " +
-        "the dimensions leaf-count theory leaves ambiguous. Faster than a full search; " +
-        "unchecked runs the thorough search.";
+      fastLabel.appendChild(document.createTextNode("Fast mode (last and first slot only)"));
+      fastLabel.title = "Measure every dimension in the last slot, then in the first slot, " +
+        "and stop. Those two slots hold most of the saving; unchecked also works " +
+        "inward through the slots in between.";
       toggleRow.appendChild(fastLabel);
 
       const autoApplyLabel = el("label", { className: "checkbox-label" });

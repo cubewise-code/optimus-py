@@ -1,53 +1,50 @@
 """The front/back split is a property of the cube, not of the search.
 
-ADR-0002 keys pruning strength to the metric that owns a position: the back half
-is RAM-ranked and pruned at full τ, the front half is query-ranked (views) or
-left unpruned (processes). `mid` is what decides which half a position is in, so
-deriving it from anything narrower than the full storage order makes a
-position's *metric* depend on how much of the cube a given run happens to be
-searching.
+The back half of the order is RAM-ranked; the front half is query-ranked
+(views) or process-ranked (processes). `mid` is what decides which half a
+position is in, so deriving it from anything narrower than the full storage
+order makes a position's *metric* depend on how much of the cube a given run
+happens to be searching.
 
 These tests assert on the ranking of **every** position, not only the ones a run
-sweeps. Fold A skips a position whose occupant has drifted out of the movable
-pool, and that skipping can mask a moved split — a position silently not
+sweeps. The search passes over slots held by an excluded, pinned or locked
+dimension, and that skipping can mask a moved split — a position silently not
 searched looks the same as one correctly ranked. The full vector cannot be
 masked that way.
 
 Offline, no fake: the measure_orders evaluator stands in for the server, and what is
 under test is arithmetic over positions.
 """
-import pytest
 
-from optimuspy import tau
+from optimuspy import search
 from tests.conftest import install_offline_measurements
-from tests.test_fold_a import make_main_executor
+from tests.test_greedy import make_main_executor
 
 DIMS = ["D0", "D1", "D2", "D3", "D4", "M"]
-CARD = {"D0": 100, "D1": 400, "D2": 2000, "D3": 9000, "D4": 40000, "M": 3}
 
 # Captured before any monkeypatching, so a helper called twice in one test does
 # not end up delegating to the previous test double.
-_RANKING = tau.ranking_for_position
+_RANKING = search.ranking_for_position
 
 
 def _run(monkeypatch, *, fast=False, **frame_kwargs):
-    """Run a fold and return the set of `mid` values it ranked positions against."""
+    """Run the search and return the set of `mid` values it ranked positions against."""
     mids = set()
 
     def recording(target_position, mid, has_views, has_processes):
         mids.add(mid)
         return _RANKING(target_position, mid, has_views, has_processes)
 
-    monkeypatch.setattr(tau, "ranking_for_position", recording)
+    monkeypatch.setattr(search, "ranking_for_position", recording)
 
-    ex = make_main_executor(DIMS, CARD, fast=fast, view_names=["V"], **frame_kwargs)
+    ex = make_main_executor(DIMS, fast=fast, view_names=["V"], **frame_kwargs)
     log = []
     install_offline_measurements(
         ex, lambda o: 100.0 - len(log) * 0.1, log,
         query_of=lambda o: 1.0 + len(log) * 0.01)
     ex.context.set_initial_ram(100.0)
     ex.execute()
-    assert mids, "the fold ranked no position — the test would prove nothing"
+    assert mids, "the search ranked no position — the test would prove nothing"
     return mids
 
 
@@ -88,18 +85,9 @@ def test_locking_the_last_slot_does_not_move_the_front_back_split(monkeypatch):
     assert locked == baseline
 
 
-def test_both_folds_read_the_same_split(monkeypatch):
-    # One derivation, two callers. Fold A and Fold B must agree on where the
-    # cube's back half starts, or a dim refined by B is judged by a different
-    # metric than the one that governed the position A placed it in.
-    fold_a = _run(monkeypatch, fast=False, last_slot_locked=True, exclude=["D2"])
-    fold_b = _run(monkeypatch, fast=True, last_slot_locked=True, exclude=["D2"])
-    assert fold_a == fold_b == {tau.midpoint(len(DIMS))}
-
-
-# --- the derivation itself -------------------------------------------------
-
-@pytest.mark.parametrize("count, expected", [(0, 0), (1, 0), (2, 1), (5, 2),
-                                             (6, 3), (7, 3), (8, 4)])
-def test_midpoint_halves_the_dimension_count(count, expected):
-    assert tau.midpoint(count) == expected
+def test_fast_and_thorough_read_the_same_split(monkeypatch):
+    # One derivation, both modes: a slot is judged by the same metric whether a
+    # fast or a thorough run reaches it.
+    thorough = _run(monkeypatch, fast=False, last_slot_locked=True, exclude=["D2"])
+    fast = _run(monkeypatch, fast=True, last_slot_locked=True, exclude=["D2"])
+    assert thorough == fast == {search.midpoint(len(DIMS))}

@@ -35,7 +35,7 @@ def _save(mgr, initial_dims, *, pending=None, completed=None):
         last_applied_order=list(initial_dims),
         original_order_result=_result(initial_dims),
         completed_results=completed or [],
-        executor_state={"fold_a_state": {}},
+        executor_state={"greedy_state": {}},
         pending=pending)
 
 

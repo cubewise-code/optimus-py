@@ -14,10 +14,9 @@ import pytest
 
 from optimuspy.core import configure_logging
 from tests.conftest import install_offline_measurements
-from tests.test_fold_a import make_main_executor
+from tests.test_greedy import make_main_executor
 
 DIMS = ["D0", "D1", "D2", "M"]
-CARD = {"D0": 100, "D1": 900, "D2": 8000, "M": 3}
 
 
 class _Capture(logging.Handler):
@@ -117,12 +116,12 @@ def test_the_log_is_written_under_the_install_dir(bare_root_logger, monkeypatch,
 
 
 def _greedy_run(orders_to_ignore=None):
-    """Run Fold A and return the orders it evaluated."""
-    ex = make_main_executor(DIMS, CARD, orders_to_ignore=orders_to_ignore)
+    """Run the greedy search and return the orders it evaluated."""
+    ex = make_main_executor(DIMS, orders_to_ignore=orders_to_ignore)
     log = []
     install_offline_measurements(ex, lambda o: 100.0 - len(log) * 0.1, log)
     ex.context.set_initial_ram(100.0)
-    ex._run_fold_a()
+    ex.execute()
     return ex, log
 
 

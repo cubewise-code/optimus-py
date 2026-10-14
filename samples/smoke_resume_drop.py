@@ -117,10 +117,7 @@ def _storage_order(tm1):
 
 
 def _checkpoint_mgr(instance, cube_config):
-    fp = CheckpointManager.compute_config_fingerprint(
-        cube_config,
-        extra={"tau_ram": core.tau.TAU_RAM, "tau_query": core.tau.TAU_QUERY,
-               "fold_b_max_passes": core.tau.FOLD_B_MAX_PASSES})
+    fp = CheckpointManager.compute_config_fingerprint(cube_config)
     return CheckpointManager(CUBE, instance, fp, RESULT_PATH)
 
 

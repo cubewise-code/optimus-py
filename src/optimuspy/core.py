@@ -14,7 +14,6 @@ from typing import List, NamedTuple, Optional
 from TM1py import TM1Service
 from mdxpy import MdxBuilder, Member, MdxHierarchySet
 
-from optimuspy import tau
 from optimuspy.checkpoint import CheckpointManager
 from optimuspy.executors import (OriginalOrderExecutor, MainExecutor, PredefinedOrderExecutor,
                                  PositionOptimizerExecutor, DimensionOptimizerExecutor,
@@ -587,11 +586,11 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
     permutation_results = []
     optimus_result = None
 
-    # Checkpoint setup
+    # Checkpoint setup. The search has no tuning constants, so the config alone
+    # decides whether a checkpoint still applies. A checkpoint written by a build
+    # that pruned on leaf count carries them in its fingerprint and starts fresh.
     config_fingerprint = CheckpointManager.compute_config_fingerprint(
-        cube_config,
-        extra={"tau_ram": tau.TAU_RAM, "tau_query": tau.TAU_QUERY,
-               "fold_b_max_passes": tau.FOLD_B_MAX_PASSES}) if cube_config else ""
+        cube_config) if cube_config else ""
     checkpoint_mgr = CheckpointManager(
         cube_name, instance_name, config_fingerprint, RESULT_PATH,
         tm1=tm1 if tm1_checkpoint else None)
@@ -728,14 +727,11 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
                     checkpoint_manager=checkpoint_mgr, process_parameters=process_parameters,
                     cancel_event=cancel_event, is_v12=is_v12, order_frame=cube_frame)
             else:
-                dimensions_metadata = _collect_dimension_metadata(tm1, initial_dimension_order)
-                cardinality = {d["name"]: d["leaf_elements"] for d in dimensions_metadata}
                 executor = MainExecutor(
                     tm1, cube_name, view_names, process_names, initial_dimension_order, executions,
                     last_slot_locked, context, fast,
                     checkpoint_manager=checkpoint_mgr, process_parameters=process_parameters,
-                    cancel_event=cancel_event,
-                    is_v12=is_v12, cardinality=cardinality, order_frame=greedy_frame)
+                    cancel_event=cancel_event, is_v12=is_v12, order_frame=greedy_frame)
 
             # Set resume context on executor (arm the RAM re-anchor only on a real resume)
             executor.set_resume_context(initial_dimension_order, original_order_result,

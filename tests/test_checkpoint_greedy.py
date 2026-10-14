@@ -1,0 +1,160 @@
+import pytest
+
+from optimuspy.checkpoint import CheckpointManager, CHECKPOINT_VERSION
+from optimuspy.execution_mode import ExecutionMode
+from optimuspy.executors import OptimizationCancelled
+from optimuspy.results import ExecutionContext, PermutationResult, OptimusResult
+from tests.test_greedy import make_main_executor
+
+
+def test_checkpoint_version_is_three():
+    assert CHECKPOINT_VERSION == 3
+
+
+def test_a_checkpoint_from_a_build_that_pruned_on_leaf_count_does_not_resume():
+    # Those builds folded their pruning constants into the fingerprint, so their
+    # placed slots came from a narrower search than this one would run.
+    cfg = {"cube": "C", "fast": False}
+    pruned = CheckpointManager.compute_config_fingerprint(
+        cfg, extra={"tau_ram": 4.0, "tau_query": 10.0, "fold_b_max_passes": 2})
+    assert CheckpointManager.compute_config_fingerprint(cfg) != pruned
+
+
+def test_fingerprint_changes_with_fast():
+    thorough = CheckpointManager.compute_config_fingerprint({"cube": "C", "fast": False})
+    fast = CheckpointManager.compute_config_fingerprint({"cube": "C", "fast": True})
+    assert thorough != fast
+
+
+def test_fingerprint_stable_for_same_inputs():
+    cfg = {"cube": "C", "fast": False}
+    assert (CheckpointManager.compute_config_fingerprint(cfg)
+            == CheckpointManager.compute_config_fingerprint(cfg))
+
+
+# ---------------------------------------------------------------------------
+# Checkpoint resume round-trip for the greedy search
+#
+# A genuine round-trip: run the search to completion (reference), then run it again
+# but crash mid-search via OptimizationCancelled, capture the checkpointed
+# executor_state + pre-crash results, and resume a FRESH executor from that
+# state exactly as core does (set_resume_context feeds _resumed_results, and the
+# merged report is OptimusResult over [original] + resumed + new).
+#
+# Accepted resume-granularity characteristic (documented, out of scope to fix):
+# the search resumes slot-granular. A crash mid slot re-evaluates that whole
+# slot on resume; those
+# re-measured orders get fresh permutation_ids that _deduplicate_results (keyed
+# on id) will not collapse, so the merged report can carry duplicate rows. This
+# is OUTPUT-SAFE (the recommended best is unchanged). Assertions below therefore
+# check the recommended BEST outcome and that COMPLETED work is not re-run — not
+# exact evaluated-set equality.
+# ---------------------------------------------------------------------------
+
+
+class RecordingCheckpointManager:
+    """Fake checkpoint_manager that records the most recent save() kwargs."""
+
+    def __init__(self):
+        self.last = None
+
+    def save(self, **kwargs):
+        self.last = kwargs
+
+
+def _original_result(dims, ram_of):
+    """Build an ORIGINAL_ORDER result the way core's OriginalOrderExecutor does.
+
+    Uses a throwaway ExecutionContext so constructing it never perturbs the
+    executor under test; only ram_usage / mode matter for the merged report.
+    """
+    return PermutationResult(
+        ExecutionContext(), ExecutionMode.ORIGINAL_ORDER, "C", [], [],
+        list(dims), {}, None, ram_usage=ram_of(tuple(dims)),
+        ram_percentage_change=None, reorder_duration=0.0)
+
+
+def _recommended_order(original, *result_lists):
+    """Mirror core: OptimusResult over [original] + merged results -> best order."""
+    merged = [original]
+    for rl in result_lists:
+        merged.extend(rl)
+    return list(OptimusResult("C", merged).best_result.dimension_order)
+
+
+def _run_until_crash(ex, ram_of, cutoff, install, log):
+    """Drive ex until the (cutoff+1)-th evaluation raises; return its recording cm.
+
+    _save_checkpoint is bypassed so mid-run executor_state is captured without
+    the production resume-context guard (core sets that context; here we assert
+    on the raw checkpoint payload instead).
+    """
+    cm = RecordingCheckpointManager()
+    ex.checkpoint_manager = cm
+    ex._save_checkpoint = lambda **kw: setattr(cm, "last", kw)
+
+    def ram_cut(o):
+        if len(log) >= cutoff:
+            raise OptimizationCancelled("stop")
+        return ram_of(o)
+
+    install(ex, ram_cut, log)
+    ex.context.set_initial_ram(ram_of(tuple(ex.dimensions)))
+    return cm
+
+
+def test_greedy_resume_skips_placed_slots_and_matches_best(measure_orders):
+    # 6 dims. mid = 3, so the search visits slots 5, 0, 4, 1 (then stops at
+    # mid), measuring 5, 4, 3 and 2 candidates. RAM strongly rewards E in the
+    # back-most slot and M at the front, tie-broken by A early -> the greedy has
+    # one unambiguous global-min order, [M, A, C, D, B, E] @ 50.5.
+    dims = ["A", "B", "C", "D", "E", "M"]
+    ram_of = (lambda o: 100.0 - 10 * list(o).index("E")
+              + list(o).index("M") + 0.5 * list(o).index("A"))
+
+    # 1) uninterrupted reference
+    ref = make_main_executor(dims)
+    ref_log = []
+    measure_orders(ref, ram_of, ref_log)
+    ref.context.set_initial_ram(ram_of(tuple(dims)))
+    ref_results = ref.execute()
+    original = _original_result(dims, ram_of)
+    ref_best = _recommended_order(original, ref_results)
+    assert ref_best == ["M", "A", "C", "D", "B", "E"]  # unambiguous global min
+
+    # 2) crash mid-search: slots 5 and 0 placed, crash during the slot-4 sweep
+    ex = make_main_executor(dims)
+    crash_log = []
+    cm = _run_until_crash(ex, ram_of, 11, measure_orders, crash_log)
+    with pytest.raises(OptimizationCancelled):
+        ex.execute()
+    executor_state = cm.last["executor_state"]
+    precrash = cm.last["new_results"]
+    locked = list(executor_state["greedy_state"]["placed_positions"])
+    assert locked == [5, 0]  # documents the resume point: two positions locked
+
+    # 3) resume a fresh executor from the captured state, mirroring core
+    ex2 = make_main_executor(dims)
+    resume_log = []
+    measure_orders(ex2, ram_of, resume_log)
+    ex2.context.set_initial_ram(ram_of(tuple(dims)))
+    ex2.set_resume_context(list(dims), original, list(precrash))
+
+    swept_positions = []
+    real_sweep = ex2._sweep_into_position
+
+    def spy_sweep(current_order, target_position, *args, **kwargs):
+        swept_positions.append(target_position)
+        return real_sweep(current_order, target_position, *args, **kwargs)
+
+    ex2._sweep_into_position = spy_sweep
+    resumed_results = ex2.execute({"executor_state": executor_state})
+
+    # (a) completed work not re-run: no locked position is swept again on resume;
+    #     only the still-open positions (4, then 1) are.
+    assert all(p not in locked for p in swept_positions)
+    assert swept_positions == [4, 1]
+    assert len(resume_log) < len(ref_log)  # strictly less work than a full run
+    # (b) recommended best order is identical to the uninterrupted run
+    resumed_best = _recommended_order(original, precrash, resumed_results)
+    assert resumed_best == ref_best

@@ -13,10 +13,9 @@ import pytest
 from optimuspy.core import _validate_position_rules
 from optimuspy.order_frame import OrderFrame, REASON_POSITION_RULE
 from tests.conftest import install_offline_measurements
-from tests.test_fold_a import make_main_executor
+from tests.test_greedy import make_main_executor
 
 STORAGE = ["Year", "Region", "Product", "Account", "Measure"]
-CARD = {"Year": 12, "Region": 80, "Product": 5000, "Account": 900, "Measure": 4}
 
 
 def frame(rules, **kwargs):
@@ -102,10 +101,10 @@ def test_admits_still_refuses_an_order_that_moves_a_pinned_dim():
     assert "must be at position 0" in verdict.reason
 
 
-# --- the folds start from the pre-applied order ----------------------------
+# --- the search starts from the pre-applied order ---------------------------
 
 def _run(fast, rules, **kwargs):
-    ex = make_main_executor(STORAGE, CARD, fast=fast, position_rules=rules, **kwargs)
+    ex = make_main_executor(STORAGE, fast=fast, position_rules=rules, **kwargs)
     log = []
     install_offline_measurements(ex, lambda o: 100.0 - len(log) * 0.1, log)
     ex.context.set_initial_ram(100.0)
@@ -132,31 +131,23 @@ def test_a_rule_survives_a_lock_on_the_same_cube(fast):
     assert all(order[0] == "Product" and order[-1] == "Measure" for order in log)
 
 
-def test_fold_a_measures_the_pre_applied_order_first():
-    # The measured original order is no longer the order the fold stands on, so
-    # every position's "keep what is here" option would otherwise carry a RAM
+@pytest.mark.parametrize("fast", [False, True])
+def test_the_search_measures_the_pre_applied_order_first(fast):
+    # The measured original order is no longer the order the search stands on,
+    # so every slot's "keep what is here" option would otherwise carry a RAM
     # figure for a different order.
     rules = [{"dimension": "Product", "position": 0}]
-    _, log = _run(False, rules)
+    _, log = _run(fast, rules)
     assert log[0] == ["Product", "Year", "Region", "Account", "Measure"]
 
 
-def test_fold_a_does_not_re_measure_an_order_pre_application_did_not_change():
-    # A rule naming where the dimension already sits seats nothing, so the fold
+def test_the_search_does_not_re_measure_an_order_pre_application_did_not_change():
+    # A rule naming where the dimension already sits seats nothing, so the search
     # is standing on the order that was already measured. Re-applying it would
     # be a reorder that tests a permutation the report already has.
     rules = [{"dimension": "Year", "position": 0}]
     _, log = _run(False, rules)
     assert log[0] != STORAGE
-
-
-def test_fold_b_seeds_the_pinned_dimension_at_its_slot():
-    rules = [{"dimension": "Product", "position": 0}]
-    _, log = _run(True, rules)
-    assert log[0][0] == "Product"
-    # The seed is still cardinality-ascending over the slots that are free.
-    free = log[0][1:]
-    assert free == sorted(free, key=lambda d: CARD[d])
 
 
 # --- startup validation ----------------------------------------------------
