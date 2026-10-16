@@ -37,7 +37,7 @@ For each mode you can:
 - Pick **TI processes** to benchmark ETL time (with parameter overrides)
 - Set **executions** (how many times each query/process runs; the median counts)
 - Choose the **output format**, CSV or Excel (XLSX)
-- Tick **Fast mode (seed & refine)** for the shorter greedy fold
+- Tick **Fast mode (last and first slot only)** for a shorter greedy run that searches only the two end slots
 - Tick **Auto-apply best** to write the best order back to the cube
 - Set **dimensions to exclude** (kept fixed during the search)
 - Set **dimension position rules** (lock specific dims to specific positions). **Add Rule** asks for a dimension and a **Lock to Position**: *First*, *Last*, or a *Position* numbered from 1 like the Overview table. The config counts from 0, so *Position 3* is written as `2`. One rule per dimension and one per position.

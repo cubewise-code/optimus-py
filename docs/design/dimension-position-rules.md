@@ -1,6 +1,6 @@
 # Position Rules Validation
 
-`dimension_position_rules` seats named dimensions at named slots and lets the greedy search only the slots that are left. A rule is a tier 3 user preference: it shapes a *search*, so the greedy folds honor it and explicitly-named orders (`predefined_orders`, set mode) do not. The rules are still validated in every mode, so a typo fails the run whatever the mode.
+`dimension_position_rules` seats named dimensions at named slots and lets the greedy search only the slots that are left. A rule is a tier 3 user preference: it shapes a *search*, so the greedy honors it and explicitly-named orders (`predefined_orders`, set mode) do not. The rules are still validated in every mode, so a typo fails the run whatever the mode.
 
 For how to drive it, see [Dimension Position Rules](../advanced/dimension-position-rules.md).
 

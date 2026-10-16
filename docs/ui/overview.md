@@ -56,7 +56,7 @@ The executable ships without a `config.ini`. Create `config/config.ini` next to 
 | **Optimize** | Scan candidates and run benchmarks for one or many cubes. |
 | **Reports** | Every run's HTML report and data files, by instance, cube and run. |
 | **Sync Order** | Promote dimension orders from a source instance to a target instance. |
-| **Optimize DB** | Reorder every cube on an instance by leaf-element count, fewest first, within a time limit. See the [Optimize DB Page](optimize-db-page.md). |
+| **Optimize DB** | Reorder every cube on an instance within a time limit: by leaf-element count, fewest first, or by measuring the last slot of the cubes you pick. See the [Optimize DB Page](optimize-db-page.md). |
 | **Settings** | At the bottom of the sidebar: choose the `config.ini`, test connections, theme, and local cache. |
 | **Documentation**, **Website**, **GitHub** | Below Settings: this documentation, the OptimusPy landing page and the repository, each in a new tab. The Home page links the first two as well. |
 

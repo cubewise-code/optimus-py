@@ -1,6 +1,6 @@
 # Checkpoint Format and Recovery
 
-Every iterating mode writes a checkpoint so an interrupted run (a crash, a dropped TM1 connection, a cancel) continues instead of starting over. The machinery is shared: both greedy folds (Thorough and Fast), position optimization, dimension optimization and predefined orders all go through the same evaluation seam and the same checkpoint manager, so all of them inherit it.
+Every iterating mode writes a checkpoint so an interrupted run (a crash, a dropped TM1 connection, a cancel) continues instead of starting over. The machinery is shared: the greedy (Thorough and Fast), position optimization, dimension optimization and predefined orders all go through the same evaluation seam and the same checkpoint manager, so all of them inherit it.
 
 For how to drive it, see [Checkpoints & Resume](../advanced/checkpoints-resume.md).
 
@@ -12,7 +12,8 @@ A checkpoint records:
 |---|---|
 | `version` | `3`. A version mismatch starts fresh; there is no in-place upgrade from v2. |
 | `cube_name`, `instance` | Identity checks. |
-| `config_fingerprint` | SHA-256 over the JSON config plus the greedy's τ constants and pass cap. A changed config (or a changed τ) invalidates the checkpoint. |
+| `run_stamp` | The stamp of the run that wrote it, also in the file name (`results/<instance>/checkpoint_<instance>_<cube>_<run stamp>.json`). A resumed run takes it, so its report and checkpoint keep the name the run started with. A TM1-blob checkpoint is named by cube alone, since it lives on its instance; its stamp is read from here. |
+| `config_fingerprint` | SHA-256 over the JSON config. A changed config invalidates the checkpoint. A checkpoint written by an early 2.0 build, whose fingerprint also covered the leaf-count tolerance constants, does not match and the run starts fresh. |
 | `executor_type` | Which mode wrote it. |
 | `initial_dimension_order` | **The true original order.** The source of truth for the RAM baseline and the end-of-run restore. |
 | `last_applied_order` | The order the cube was last put into. |

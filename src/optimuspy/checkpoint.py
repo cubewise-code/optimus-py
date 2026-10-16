@@ -2,6 +2,8 @@ import hashlib
 import json
 import logging
 import os
+import re
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import List, Union
@@ -10,18 +12,42 @@ from optimuspy.results import ExecutionContext, PermutationResult
 
 CHECKPOINT_VERSION = 3
 
+# A run's stamp, as it appears in its report and checkpoint file names.
+RUN_STAMP_FORMAT = "%Y-%m-%d_%H-%M-%S"
+_RUN_STAMP = re.compile(r"\d{4}-\d{2}-\d{2}_\d{2}-\d{2}-\d{2}")
+
+
+def new_run_stamp() -> str:
+    return time.strftime(RUN_STAMP_FORMAT, time.localtime())
+
 
 class CheckpointManager:
-    """Manages checkpoint files for resuming interrupted optimization runs."""
+    """Manages checkpoint files for resuming interrupted optimization runs.
+
+    A local checkpoint is named like the run's report and sits beside it:
+    results/<instance>/checkpoint_<instance>_<cube>_<run stamp>.json. The
+    instance in the name keeps two servers that share a cube name from
+    overwriting, or deleting, each other's checkpoint. The stamp names the run:
+    `exists()` finds the checkpoint for this instance and cube whatever its
+    stamp, and from then on `run_stamp` is that run's stamp, so a resumed run
+    carries on under the name it started with.
+
+    A TM1 blob checkpoint lives on the instance it belongs to, so it is named by
+    cube alone; its run stamp is read from its content.
+    """
 
     def __init__(self, cube_name: str, instance: str, config_fingerprint: str,
-                 result_path: Union[str, Path] = Path("results/"), tm1=None):
+                 result_path: Union[str, Path] = Path("results/"), tm1=None,
+                 run_stamp: str = None):
         self.cube_name = cube_name
         self.instance = instance
         self.config_fingerprint = config_fingerprint
         self.result_path = Path(result_path)
         self.tm1 = tm1  # When set, use TM1 blob storage instead of local files
         self._created_at = None
+        # This run's stamp until exists() finds an earlier run's checkpoint.
+        self._fresh_stamp = run_stamp or new_run_stamp()
+        self.run_stamp = self._fresh_stamp
 
     @staticmethod
     def compute_config_fingerprint(cube_config: dict, extra: dict = None) -> str:
@@ -30,19 +56,55 @@ class CheckpointManager:
         return hashlib.sha256(config_str.encode()).hexdigest()
 
     @property
+    def _prefix(self) -> str:
+        return f"checkpoint_{self.instance}_{self.cube_name}_"
+
+    @property
     def checkpoint_path(self) -> Path:
-        return self.result_path / f"checkpoint_{self.cube_name}.json"
+        return self.result_path / self.instance / f"{self._prefix}{self.run_stamp}.json"
+
+    def _existing_stamps(self) -> List[str]:
+        """Run stamps of this instance's checkpoints for this cube, oldest first.
+
+        The remainder after the prefix must be exactly a stamp, so cube 'A' never
+        claims the checkpoint of cube 'A_B'.
+        """
+        folder = self.result_path / self.instance
+        if not folder.is_dir():
+            return []
+        stamps = []
+        for f in folder.iterdir():
+            if f.suffix == ".json" and f.name.startswith(self._prefix):
+                stamp = f.name[len(self._prefix):-len(".json")]
+                if _RUN_STAMP.fullmatch(stamp):
+                    stamps.append(stamp)
+        return sorted(stamps)
 
     @property
     def blob_name(self) -> str:
         return f"optimuspy_checkpoint_{self.cube_name}.json"
 
     def exists(self) -> bool:
+        """Is there a checkpoint for this cube on this instance?
+
+        When there is, the manager now points at it — `load`, `save` and `remove`
+        act on that file and `run_stamp` is the stamp of the run it belongs to —
+        until `discard()`.
+        """
         if self.tm1:
             result = self.tm1.files.exists(self.blob_name)
             logging.info(f"TM1 blob checkpoint exists check '{self.blob_name}': {result}")
             return result
-        return self.checkpoint_path.exists()
+        stamps = self._existing_stamps()
+        if stamps:
+            self.run_stamp = stamps[-1]
+        return bool(stamps)
+
+    def discard(self):
+        """Delete the checkpoint `exists()` found and go back to this run's own stamp."""
+        self.remove()
+        self.run_stamp = self._fresh_stamp
+        self._created_at = None
 
     def load(self) -> dict:
         if self.tm1:
@@ -107,6 +169,7 @@ class CheckpointManager:
             "version": CHECKPOINT_VERSION,
             "cube_name": self.cube_name,
             "instance": self.instance,
+            "run_stamp": self.run_stamp,
             "config_fingerprint": self.config_fingerprint,
             "executor_type": executor_type,
             "initial_dimension_order": initial_dimension_order,
@@ -136,7 +199,7 @@ class CheckpointManager:
             logging.info(f"Checkpoint saved to TM1 blob '{self.blob_name}'")
         else:
             # Atomic write: write to temp file, then rename
-            os.makedirs(self.result_path, exist_ok=True)
+            os.makedirs(self.checkpoint_path.parent, exist_ok=True)
             tmp_path = self.checkpoint_path.with_suffix(".tmp")
             with open(tmp_path, "w") as f:
                 json.dump(data, f, indent=2)

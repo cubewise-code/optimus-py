@@ -26,7 +26,7 @@ Test every valid position for one specific dimension while keeping others fixed.
 
 OptimusPy keeps every other dimension fixed in its current position and slides the target dimension through every position, measuring at each one.
 
-For an 8-dimension cube that's 7 evaluations, one per position other than the one the dimension is in today (the current position is what the original-order baseline measures, so there's no point testing it again). That's a fraction of a full greedy run, whose length depends on the cube's cardinality profile.
+For an 8-dimension cube that's 7 evaluations, one per position other than the one the dimension is in today (the current position is what the original-order baseline measures, so there's no point testing it again). That's a fraction of a full greedy run, which measures 27 orders on the same cube.
 
 ## Interaction with the locked slot
 

@@ -14,8 +14,7 @@ from typing import List, NamedTuple, Optional
 from TM1py import TM1Service
 from mdxpy import MdxBuilder, Member, MdxHierarchySet
 
-from optimuspy import tau
-from optimuspy.checkpoint import CheckpointManager
+from optimuspy.checkpoint import CheckpointManager, new_run_stamp
 from optimuspy.executors import (OriginalOrderExecutor, MainExecutor, PredefinedOrderExecutor,
                                  PositionOptimizerExecutor, DimensionOptimizerExecutor,
                                  OptimizationCancelled)
@@ -572,10 +571,18 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
                            tm1_checkpoint: bool = False,
                            process_parameters: dict = None,
                            dimension_position_rules: list = None,
-                           cancel_event=None, is_v12: bool = False) -> bool:
+                           cancel_event=None, is_v12: bool = False,
+                           outcome: dict = None) -> bool:
+    """Benchmark orders for one cube; True when the run finished.
+
+    `outcome`, when given, is filled in for a caller that acts on the result
+    (Optimize DB): the original and the applied order, their RAM, and the report.
+    """
     # Stamped when the run starts, not when the module loads: the UI runs many
-    # optimizations in one process, and each needs its own report file.
-    run_stamp = time.strftime("%Y-%m-%d_%H-%M-%S", time.localtime())
+    # optimizations in one process, and each needs its own report file. A resumed
+    # run takes the stamp of the run it continues (below), so one run keeps one
+    # report and one checkpoint name however many times it is resumed.
+    run_stamp = new_run_stamp()
     original_vmm, original_vmt = (None, None)
 
     # The live storage order (may be a crashed/reordered state); used only to
@@ -587,14 +594,14 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
     permutation_results = []
     optimus_result = None
 
-    # Checkpoint setup
+    # Checkpoint setup. The search has no tuning constants, so the config alone
+    # decides whether a checkpoint still applies. A checkpoint written by a build
+    # that pruned on leaf count carries them in its fingerprint and starts fresh.
     config_fingerprint = CheckpointManager.compute_config_fingerprint(
-        cube_config,
-        extra={"tau_ram": tau.TAU_RAM, "tau_query": tau.TAU_QUERY,
-               "fold_b_max_passes": tau.FOLD_B_MAX_PASSES}) if cube_config else ""
+        cube_config) if cube_config else ""
     checkpoint_mgr = CheckpointManager(
         cube_name, instance_name, config_fingerprint, RESULT_PATH,
-        tm1=tm1 if tm1_checkpoint else None)
+        tm1=tm1 if tm1_checkpoint else None, run_stamp=run_stamp)
 
     # Try to resume from checkpoint
     resumed_results = []
@@ -604,7 +611,10 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
     if not no_resume and checkpoint_mgr.exists():
         if checkpoint_mgr.validate(current_dimension_order):
             checkpoint_data = checkpoint_mgr.load()
-            logging.info("Resuming from checkpoint — restoring previous progress")
+            run_stamp = checkpoint_data.get("run_stamp") or checkpoint_mgr.run_stamp
+            checkpoint_mgr.run_stamp = run_stamp
+            logging.info(f"Resuming from checkpoint — restoring the progress of the run "
+                         f"started {run_stamp}")
 
             # The checkpoint is the source of truth for the original order — the
             # live cube may be left reordered by the interruption, so re-reading it
@@ -628,10 +638,10 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
             logging.info(f"Restored {len(resumed_results)} completed permutations from checkpoint")
         else:
             logging.warning("Checkpoint invalid — starting fresh")
-            checkpoint_mgr.remove()
+            checkpoint_mgr.discard()
     elif no_resume and checkpoint_mgr.exists():
         logging.info("--no-resume specified — ignoring existing checkpoint")
-        checkpoint_mgr.remove()
+        checkpoint_mgr.discard()
 
     # The locked slot: if the dimension in the last position of the STORAGE order
     # carries string elements, that position is locked and the dimension never
@@ -728,14 +738,11 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
                     checkpoint_manager=checkpoint_mgr, process_parameters=process_parameters,
                     cancel_event=cancel_event, is_v12=is_v12, order_frame=cube_frame)
             else:
-                dimensions_metadata = _collect_dimension_metadata(tm1, initial_dimension_order)
-                cardinality = {d["name"]: d["leaf_elements"] for d in dimensions_metadata}
                 executor = MainExecutor(
                     tm1, cube_name, view_names, process_names, initial_dimension_order, executions,
                     last_slot_locked, context, fast,
                     checkpoint_manager=checkpoint_mgr, process_parameters=process_parameters,
-                    cancel_event=cancel_event,
-                    is_v12=is_v12, cardinality=cardinality, order_frame=greedy_frame)
+                    cancel_event=cancel_event, is_v12=is_v12, order_frame=greedy_frame)
 
             # Set resume context on executor (arm the RAM re-anchor only on a real resume)
             executor.set_resume_context(initial_dimension_order, original_order_result,
@@ -783,6 +790,14 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
                     f"unmaterialised cube costs the same in every order, so 0.00% is "
                     f"the truthful answer to a question worth nothing. Let a large "
                     f"load settle and re-run.")
+            if outcome is not None:
+                applied = best_permutation if (best_permutation and update) else original_order_result
+                outcome.update(
+                    original_order=list(initial_dimension_order),
+                    original_ram=original_order_result.ram_usage,
+                    applied_order=list(applied.dimension_order),
+                    applied_ram=applied.ram_usage,
+                    measured=len(unique_results) - 1)
             if not best_permutation:
                 tm1.cubes.update_storage_dimension_order(cube_name, initial_dimension_order)
                 logging.info(
@@ -835,6 +850,8 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
                 instance_dir = RESULT_PATH / instance_name
 
                 optimus_result.to_html(instance_dir / f"{file_base}.html", total_duration=context.elapsed)
+                if outcome is not None:
+                    outcome["report"] = f"{instance_name}/{file_base}.html"
 
                 if output.upper() == "XLSX":
                     optimus_result.to_xlsx(instance_dir / f"{file_base}.xlsx")

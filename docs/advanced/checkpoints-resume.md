@@ -3,7 +3,7 @@
 OptimusPy persists progress mid-run so a crash, network blip, or `Ctrl+C` doesn't lose hours of benchmarking work.
 
 !!! note "Optimize DB resumes differently"
-    This page describes the per-cube benchmark checkpoint used by `optimize`. The `optimize-db` sweep has no checkpoint file; its run artifact is the resume point, and `--resume` continues against the original deadline. See [Optimize DB Mode](../modes/optimize-db.md).
+    This page describes the per-cube benchmark checkpoint used by `optimize`. The `optimize-db` sweep has no checkpoint file of its own; its run artifact is the resume point, and `--resume` continues against the original deadline. A cube it measures with *Last slot only* runs as an `optimize` run and keeps this page's checkpoint, so resuming the sweep continues that cube where it stopped. See [Optimize DB Mode](../modes/optimize-db.md).
 
 ## When checkpoints are written
 
@@ -23,7 +23,8 @@ checkpoint contains:
 - The greedy/executor state (current iteration, target position, tested dimensions in this round)
 - A fingerprint of the input config (so a changed config invalidates the checkpoint)
 
-Checkpoints live in `results/` named `checkpoint_{cube}.json` and are schema **v3**.
+A checkpoint sits beside the run's report and is named like it: `results/<instance>/checkpoint_<instance>_<cube>_<run stamp>.json`. It is schema **v3**.
+The instance in the name keeps two servers that share a cube name apart. A re-run finds the checkpoint for its instance and cube whatever the stamp, and a resumed run keeps the stamp of the run it continues, so its report replaces that run's partial report instead of starting a new one.
 A pre-v3 checkpoint fails the version check and the run starts fresh (no in-place upgrade).
 
 ### Stateless environments
@@ -94,7 +95,7 @@ The existing checkpoint is deleted before the run starts.
 
 - On **successful completion** of the optimization run
 - On `--no-resume` re-run
-- Manually: `rm results/checkpoint_<cube>.json`
+- Manually: delete `results/<instance>/checkpoint_<instance>_<cube>_<run stamp>.json`
 
 ## Cancelled and crashed jobs
 

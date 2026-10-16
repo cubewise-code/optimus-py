@@ -9,7 +9,7 @@ from optimuspy.execution_mode import ExecutionMode
 from optimuspy.executors import PredefinedOrderExecutor
 from optimuspy.order_frame import OrderFrame
 from optimuspy.results import ExecutionContext, PermutationResult
-from tests.test_fold_a import make_main_executor
+from tests.test_greedy import make_main_executor
 
 
 def _result(dims, context, ram_pct):
@@ -19,7 +19,7 @@ def _result(dims, context, ram_pct):
 
 
 def test_register_recovered_stores_and_disarms_reanchor():
-    ex = make_main_executor(["A", "B"], {"A": 1, "B": 2})
+    ex = make_main_executor(["A", "B"])
     ex.context.set_initial_ram(100.0)
     ex.set_resume_context(["A", "B"], None, [])
     assert ex._reanchor_needed is True
@@ -35,8 +35,7 @@ def test_register_recovered_stores_and_disarms_reanchor():
 
 def test_sweep_injects_recovered_without_reapplying(measure_orders):
     dims = ["A", "B", "C", "M"]
-    card = {"A": 10, "B": 20, "C": 30, "M": 1}
-    ex = make_main_executor(dims, card)
+    ex = make_main_executor(dims)
     log = []
     ram_of = lambda o: 100.0 - list(o).index("C")  # arbitrary, deterministic
     measure_orders(ex, ram_of, log)
@@ -84,7 +83,7 @@ def test_predefined_injects_recovered_without_reapplying(measure_orders):
 
 
 def test_measure_recovered_landed_reanchors_and_records_pct():
-    ex = make_main_executor(["A", "B"], {"A": 1, "B": 2})
+    ex = make_main_executor(["A", "B"])
     ex.context.set_initial_ram(1000.0)
     ex.context.current_ram = 800.0  # stale
 

@@ -1,12 +1,11 @@
 import logging
 import random
 import time
-from itertools import chain
 from typing import Dict, List, NamedTuple, Optional
 
 from TM1py import TM1Service, Process
 
-from optimuspy import tau
+from optimuspy import search
 from optimuspy.execution_mode import ExecutionMode
 from optimuspy.metrics import read_cube_memory_bytes
 from optimuspy.order_frame import REASON_NOT_A_PERMUTATION
@@ -206,7 +205,7 @@ class OptipyzerExecutor:
         bookkeeping: the pending write, the reanchor decision, the %-chain that
         turns the server's percentage into a RAM figure, the run artifact, the
         progress log. Keeping the server behind one method is what lets an offline
-        test drive a real fold and get real PermutationResults back — it supplies
+        test drive a real search and get real PermutationResults back — it supplies
         the numbers a server would have reported and nothing else is stood in for.
         """
         reorder_start = time.time()
@@ -321,7 +320,7 @@ class OptipyzerExecutor:
         """P1 primitive: swap each candidate dim into target_position, evaluate.
 
         Returns the PermutationResult for each candidate that was actually tested.
-        Shared by PositionOptimizerExecutor (all candidates) and Fold A (τ-frontier).
+        Shared by PositionOptimizerExecutor and the greedy search (MainExecutor).
         """
         results = []
         for dim in candidate_dims:
@@ -349,7 +348,7 @@ class OptipyzerExecutor:
                                 checkpoint_cb=None):
         """P2 primitive: move target_dim into each candidate position, evaluate.
 
-        Shared by DimensionOptimizerExecutor (all positions) and Fold B (τ span).
+        Used by DimensionOptimizerExecutor.
         """
         results = []
         for position in candidate_positions:
@@ -403,7 +402,20 @@ class OriginalOrderExecutor(OptipyzerExecutor):
 
 
 class MainExecutor(OptipyzerExecutor):
-    """The greedy search: Fold A (place each position) or Fold B (refine a seed).
+    """The greedy search: place one slot at a time, from the outside in.
+
+    Slots are visited last, first, second-to-last, second, ... up to the
+    midpoint (optimuspy.search). At each slot every dimension not yet placed is
+    swapped in and measured, and the slot keeps the winner: lowest RAM in the
+    back half; in the front half the fastest query when views are set, else the
+    fastest process when processes are set, else lowest RAM. `fast` sweeps only
+    the first two slots of the walk — the last free slot and the first free slot
+    — which is where the large savings are.
+
+    Nothing is ruled out on leaf count. The dimension that belongs last is the
+    densest one, and leaf count measures size, not density: an earlier search
+    that only tried the largest dimensions in the last slot left a 78% saving on
+    the table (ADR-0005).
 
     It is the only order source that honours the user preferences, and it does so
     entirely through its order frame — dimensions_to_exclude, orders_to_ignore and
@@ -415,38 +427,36 @@ class MainExecutor(OptipyzerExecutor):
                  dimensions: List[str], executions: int, last_slot_locked: bool,
                  context: ExecutionContext, fast: bool = False,
                  checkpoint_manager=None, process_parameters: dict = None,
-                 cancel_event=None, is_v12: bool = False,
-                 cardinality: Dict[str, int] = None, order_frame=None):
+                 cancel_event=None, is_v12: bool = False, order_frame=None):
         super().__init__(tm1, cube_name, view_names, process_names, dimensions, executions,
                          last_slot_locked, context, checkpoint_manager, process_parameters,
                          cancel_event, is_v12=is_v12, order_frame=order_frame)
         self.mode = ExecutionMode.ITERATIONS
         self.fast = fast
-        self.cardinality = cardinality or {}
 
     def _greedy_skip_permutation(self, permutation):
         """One call covers the lock, the ignored orders and the position rules."""
         return self._frame_refuses(permutation)
 
     def execute(self, resume_state: dict = None) -> List[PermutationResult]:
-        if self.fast:
-            return self._run_fold_b(resume_state)
-        return self._run_fold_a(resume_state)
-
-    def _run_fold_a(self, resume_state: dict = None) -> List[PermutationResult]:
         # Pre-application: a dimension named by a position rule is seated at its
-        # slot before the search starts, so the fold begins from the pre-applied
+        # slot before the search starts, so the search begins from the pre-applied
         # order rather than the storage order.
         resulting_order = self.order_frame.pre_applied_order()
         permutation_results = []
         # The frame decides what may move: everything except the excluded dims
-        # (frozen where they are) and the locked dim (which never moves at all).
-        # Nothing is relocated to satisfy the lock — a candidate that would move
-        # the locked dim is simply never generated, and would be refused anyway.
+        # (frozen where they are), the pinned dims (seated by their rule) and the
+        # locked dim (which never moves at all). Their slots are never a sweep
+        # target, so nothing is ever swept into them either.
         dimension_pool = self.order_frame.movable_dimensions()
-        # From the full storage order, not from the pool: see tau.midpoint.
-        mid = tau.midpoint(len(self.dimensions))
+        # From the full storage order, not from the pool: see search.midpoint.
+        mid = search.midpoint(len(self.dimensions))
+        slots = search.outside_in_slots(
+            len(self.dimensions), self.order_frame.reserved_positions(), fast=self.fast)
         has_views, has_processes = bool(self.view_names), bool(self.process_names)
+
+        pre_applied = resulting_order != list(self.dimensions)
+        total = search.planned_evaluations(len(dimension_pool), len(slots)) + int(pre_applied)
 
         # Result representing the current resulting_order. It carries the "keep the
         # dim already here" option into _pick_best, so the dim already sitting at a
@@ -456,57 +466,52 @@ class MainExecutor(OptipyzerExecutor):
 
         placed_positions = []
         executor_state = resume_state.get("executor_state", {}) if resume_state else {}
-        if "fold_a_state" not in executor_state and resulting_order != list(self.dimensions):
-            # Pre-application moved something, so the measured original order is
-            # no longer the order the fold is standing on. Measure the starting
-            # point, as fold B measures its seed: without it every position's
-            # "keep what is here" option carries a RAM figure for a different order.
-            current_result = self._evaluate_permutation(
-                resulting_order, total_permutations=None)
-            permutation_results.append(current_result)
-        if "fold_a_state" in executor_state:
-            fs = executor_state["fold_a_state"]
-            resulting_order = fs["resulting_order"]
-            dimension_pool = fs["dimension_pool"]
-            placed_positions = fs["placed_positions"]
+        if "greedy_state" in executor_state:
+            state = executor_state["greedy_state"]
+            resulting_order = state["resulting_order"]
+            dimension_pool = state["dimension_pool"]
+            placed_positions = state["placed_positions"]
             current_result = next(
                 (r for r in reversed(self._resumed_results)
                  if list(r.dimension_order) == list(resulting_order)),
                 self._original_order_result)
-            logging.info(f"Resuming Fold A — {len(placed_positions)} positions already locked")
+            logging.info(f"Resuming the greedy search — {len(placed_positions)} of "
+                         f"{len(slots)} slots already placed")
+        else:
+            logging.info(
+                f"{'Fast' if self.fast else 'Thorough'} greedy search: {len(slots)} slot(s) "
+                f"{[p + 1 for p in slots]}, up to {total} order(s) to measure")
+            if pre_applied:
+                # Pre-application moved something, so the measured original order
+                # is no longer the order the search stands on. Measure the starting
+                # point: without it every slot's "keep what is here" option carries
+                # a RAM figure for a different order.
+                current_result = self._evaluate_permutation(
+                    resulting_order, total_permutations=total)
+                permutation_results.append(current_result)
 
-        position_count = len(self.dimensions)
-        for target_position in chain(*zip(reversed(range(position_count)), range(position_count))):
-            if target_position == mid:
-                break
+        for target_position in slots:
             if target_position in placed_positions:
                 continue
-            # Slots held by a dim that cannot move — an excluded one, or the locked
-            # one — are never a sweep target.
-            if resulting_order[target_position] not in dimension_pool:
-                continue
 
-            unplaced = [(d, self.cardinality.get(d, 0)) for d in dimension_pool]
-            ranking = tau.ranking_for_position(target_position, mid, has_views, has_processes)
-            tau_val = tau.tau_for_position(ranking)
-            is_back = target_position > mid
-            frontier = tau.fold_a_candidates(unplaced, is_back, tau_val)
-            # Skip the dim already at this position; its "keep" value is current_result.
+            ranking = search.ranking_for_position(target_position, mid, has_views, has_processes)
+            # Every unplaced dim is a candidate; the occupant's "keep" value is
+            # current_result.
             occupant = resulting_order[target_position]
-            candidates = [c for c in frontier if c != occupant]
+            candidates = [d for d in dimension_pool if d != occupant]
 
             def checkpoint_cb(dim, results, _pp=list(placed_positions)):
                 self._save_checkpoint(
                     new_results=permutation_results + results,
                     last_applied_order=list(results[-1].dimension_order),
-                    executor_state={"fold_a_state": {
+                    executor_state={"greedy_state": {
                         "resulting_order": list(resulting_order),
                         "dimension_pool": list(dimension_pool),
                         "placed_positions": _pp,
                     }})
 
             results = self._sweep_into_position(
-                resulting_order, target_position, candidates, None,
+                resulting_order, target_position, candidates, total,
                 skip_permutation=self._greedy_skip_permutation,
                 checkpoint_cb=checkpoint_cb)
             permutation_results.extend(results)
@@ -517,146 +522,10 @@ class MainExecutor(OptipyzerExecutor):
                 best = self._pick_best(pool_for_best, ranking)
                 resulting_order = list(best.dimension_order)
                 current_result = best
-                dimension_pool.remove(resulting_order[target_position])
-                placed_positions.append(target_position)
+            dimension_pool.remove(resulting_order[target_position])
+            placed_positions.append(target_position)
 
         return permutation_results
-
-    def _seed_order(self):
-        """Cardinality-ascending seed over the slots that are free to hold anything.
-
-        A numeric measure has no storage constraint and is placed purely by
-        cardinality like any other dimension: a small/degenerate measure belongs at
-        the FRONT for RAM (small-sparse first; the 90/10 rule reserves the last
-        slot for the largest-dense dim). Only the *locked* slot is special, and
-        only because TM1 rejects any write that moves the dimension out of it.
-
-        The seed starts from the **pre-applied** order, so a dimension named by a
-        position rule is already at its slot. Reserved slots keep whatever sits in
-        them there — an excluded dim (frozen where it is by user preference), a
-        pinned dim (seated by its rule) and the locked dim (which never moves).
-        The rest are filled with the movable dims in ascending cardinality.
-
-        Note a string-bearing dimension that is NOT in the locked slot is movable
-        and is seeded by cardinality like anything else. Dimensions are shared
-        between cubes, so one can carry string elements from another cube's use
-        without being this cube's measure; the constraint is on the slot, not the
-        dimension.
-        """
-        reserved = self.order_frame.reserved_positions()
-        free_positions = [i for i in range(len(self.dimensions)) if i not in reserved]
-        movable = sorted(self.order_frame.movable_dimensions(),
-                         key=lambda d: self.cardinality.get(d, 0))
-
-        result = self.order_frame.pre_applied_order()
-        for position, dim in zip(free_positions, movable):
-            result[position] = dim
-        return result
-
-    def _run_fold_b(self, resume_state: dict = None) -> List[PermutationResult]:
-        has_views, has_processes = bool(self.view_names), bool(self.process_names)
-        # The refine SET uses one tau_split (a dim is "undecided"/worth refining if
-        # a neighbour is within it): looser on views cubes so query candidates
-        # survive, else RAM strength. The ACCEPT metric and the position SPAN, by
-        # contrast, are both chosen PER DIM by region below (ranking_for_position /
-        # tau_for_position): RAM strength on the back/last half (the 90/10 rule),
-        # looser query on the front (views), unpruned on process fronts. So a
-        # query-improving move that regresses RAM at the back is rejected, and a
-        # back dim's window is pruned tightly by RAM even when views are set.
-        # Mirrors fold A and ADR-0002 ("the back half is always RAM-ranked").
-        tau_split = tau.TAU_QUERY if has_views else tau.TAU_RAM
-
-        resulting_order = self._seed_order()
-        permutation_results = []
-        mid = tau.midpoint(len(self.dimensions))
-
-        start_pass = 0
-        executor_state = resume_state.get("executor_state", {}) if resume_state else {}
-        if "fold_b_state" in executor_state:
-            fs = executor_state["fold_b_state"]
-            resulting_order = fs["current_order"]
-            start_pass = fs["pass_index"]
-            logging.info(f"Resuming Fold B from pass {start_pass}")
-        else:
-            # seed apply (one reorder) — the anchor of the % chain for this fold
-            seed_result = self._evaluate_permutation(resulting_order, total_permutations=None)
-            permutation_results.append(seed_result)
-
-        for pass_index in range(start_pass, tau.FOLD_B_MAX_PASSES):
-            improved = False
-            ordered = [(d, self.cardinality.get(d, 0)) for d in resulting_order]
-            # The locked dim and the excluded dims are the ones that cannot move:
-            # neither is ever a refine target, and no other dim may be swept INTO
-            # their slots.
-            movable = set(self.order_frame.movable_dimensions())
-            refine = [d for d in tau.fold_b_refine_order(ordered, tau_split)
-                      if d in movable]
-            reserved_positions = {i for i, d in enumerate(resulting_order)
-                                  if d not in movable}
-            for dim in refine:
-                current_idx = resulting_order.index(dim)
-                # Judge this dim's move — and prune its position window — by the
-                # metric that owns its region: RAM for the back/last half, query
-                # (views) or process for the front. tau_for_position returns None
-                # for process fronts (cardinality can't predict process time), so
-                # fold_b_allowed_span leaves those spans unpruned.
-                ranking = tau.ranking_for_position(current_idx, mid, has_views, has_processes)
-                span_tau = tau.tau_for_position(ranking)
-                lo, hi = tau.fold_b_allowed_span(
-                    dim, [(d, self.cardinality.get(d, 0)) for d in resulting_order], span_tau)
-                positions = [p for p in range(lo, hi + 1)
-                             if p != current_idx
-                             and p not in reserved_positions]
-                if not positions:
-                    continue
-
-                def checkpoint_cb(position, results, _p=pass_index):
-                    self._save_checkpoint(
-                        new_results=permutation_results + results,
-                        last_applied_order=list(results[-1].dimension_order),
-                        executor_state={"fold_b_state": {
-                            "current_order": list(resulting_order),
-                            "pass_index": _p,
-                        }})
-
-                results = self._sweep_across_positions(
-                    resulting_order, dim, positions, total_permutations=None,
-                    skip_permutation=self._greedy_skip_permutation,
-                    checkpoint_cb=checkpoint_cb)
-                permutation_results.extend(results)
-                if results:
-                    best = self._pick_best(results, ranking)
-                    metric = {"query": best.composite_query_time,
-                              "process": best.composite_process_time}.get(ranking)
-                    best_val = metric() if metric else best.ram_usage
-                    # accept only a strict improvement over the current placement
-                    current_val = self._current_metric(resulting_order, ranking, permutation_results)
-                    if best_val < current_val:
-                        resulting_order = list(best.dimension_order)
-                        improved = True
-            if not improved:
-                break
-
-        return permutation_results
-
-    def _current_metric(self, order, ranking, results):
-        """Metric value of the most recent result whose order == order (fallback: worst).
-
-        On resume the restored current_order was measured in the PRIOR run, so it
-        lives in self._resumed_results, not in this run's `results`. Search both
-        (resumed first as older, new results last) most-recent-first, so the
-        anchor's real metric is found instead of float('inf') — which would let
-        the first resumed sweep accept a regression. On a fresh run
-        _resumed_results is empty, so behaviour is identical.
-        """
-        for r in reversed(self._resumed_results + results):
-            if list(r.dimension_order) == list(order):
-                if ranking == "query":
-                    return r.composite_query_time()
-                if ranking == "process":
-                    return r.composite_process_time()
-                return r.ram_usage
-        return float("inf")
 
 
 class PredefinedOrderExecutor(OptipyzerExecutor):

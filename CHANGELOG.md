@@ -51,7 +51,7 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
 - **Web UI.** Start it with `optimuspy ui`, or double-click the executable. It opens at `http://127.0.0.1:8765` and has these pages: Optimize, Reports, Sync Order, Optimize DB and Settings, plus a Jobs list. See [UI Overview](docs/ui/overview.md).
 - **Modes.**
   - `optimize` benchmarks orders for one cube, in one of these modes:
-    - Greedy (with an optional Fast mode);
+    - Greedy: fills the slots from the outside in, last slot first, and measures every remaining dimension at each one, as 1.x did. Fast mode stops after the last and first slots. The run logs how many orders it will measure before it starts. See [The Greedy Search](docs/concepts/greedy-search.md);
     - [Predefined](docs/modes/predefined-orders.md): orders you list;
     - [Position](docs/modes/position-optimization.md): the best dimension for one slot;
     - [Dimension](docs/modes/dimension-optimization.md): the best slot for one dimension.
@@ -59,7 +59,7 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
     See [Optimize Mode](docs/modes/optimize-mode.md).
   - [`set`](docs/modes/set-mode.md) applies one order without benchmarking.
   - [`scan`](docs/modes/scan-mode.md) lists the cubes that make up `--ram-percent` of the instance's memory (60% by default), largest first. With `--output`, it also writes a starter config for each cube.
-  - [`optimize-db`](docs/modes/optimize-db.md) reorders every cube on an instance by leaf-element count, fewest first, within a time limit. It benchmarks nothing, and it leaves already optimized cubes (a storage order that differs from the presentation order) alone unless `include_optimized` is set. With `disable_active_chores`, it disables the chores that are active when the run starts and re-enables them afterwards.
+  - [`optimize-db`](docs/modes/optimize-db.md) reorders every cube on an instance by leaf-element count, fewest first, within a time limit. It benchmarks nothing, except on the cubes you switch to *Last slot only* (in the plan's *Method* column, or with `last_slot_cubes`): those try every dimension in the last slot and keep the best, one reorder per dimension, for a cube whose densest dimension is not its largest. It leaves already optimized cubes (a storage order that differs from the presentation order) alone unless `include_optimized` is set. With `disable_active_chores`, it disables the chores that are active when the run starts and re-enables them afterwards.
     - `--dry-run` builds the plan without changing anything.
     - `--plan` runs a saved plan.
     - `--resume` continues a stopped run in the time left.
@@ -67,9 +67,9 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
 - **Several views and TI processes per run.** `views` and `processes` take lists, and `process_parameters` sets parameters for each process. Each one runs `executions` times, and the median counts. See [Multi-View / Multi-Process](docs/advanced/multi-view-multi-process.md).
 - **Dimension position rules.** `dimension_position_rules` keeps a dimension at a fixed position while the rest are tested, and `orders_to_ignore` skips orders you don't want tested. See [Dimension Position Rules](docs/advanced/dimension-position-rules.md).
 - **HTML report for every run.** It shows summary cards, the recommended order, a chart of memory against query time relative to the original order, the best orders, and the full table. See [Reports Page](docs/ui/reports-page.md).
-- **An Optimize DB report.** Each Optimize DB run ends with `optdb_report_<plan-id>.html` next to its plan and run files, and the CLI prints its path. It shows the cubes reordered, reverted, failed and not started, the expected saving, a chart of the memory saved per cube, each cube's orders and outcome, what the plan skipped, the chores and the run settings. See [Reading the Optimize DB report](docs/ui/reports-page.md#reading-the-optimize-db-report).
+- **An Optimize DB report.** Each Optimize DB run ends with `optdb_report_<plan-id>.html` next to its plan and run files, and the CLI prints its path. It shows the cubes reordered, reverted, failed and not started, the expected saving, a chart of the memory saved per cube, each cube's method, orders and outcome (with a link to a last-slot cube's own report), what the plan skipped, the chores and the run settings. See [Reading the Optimize DB report](docs/ui/reports-page.md#reading-the-optimize-db-report).
 - **Reports page.** Every run's report and data files, by instance, then cube, then run, with Optimize DB runs under their instance. A run without a report yet gets one from *Build report*. See [Reports Page](docs/ui/reports-page.md).
-- **Checkpoint and resume.** Run the same `optimize` command again and it continues where a stopped or failed run left off. `--no-resume` starts over. `--tm1-checkpoint` keeps the checkpoint in TM1's file storage instead of a local file, for environments without local storage such as Atmosphere. See [Checkpoints & Resume](docs/advanced/checkpoints-resume.md).
+- **Checkpoint and resume.** Run the same `optimize` command again and it continues where a stopped or failed run left off. `--no-resume` starts over. The checkpoint is named like the run's report, with the instance, cube and run stamp, so two servers that share a cube name keep separate checkpoints, and a resumed run keeps its report. `--tm1-checkpoint` keeps the checkpoint in TM1's file storage instead of a local file, for environments without local storage such as Atmosphere. See [Checkpoints & Resume](docs/advanced/checkpoints-resume.md).
 - **Sync Order and exported orders.**
   - The Sync Order page copies storage orders from one instance to another.
   - It can also export them to `exports/` as JSON cube configs that `optimuspy set` applies.
@@ -92,6 +92,6 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
 
 ### Removed
 
-- **Benchmarking every cube with one command.** In 1.x, leaving out `-c` benchmarked every cube that had the given view. 2.0.0 benchmarks one cube per config. To cover a whole instance, use `scan --output` to write a config for each candidate cube, or run `optimize-db`, which reorders every cube but benchmarks nothing.
+- **Benchmarking every cube with one command.** In 1.x, leaving out `-c` benchmarked every cube that had the given view. 2.0.0 benchmarks one cube per config. To cover a whole instance, use `scan --output` to write a config for each candidate cube, or run `optimize-db`, which reorders every cube by leaf count and measures only the last slot of the cubes you pick.
 
 Releases before 2.0.0 are listed on the [GitHub Releases page](https://github.com/cubewise-code/optimus-py/releases).

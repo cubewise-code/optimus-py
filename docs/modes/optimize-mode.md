@@ -14,13 +14,11 @@ If you already have a short list of candidate orders, [Predefined Orders](predef
 
 ## How the greedy algorithm works
 
-OptimusPy fills the positions from both ends toward the middle, last position first: `N-1`, then `0`, then `N-2`, then `1`, and so on. Each position gets the best dimension found for it, and the search moves on with one dimension fewer.
+OptimusPy fills the positions from both ends toward the middle, last position first: `N-1`, then `0`, then `N-2`, then `1`, and so on. At each position it tries every dimension not yet placed, keeps the best, and moves on with one dimension fewer. Nothing is skipped on leaf count: the dimension that belongs last is the densest one, and it can have very few leaves.
 
-At each position it does not try every remaining dimension. In the back half it tries only the dimensions whose leaf count is close to the largest one still unplaced; in the front half, only those close to the smallest. A dimension with no near neighbor, such as one with far more leaves than any other, is placed in a single reorder without testing alternatives.
+The back half is always ranked by RAM. The front half is ranked by query time when `views` are set, by process time when only `processes` are set, and by RAM otherwise. The details are in [The Greedy Search](../concepts/greedy-search.md).
 
-The back half is always ranked by RAM. The front half is ranked by query time when `views` are set, by process time when only `processes` are set, and by RAM otherwise. Leaf counts say nothing about how long a process takes, so a position ranked by process time tries every remaining dimension. The details are in [Cardinality-Aware Greedy Optimization](../concepts/cardinality-aware-greedy.md).
-
-Set **`fast: true`** for the seed-and-refine fold (see [How It Works](../concepts/how-it-works.md)).
+Set **`fast: true`** to try only the last position and the first position. Those two hold most of the saving. A 12-dimension cube measures 21 orders in Fast mode and 65 in the full search; the run logs the count before it starts.
 
 [Full algorithm walkthrough → How It Works](../concepts/how-it-works.md)
 

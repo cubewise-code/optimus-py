@@ -5157,10 +5157,10 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
         <!-- Swimlanes -->
         <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-0" x="40" y="52" width="748" height="106" rx="10" class="c-lane" stroke-width="1"/>
-        <text x="54" y="74" class="t-dim" font-size="10" font-weight="600">01 / Greedy (default): fill slots from the outside in</text>
+        <text x="54" y="74" class="t-dim" font-size="10" font-weight="600">01 / Greedy (default): every slot, from the outside in</text>
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="lane" data-composition-frame-id="lane-1" x="40" y="178" width="748" height="106" rx="10" class="c-lane" stroke-width="1"/>
-        <text x="54" y="200" class="t-dim" font-size="10" font-weight="600">02 / Fast mode: start sorted, fix the close calls</text>
+        <text x="54" y="200" class="t-dim" font-size="10" font-weight="600">02 / Fast mode: the last and first slots only</text>
 
         <!-- Phase headers -->
 
@@ -5170,17 +5170,17 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
         <!-- Edge paths -->
         <path data-edge-from="candidates" data-edge-to="keep" data-edge-key="0" data-composition-points="396,120;424,120" d="M 396 120 L 424 120" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="close" data-edge-to="move" data-edge-key="1" data-composition-points="388,246;428,246" d="M 388 246 L 428 246" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="keep" data-edge-to="result" data-edge-key="2" data-composition-points="540,120;610,120;610,220" d="M 540 120 L 610 120 L 610 220" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="move" data-edge-to="result" data-edge-key="3" data-composition-points="536,246;564,246" d="M 536 246 L 564 246" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="pins" data-edge-to="seed" data-edge-label="fast: true" data-edge-key="4" data-composition-points="94,154;94,170;20,170;20,246;168,246" d="M 94 154 L 94 170 L 20 170 L 20 246 L 168 246" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
-        <path data-edge-from="pins" data-edge-to="slot" data-edge-key="5" data-composition-points="140,120;168,120" d="M 140 120 L 168 120" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
-        <path data-edge-from="seed" data-edge-to="close" data-edge-key="6" data-composition-points="260,246;296,246" d="M 260 246 L 296 246" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="fastfirst" data-edge-to="fastkeep" data-edge-key="1" data-composition-points="388,246;428,246" d="M 388 246 L 428 246" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="fastkeep" data-edge-to="result" data-edge-key="2" data-composition-points="536,246;564,246" d="M 536 246 L 564 246" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="fastlast" data-edge-to="fastfirst" data-edge-key="3" data-composition-points="260,246;296,246" d="M 260 246 L 296 246" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="keep" data-edge-to="result" data-edge-key="4" data-composition-points="540,120;610,120;610,220" d="M 540 120 L 610 120 L 610 220" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
+        <path data-edge-from="pins" data-edge-to="fastlast" data-edge-label="fast: true" data-edge-key="5" data-composition-points="94,154;94,170;20,170;20,246;168,246" d="M 94 154 L 94 170 L 20 170 L 20 246 L 168 246" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
+        <path data-edge-from="pins" data-edge-to="slot" data-edge-key="6" data-composition-points="140,120;168,120" d="M 140 120 L 168 120" class="a-emphasis" stroke-width="1.8" marker-end="url(#arrowhead-emphasis)"/>
         <path data-edge-from="slot" data-edge-to="candidates" data-edge-key="7" data-composition-points="260,120;288,120" d="M 260 120 L 288 120" class="a-default" stroke-width="1.4" marker-end="url(#arrowhead)"/>
 
         <!-- Nodes -->
-        <g id="node-pins" data-node-id="pins" data-node-label="Current order" tabindex="0" role="button" aria-label="Focus Current order, rules applied, Greedy (default): fill slots from the outside in" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="rules applied" data-node-tag="locked slot kept" data-node-context="Greedy (default): fill slots from the outside in">
-          <title>Current order · rules applied · Greedy (default): fill slots from the outside in · locked slot kept</title>
+        <g id="node-pins" data-node-id="pins" data-node-label="Current order" tabindex="0" role="button" aria-label="Focus Current order, rules applied, Greedy (default): every slot, from the outside in" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="rules applied" data-node-tag="locked slot kept" data-node-context="Greedy (default): every slot, from the outside in">
+          <title>Current order · rules applied · Greedy (default): every slot, from the outside in · locked slot kept</title>
           <rect x="48" y="86" width="92" height="68" rx="6" class="c-mask"/>
           <rect x="48" y="86" width="92" height="68" rx="6" class="c-frontend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="frontend" class="semantic-sigil s-frontend" transform="translate(54 92) scale(0.6875)">
@@ -5194,8 +5194,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
         <text data-detail="fine" x="94" y="142" class="t-frontend" font-size="7" text-anchor="middle">locked slot kept</text>
         </g>
 
-        <g id="node-slot" data-node-id="slot" data-node-label="Next slot" tabindex="0" role="button" aria-label="Focus Next slot, last, first, 2nd last, Greedy (default): fill slots from the outside in" aria-pressed="false" data-node-kind="backend" data-node-sublabel="last, first, 2nd last" data-node-context="Greedy (default): fill slots from the outside in">
-          <title>Next slot · last, first, 2nd last · Greedy (default): fill slots from the outside in</title>
+        <g id="node-slot" data-node-id="slot" data-node-label="Next slot" tabindex="0" role="button" aria-label="Focus Next slot, last, first, 2nd last, Greedy (default): every slot, from the outside in" aria-pressed="false" data-node-kind="backend" data-node-sublabel="last, first, 2nd last" data-node-context="Greedy (default): every slot, from the outside in">
+          <title>Next slot · last, first, 2nd last · Greedy (default): every slot, from the outside in</title>
           <rect x="168" y="94" width="92" height="52" rx="6" class="c-mask"/>
           <rect x="168" y="94" width="92" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(174 100) scale(0.6875)">
@@ -5205,20 +5205,20 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <text data-detail="context" x="214" y="132" class="t-muted" font-size="6.6" text-anchor="middle">last, first, 2nd last</text>
         </g>
 
-        <g id="node-candidates" data-node-id="candidates" data-node-label="Try likely dims" tabindex="0" role="button" aria-label="Focus Try likely dims, similar size only, Greedy (default): fill slots from the outside in" aria-pressed="false" data-node-kind="database" data-node-sublabel="similar size only" data-node-context="Greedy (default): fill slots from the outside in">
-          <title>Try likely dims · similar size only · Greedy (default): fill slots from the outside in</title>
+        <g id="node-candidates" data-node-id="candidates" data-node-label="Try every dim" tabindex="0" role="button" aria-label="Focus Try every dim, all not yet placed, Greedy (default): every slot, from the outside in" aria-pressed="false" data-node-kind="database" data-node-sublabel="all not yet placed" data-node-context="Greedy (default): every slot, from the outside in">
+          <title>Try every dim · all not yet placed · Greedy (default): every slot, from the outside in</title>
           <rect x="288" y="94" width="108" height="52" rx="6" class="c-mask"/>
           <rect x="288" y="94" width="108" height="52" rx="6" class="c-database" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(294 100) scale(0.6875)">
             <ellipse cx="8" cy="4" rx="5" ry="2"/>
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="342" y="115" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Try likely dims</text>
-          <text data-detail="context" x="342" y="132" class="t-muted" font-size="8" text-anchor="middle">similar size only</text>
+          <text data-node-label="" data-detail-anchor="" x="342" y="115" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Try every dim</text>
+          <text data-detail="context" x="342" y="132" class="t-muted" font-size="8" text-anchor="middle">all not yet placed</text>
         </g>
 
-        <g id="node-keep" data-node-id="keep" data-node-label="Keep the best" tabindex="0" role="button" aria-label="Focus Keep the best, repeat to the middle, Greedy (default): fill slots from the outside in" aria-pressed="false" data-node-kind="security" data-node-sublabel="repeat to the middle" data-node-context="Greedy (default): fill slots from the outside in">
-          <title>Keep the best · repeat to the middle · Greedy (default): fill slots from the outside in</title>
+        <g id="node-keep" data-node-id="keep" data-node-label="Keep the best" tabindex="0" role="button" aria-label="Focus Keep the best, repeat to the middle, Greedy (default): every slot, from the outside in" aria-pressed="false" data-node-kind="security" data-node-sublabel="repeat to the middle" data-node-context="Greedy (default): every slot, from the outside in">
+          <title>Keep the best · repeat to the middle · Greedy (default): every slot, from the outside in</title>
           <rect x="424" y="94" width="116" height="52" rx="6" class="c-mask"/>
           <rect x="424" y="94" width="116" height="52" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(430 100) scale(0.6875)">
@@ -5229,43 +5229,43 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <text data-detail="context" x="482" y="132" class="t-muted" font-size="8" text-anchor="middle">repeat to the middle</text>
         </g>
 
-        <g id="node-seed" data-node-id="seed" data-node-label="Sort by size" tabindex="0" role="button" aria-label="Focus Sort by size, fewest leaves first, Fast mode: start sorted, fix the close calls" aria-pressed="false" data-node-kind="backend" data-node-sublabel="fewest leaves first" data-node-context="Fast mode: start sorted, fix the close calls">
-          <title>Sort by size · fewest leaves first · Fast mode: start sorted, fix the close calls</title>
+        <g id="node-fastlast" data-node-id="fastlast" data-node-label="Last slot" tabindex="0" role="button" aria-label="Focus Last slot, try every dim, Fast mode: the last and first slots only" aria-pressed="false" data-node-kind="backend" data-node-sublabel="try every dim" data-node-context="Fast mode: the last and first slots only">
+          <title>Last slot · try every dim · Fast mode: the last and first slots only</title>
           <rect x="168" y="220" width="92" height="52" rx="6" class="c-mask"/>
           <rect x="168" y="220" width="92" height="52" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(174 226) scale(0.6875)">
             <path d="M6 3 3 8l3 5M10 3l3 5-3 5"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="214" y="241" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Sort by size</text>
-          <text data-detail="context" x="214" y="258" class="t-muted" font-size="7.3" text-anchor="middle">fewest leaves first</text>
+          <text data-node-label="" data-detail-anchor="" x="214" y="241" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Last slot</text>
+          <text data-detail="context" x="214" y="258" class="t-muted" font-size="8" text-anchor="middle">try every dim</text>
         </g>
 
-        <g id="node-close" data-node-id="close" data-node-label="Close calls" tabindex="0" role="button" aria-label="Focus Close calls, dims of similar size, Fast mode: start sorted, fix the close calls" aria-pressed="false" data-node-kind="database" data-node-sublabel="dims of similar size" data-node-context="Fast mode: start sorted, fix the close calls">
-          <title>Close calls · dims of similar size · Fast mode: start sorted, fix the close calls</title>
+        <g id="node-fastfirst" data-node-id="fastfirst" data-node-label="First slot" tabindex="0" role="button" aria-label="Focus First slot, try every dim, Fast mode: the last and first slots only" aria-pressed="false" data-node-kind="database" data-node-sublabel="try every dim" data-node-context="Fast mode: the last and first slots only">
+          <title>First slot · try every dim · Fast mode: the last and first slots only</title>
           <rect x="296" y="220" width="92" height="52" rx="6" class="c-mask"/>
           <rect x="296" y="220" width="92" height="52" rx="6" class="c-database" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="database" class="semantic-sigil s-database" transform="translate(302 226) scale(0.6875)">
             <ellipse cx="8" cy="4" rx="5" ry="2"/>
             <path d="M3 4v8c0 1.1 2.2 2 5 2s5-.9 5-2V4M3 8c0 1.1 2.2 2 5 2s5-.9 5-2"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="342" y="241" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Close calls</text>
-          <text data-detail="context" x="342" y="258" class="t-muted" font-size="7" text-anchor="middle">dims of similar size</text>
+          <text data-node-label="" data-detail-anchor="" x="342" y="241" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">First slot</text>
+          <text data-detail="context" x="342" y="258" class="t-muted" font-size="8" text-anchor="middle">try every dim</text>
         </g>
 
-        <g id="node-move" data-node-id="move" data-node-label="Move if better" tabindex="0" role="button" aria-label="Focus Move if better, up to 2 rounds, Fast mode: start sorted, fix the close calls" aria-pressed="false" data-node-kind="security" data-node-sublabel="up to 2 rounds" data-node-context="Fast mode: start sorted, fix the close calls">
-          <title>Move if better · up to 2 rounds · Fast mode: start sorted, fix the close calls</title>
+        <g id="node-fastkeep" data-node-id="fastkeep" data-node-label="Keep the best" tabindex="0" role="button" aria-label="Focus Keep the best, then stop, Fast mode: the last and first slots only" aria-pressed="false" data-node-kind="security" data-node-sublabel="then stop" data-node-context="Fast mode: the last and first slots only">
+          <title>Keep the best · then stop · Fast mode: the last and first slots only</title>
           <rect x="428" y="220" width="108" height="52" rx="6" class="c-mask"/>
           <rect x="428" y="220" width="108" height="52" rx="6" class="c-security" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="security" class="semantic-sigil s-security" transform="translate(434 226) scale(0.6875)">
             <path d="M8 2.2 13 4v3.5c0 3.1-1.8 5.4-5 6.5-3.2-1.1-5-3.4-5-6.5V4Z"/>
             <path d="m5.8 8 1.5 1.5 3-3"/>
           </g>
-          <text data-node-label="" data-detail-anchor="" x="482" y="241" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Move if better</text>
-          <text data-detail="context" x="482" y="258" class="t-muted" font-size="8" text-anchor="middle">up to 2 rounds</text>
+          <text data-node-label="" data-detail-anchor="" x="482" y="241" class="t-primary" font-size="11" font-weight="600" text-anchor="middle">Keep the best</text>
+          <text data-detail="context" x="482" y="258" class="t-muted" font-size="8" text-anchor="middle">then stop</text>
         </g>
 
-        <g id="node-result" data-node-id="result" data-node-label="Best order" tabindex="0" role="button" aria-label="Focus Best order, then picked as usual, Fast mode: start sorted, fix the close calls" aria-pressed="false" data-node-kind="external" data-node-sublabel="then picked as usual" data-node-context="Fast mode: start sorted, fix the close calls">
-          <title>Best order · then picked as usual · Fast mode: start sorted, fix the close calls</title>
+        <g id="node-result" data-node-id="result" data-node-label="Best order" tabindex="0" role="button" aria-label="Focus Best order, then picked as usual, Fast mode: the last and first slots only" aria-pressed="false" data-node-kind="external" data-node-sublabel="then picked as usual" data-node-context="Fast mode: the last and first slots only">
+          <title>Best order · then picked as usual · Fast mode: the last and first slots only</title>
           <rect x="564" y="220" width="92" height="52" rx="6" class="c-mask"/>
           <rect x="564" y="220" width="92" height="52" rx="6" class="c-external" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="external" class="semantic-sigil s-external" transform="translate(570 226) scale(0.6875)">
@@ -5281,11 +5281,11 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
 
 
 
-        <g data-detail="context" data-edge-from="pins" data-edge-to="seed" data-edge-label="fast: true" data-edge-key="4">
+
+        <g data-detail="context" data-edge-from="pins" data-edge-to="fastlast" data-edge-label="fast: true" data-edge-key="5">
           <rect x="65" y="226" width="58" height="14" rx="3" class="c-mask"/>
           <text x="94" y="236" class="t-muted" font-size="8" text-anchor="middle">fast: true</text>
         </g>
-
 
 
 
@@ -5505,8 +5505,8 @@ OTHER DEALINGS IN THE FONT SOFTWARE.
           <h3>Greedy or Fast?</h3>
         </div>
         <ul>
-          <li>&bull; Greedy tests more orders and is the default</li>
-          <li>&bull; Fast tests fewer and finishes sooner; good for a first look at a large cube</li>
+          <li>&bull; Greedy measures every dimension at every slot to the middle: 65 orders on a 12-dimension cube</li>
+          <li>&bull; Fast measures every dimension in the last and first slots only: 21 orders. Most of the saving is there</li>
         </ul>
       </div>
     </div>

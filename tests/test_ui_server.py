@@ -485,6 +485,43 @@ def test_running_a_plan_executes_the_plan_that_was_reviewed(ui_server, monkeypat
     assert job.label == PLAN_ID
 
 
+def test_the_method_chosen_per_cube_is_saved_into_the_plan_before_it_runs(ui_server, monkeypatch, tmp_path):
+    # The plan file is what a resume and the report read back.
+    base, _ = ui_server(PLAN_INI)
+    _write_json(_plan_file(tmp_path), {"plan_id": PLAN_ID, "instance": "Planning Prod",
+                                       "cubes": [{"cube": "Sales", "method": "leaf_count"},
+                                                 {"cube": "Costs", "method": "leaf_count"}]})
+    status, _, _, seen = _run_plan(base, monkeypatch, {
+        "instance": "Planning Prod", "plan_id": PLAN_ID, "methods": {"Sales": "last_slot"}})
+    assert status == 200
+    assert [c["method"] for c in seen["plan"]["cubes"]] == ["last_slot", "leaf_count"]
+    saved = json.loads(_plan_file(tmp_path).read_text(encoding="utf-8"))
+    assert [c["method"] for c in saved["cubes"]] == ["last_slot", "leaf_count"]
+
+
+def test_a_method_the_plan_cannot_take_is_refused_before_anything_runs(ui_server, monkeypatch, tmp_path):
+    base, _ = ui_server(PLAN_INI)
+    _write_json(_plan_file(tmp_path), {"plan_id": PLAN_ID, "instance": "Planning Prod",
+                                       "cubes": [{"cube": "Sales"}]})
+    status, payload, job, _ = _run_plan(base, monkeypatch, {
+        "instance": "Planning Prod", "plan_id": PLAN_ID, "methods": {"Sales": "fast"}})
+    assert status == 400 and job is None
+    assert "is not a method" in payload["error"]
+
+
+def test_a_started_plan_keeps_the_methods_it_started_with(ui_server, monkeypatch, tmp_path):
+    base, _ = ui_server(PLAN_INI)
+    plan_file = _plan_file(tmp_path)
+    _write_json(plan_file, {"plan_id": PLAN_ID, "instance": "Planning Prod",
+                            "cubes": [{"cube": "Sales", "method": "leaf_count"}]})
+    _write_json(_run_file(tmp_path), {"plan_id": PLAN_ID, "instance": "Planning Prod",
+                                      "status": "running", "plan_path": str(plan_file)})
+    status, payload, job, _ = _run_plan(base, monkeypatch, {
+        "instance": "Planning Prod", "plan_id": PLAN_ID, "methods": {"Sales": "last_slot"}})
+    assert status == 400 and job is None
+    assert "already started" in payload["error"]
+
+
 def test_running_a_plan_that_already_started_continues_its_run(ui_server, monkeypatch, tmp_path):
     # A run left "running" is what a killed or restarted UI leaves behind.
     base, _ = ui_server(PLAN_INI)

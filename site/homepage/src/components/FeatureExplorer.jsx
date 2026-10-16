@@ -40,7 +40,7 @@ const FEATURES = [
 }`,
     link: `${DOCS_BASE}/advanced/dimension-position-rules/`, cta: 'Dimension position rules' },
   { key: 'fast', icon: Zap, title: 'Fast mode', short: 'Fewer reorders on big cubes.',
-    body: 'Starts from the order suggested by leaf counts and only refines the dimensions that are still undecided. Useful when every reorder takes minutes.',
+    body: 'Measures every dimension in the last slot, then in the first slot, and stops. Those two slots hold most of the saving. Useful when every reorder takes minutes.',
     kind: 'code', lang: 'sales.json',
     code: `{
   "fast": true

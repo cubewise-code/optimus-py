@@ -11,11 +11,11 @@
   "lanes": [
     {
       "id": "greedy",
-      "label": "Greedy (default): fill slots from the outside in"
+      "label": "Greedy (default): every slot, from the outside in"
     },
     {
       "id": "fast",
-      "label": "Fast mode: start sorted, fix the close calls"
+      "label": "Fast mode: the last and first slots only"
     }
   ],
   "mainPath": [
@@ -48,8 +48,8 @@
       "lane": "greedy",
       "col": 2,
       "type": "database",
-      "label": "Try likely dims",
-      "sublabel": "similar size only",
+      "label": "Try every dim",
+      "sublabel": "all not yet placed",
       "width": 108
     },
     {
@@ -62,28 +62,28 @@
       "width": 116
     },
     {
-      "id": "seed",
+      "id": "fastlast",
       "lane": "fast",
       "col": 1,
       "type": "backend",
-      "label": "Sort by size",
-      "sublabel": "fewest leaves first"
+      "label": "Last slot",
+      "sublabel": "try every dim"
     },
     {
-      "id": "close",
+      "id": "fastfirst",
       "lane": "fast",
       "col": 2,
       "type": "database",
-      "label": "Close calls",
-      "sublabel": "dims of similar size"
+      "label": "First slot",
+      "sublabel": "try every dim"
     },
     {
-      "id": "move",
+      "id": "fastkeep",
       "lane": "fast",
       "col": 3,
       "type": "security",
-      "label": "Move if better",
-      "sublabel": "up to 2 rounds",
+      "label": "Keep the best",
+      "sublabel": "then stop",
       "width": 108
     },
     {
@@ -116,22 +116,22 @@
     },
     {
       "from": "pins",
-      "to": "seed",
+      "to": "fastlast",
       "label": "fast: true",
       "role": "branch",
       "fromSide": "bottom",
       "toSide": "left"
     },
     {
-      "from": "seed",
-      "to": "close"
+      "from": "fastlast",
+      "to": "fastfirst"
     },
     {
-      "from": "close",
-      "to": "move"
+      "from": "fastfirst",
+      "to": "fastkeep"
     },
     {
-      "from": "move",
+      "from": "fastkeep",
       "to": "result",
       "role": "branch"
     }
@@ -157,8 +157,8 @@
       "dot": "emerald",
       "title": "Greedy or Fast?",
       "items": [
-        "Greedy tests more orders and is the default",
-        "Fast tests fewer and finishes sooner; good for a first look at a large cube"
+        "Greedy measures every dimension at every slot to the middle: 65 orders on a 12-dimension cube",
+        "Fast measures every dimension in the last and first slots only: 21 orders. Most of the saving is there"
       ]
     }
   ]
