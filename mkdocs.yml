@@ -26,6 +26,8 @@ exclude_docs: |
   *.docx
 
 theme:
+  # Adds the site trackers (Matomo, Lead Forensics); see overrides/main.html.
+  custom_dir: overrides
   name: material
   language: en
   logo: assets/images/optimuspy/logo.svg
