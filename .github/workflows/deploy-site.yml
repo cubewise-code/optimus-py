@@ -15,6 +15,7 @@ on:
       - 'site/**'
       - 'docs/**'
       - 'mkdocs.yml'
+      - 'overrides/**'
       - 'docs-requirements.txt'
       - '.github/workflows/deploy-site.yml'
   workflow_dispatch:
