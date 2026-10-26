@@ -1,6 +1,6 @@
 matplotlib>=3.1.1
 TM1py>=1.5.0
-configparser>=3.5.3
+configparser>=7.3.0
 mdxpy>=0.2
 xlsxwriter
 pandas
