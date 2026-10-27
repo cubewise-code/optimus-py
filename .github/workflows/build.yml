@@ -76,7 +76,7 @@ jobs:
         run: echo "sha=${{ github.event.workflow_run.head_sha || github.sha }}" >> "$GITHUB_OUTPUT"
 
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ steps.sha.outputs.sha }}
           fetch-depth: 0
@@ -134,7 +134,7 @@ jobs:
       - name: Checkout code
         # Master's tip: the version commit goes on top of anything merged
         # since the tested commit.
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: master
 
@@ -164,12 +164,12 @@ jobs:
     runs-on: windows-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.tag.outputs.sha || needs.plan.outputs.sha }}
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.x'
 
@@ -246,12 +246,12 @@ jobs:
         include: ${{ fromJSON(needs.plan.outputs.linux) }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.tag.outputs.sha || needs.plan.outputs.sha }}
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.x'
 
@@ -318,7 +318,7 @@ jobs:
       contents: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: ${{ needs.tag.outputs.sha || needs.plan.outputs.sha }}
           fetch-depth: 0
