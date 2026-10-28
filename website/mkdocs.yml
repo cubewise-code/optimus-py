@@ -4,6 +4,10 @@ site_author: Cubewise CODE
 # The React landing page owns the site root; the deploy workflow publishes the
 # MkDocs build under /docs/, so canonical URLs and the sitemap must say so too.
 site_url: https://cubewise-code.github.io/optimus-py/docs/
+# This file lives in website/ with the rest of the site; the pages stay in the
+# repository's docs/, beside the code they describe. Paths here are relative to
+# this file: build with `mkdocs build -f website/mkdocs.yml`.
+docs_dir: ../docs
 site_dir: mkdocs_site
 
 repo_name: cubewise-code/optimus-py
@@ -26,7 +30,7 @@ exclude_docs: |
   *.docx
 
 theme:
-  # Adds the site trackers (Matomo, Lead Forensics); see overrides/main.html.
+  # Adds the site trackers (Matomo, Lead Forensics); see website/overrides/main.html.
   custom_dir: overrides
   name: material
   language: en
