@@ -11,10 +11,15 @@ python -m pytest -q
 
 The default test run needs no TM1 server. The live tests are opt-in: `python -m pytest -m live --instance tm1srv01`.
 
-Build the documentation into a temporary folder, because `./site` holds the landing page:
+## The website
+
+The documentation pages are in `docs/`, next to the code they describe. Everything else that exists only for the website is in `website/`: the landing page (`homepage/`, React and Vite), the MkDocs configuration (`mkdocs.yml`), its theme overrides (`overrides/`) and its Python requirements (`requirements.txt`). The `Deploy Website` workflow builds both and publishes the landing page at the site root and the documentation under `/docs/`.
+
+Build the documentation (into `website/mkdocs_site/`, which git ignores):
 
 ```bash
-python -m mkdocs build --strict --site-dir "$(mktemp -d)/site"
+pip install -r website/requirements.txt
+python -m mkdocs build --strict -f website/mkdocs.yml
 ```
 
 ## Pull requests

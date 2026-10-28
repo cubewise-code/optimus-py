@@ -1,7 +1,8 @@
 # OptimusPy Website Deployment Workflow
 # Builds the React landing page and the MkDocs documentation,
 # merges them, and deploys to GitHub Pages.
-# Triggers when website or docs files change.
+# Triggers when website or docs files change. Everything that exists only for
+# the website lives in website/; the pages themselves are in docs/.
 
 name: Deploy Website
 
@@ -12,11 +13,8 @@ on:
     # merge if you don't want every push to that branch to redeploy.
     branches: [master, main, optimuspy2dot0]
     paths:
-      - 'site/**'
+      - 'website/**'
       - 'docs/**'
-      - 'mkdocs.yml'
-      - 'overrides/**'
-      - 'docs-requirements.txt'
       - '.github/workflows/deploy-site.yml'
   workflow_dispatch:
 
@@ -41,7 +39,7 @@ jobs:
         with:
           node-version: '20'
           cache: 'npm'
-          cache-dependency-path: site/homepage/package-lock.json
+          cache-dependency-path: website/homepage/package-lock.json
 
       - name: Setup Python
         uses: actions/setup-python@v7
@@ -49,25 +47,26 @@ jobs:
           python-version: '3.11'
 
       - name: Install MkDocs dependencies
-        run: pip install -r docs-requirements.txt
+        run: pip install -r website/requirements.txt
 
       - name: Install homepage dependencies
-        working-directory: site/homepage
+        working-directory: website/homepage
         run: npm ci
 
       - name: Build homepage (React/Vite)
-        working-directory: site/homepage
+        working-directory: website/homepage
         run: npm run build
 
       - name: Build documentation (MkDocs)
-        run: mkdocs build --site-dir mkdocs_site
+        # site_dir in mkdocs.yml: website/mkdocs_site
+        run: mkdocs build -f website/mkdocs.yml
 
       - name: Merge builds
         run: |
           mkdir -p _site
-          cp -r site/homepage/dist/* _site/
+          cp -r website/homepage/dist/* _site/
           mkdir -p _site/docs
-          cp -r mkdocs_site/* _site/docs/
+          cp -r website/mkdocs_site/* _site/docs/
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

@@ -49,10 +49,9 @@ exports/
 logs/
 *.log
 
-# mkdocs build output. Note this is NOT ./site — site/homepage is the tracked
-# React landing page, and mkdocs is configured with site_dir: mkdocs_site to
-# keep the two apart.
-mkdocs_site/
+# mkdocs build output (site_dir in website/mkdocs.yml). The landing page's own
+# build output is ignored by website/homepage/.gitignore.
+website/mkdocs_site/
 
 # Internal planning, not part of the published documentation set.
 docs/superpowers/
