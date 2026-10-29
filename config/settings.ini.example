@@ -1,0 +1,19 @@
+# OptimusPy settings. The file is optional: copy this one to settings.ini and
+# uncomment a key to change it. A missing key means the default shown here.
+# The Settings page writes settings.ini itself, without these comments.
+
+[optimuspy]
+# The config.ini to read when --config is not given. Unset means config/config.ini.
+# config_ini =
+
+# The folder the Optimize page saves cube configs to.
+# cube_configs_dir = cube-configs
+
+# The folder Sync Order's Export to Folder writes to.
+# exports_dir = exports
+
+# The port the web UI listens on. --port wins over it.
+# ui_port = 8765
+
+# Whether starting the web UI opens a browser tab (true or false).
+# open_browser = true

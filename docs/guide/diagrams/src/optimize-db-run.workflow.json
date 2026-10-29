@@ -1,0 +1,184 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "An Optimize DB run, step by step",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "hidden"
+    }
+  },
+  "lanes": [
+    {
+      "id": "plan",
+      "label": "Build the plan (changes nothing)"
+    },
+    {
+      "id": "run",
+      "label": "Run the plan"
+    },
+    {
+      "id": "problem",
+      "label": "Stop, time limit or worse",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "snapshot",
+    "filter",
+    "target",
+    "chores",
+    "next",
+    "reorder",
+    "summary"
+  ],
+  "nodes": [
+    {
+      "id": "snapshot",
+      "lane": "plan",
+      "col": 0,
+      "type": "database",
+      "label": "Memory snapshot",
+      "sublabel": "every cube",
+      "width": 116
+    },
+    {
+      "id": "filter",
+      "lane": "plan",
+      "col": 1,
+      "type": "security",
+      "label": "Skip cubes",
+      "sublabel": "see card below"
+    },
+    {
+      "id": "target",
+      "lane": "plan",
+      "col": 2,
+      "type": "backend",
+      "label": "New order",
+      "sublabel": "fewest leaves first",
+      "tag": "review it"
+    },
+    {
+      "id": "chores",
+      "lane": "run",
+      "col": 2,
+      "type": "security",
+      "label": "Pause chores",
+      "sublabel": "if you asked",
+      "tag": "optional"
+    },
+    {
+      "id": "next",
+      "lane": "run",
+      "col": 3,
+      "type": "backend",
+      "label": "Next cube",
+      "sublabel": "smallest first"
+    },
+    {
+      "id": "reorder",
+      "lane": "run",
+      "col": 4,
+      "type": "database",
+      "label": "Reorder",
+      "sublabel": "server reports memory"
+    },
+    {
+      "id": "summary",
+      "lane": "run",
+      "col": 5,
+      "type": "external",
+      "label": "Summary",
+      "sublabel": "chores back on"
+    },
+    {
+      "id": "revert",
+      "lane": "problem",
+      "col": 4,
+      "type": "security",
+      "label": "Put back",
+      "sublabel": "memory grew"
+    },
+    {
+      "id": "halt",
+      "lane": "problem",
+      "col": 3,
+      "type": "messagebus",
+      "label": "Stopped",
+      "sublabel": "Resume later"
+    }
+  ],
+  "edges": [
+    {
+      "from": "snapshot",
+      "to": "filter"
+    },
+    {
+      "from": "filter",
+      "to": "target"
+    },
+    {
+      "from": "target",
+      "to": "chores",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "chores",
+      "to": "next"
+    },
+    {
+      "from": "next",
+      "to": "reorder",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "from": "reorder",
+      "to": "summary",
+      "label": "queue done",
+      "variant": "emphasis"
+    },
+    {
+      "from": "reorder",
+      "to": "revert",
+      "role": "error",
+      "variant": "security"
+    },
+    {
+      "from": "next",
+      "to": "halt",
+      "label": "Stop / no time",
+      "role": "error",
+      "variant": "security"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "amber",
+      "title": "Cubes it skips",
+      "items": [
+        "Excluded, empty, under 10 MB, or fewer than 3 dimensions",
+        "String dimensions (any by default; more than one with pin_last), or already in order"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "The new order",
+      "items": [
+        "Leaf elements, fewest first; with pin_last the string dimension stays last",
+        "Not benchmarked: follow with optimize where it matters"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Stops and limits",
+      "items": [
+        "Stop and the time limit act between cubes",
+        "Paused chores come back on every exit; Resume uses the time left"
+      ]
+    }
+  ]
+}

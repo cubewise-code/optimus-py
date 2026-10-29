@@ -1,0 +1,165 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "How Greedy and Fast mode choose the order",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "hidden"
+    }
+  },
+  "lanes": [
+    {
+      "id": "greedy",
+      "label": "Greedy (default): every slot, from the outside in"
+    },
+    {
+      "id": "fast",
+      "label": "Fast mode: the last and first slots only"
+    }
+  ],
+  "mainPath": [
+    "pins",
+    "slot",
+    "candidates",
+    "keep",
+    "result"
+  ],
+  "nodes": [
+    {
+      "id": "pins",
+      "lane": "greedy",
+      "col": 0,
+      "type": "frontend",
+      "label": "Current order",
+      "sublabel": "rules applied",
+      "tag": "locked slot kept"
+    },
+    {
+      "id": "slot",
+      "lane": "greedy",
+      "col": 1,
+      "type": "backend",
+      "label": "Next slot",
+      "sublabel": "last, first, 2nd last"
+    },
+    {
+      "id": "candidates",
+      "lane": "greedy",
+      "col": 2,
+      "type": "database",
+      "label": "Try every dim",
+      "sublabel": "all not yet placed",
+      "width": 108
+    },
+    {
+      "id": "keep",
+      "lane": "greedy",
+      "col": 3,
+      "type": "security",
+      "label": "Keep the best",
+      "sublabel": "repeat to the middle",
+      "width": 116
+    },
+    {
+      "id": "fastlast",
+      "lane": "fast",
+      "col": 1,
+      "type": "backend",
+      "label": "Last slot",
+      "sublabel": "try every dim"
+    },
+    {
+      "id": "fastfirst",
+      "lane": "fast",
+      "col": 2,
+      "type": "database",
+      "label": "First slot",
+      "sublabel": "try every dim"
+    },
+    {
+      "id": "fastkeep",
+      "lane": "fast",
+      "col": 3,
+      "type": "security",
+      "label": "Keep the best",
+      "sublabel": "then stop",
+      "width": 108
+    },
+    {
+      "id": "result",
+      "lane": "fast",
+      "col": 4,
+      "type": "external",
+      "label": "Best order",
+      "sublabel": "then picked as usual"
+    }
+  ],
+  "edges": [
+    {
+      "from": "pins",
+      "to": "slot",
+      "variant": "emphasis"
+    },
+    {
+      "from": "slot",
+      "to": "candidates"
+    },
+    {
+      "from": "candidates",
+      "to": "keep"
+    },
+    {
+      "from": "keep",
+      "to": "result",
+      "variant": "emphasis"
+    },
+    {
+      "from": "pins",
+      "to": "fastlast",
+      "label": "fast: true",
+      "role": "branch",
+      "fromSide": "bottom",
+      "toSide": "left"
+    },
+    {
+      "from": "fastlast",
+      "to": "fastfirst"
+    },
+    {
+      "from": "fastfirst",
+      "to": "fastkeep"
+    },
+    {
+      "from": "fastkeep",
+      "to": "result",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Which measure decides a slot",
+      "items": [
+        "Back half of the order: memory",
+        "Front half: query time if you gave views, else TI time, else memory"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "What never moves",
+      "items": [
+        "A last dimension with string elements (the locked slot)",
+        "Dimensions you excluded or pinned with position rules; ignored orders are skipped"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Greedy or Fast?",
+      "items": [
+        "Greedy measures every dimension at every slot to the middle: 65 orders on a 12-dimension cube",
+        "Fast measures every dimension in the last and first slots only: 21 orders. Most of the saving is there"
+      ]
+    }
+  ]
+}

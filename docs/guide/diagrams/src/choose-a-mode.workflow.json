@@ -1,0 +1,182 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "OptimusPy: which mode do I run?",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "hidden"
+    }
+  },
+  "lanes": [
+    {
+      "id": "apply",
+      "label": "Apply an order you already have"
+    },
+    {
+      "id": "measure",
+      "label": "Measure: find the best order"
+    },
+    {
+      "id": "more",
+      "label": "Every cube at once, or a narrower question"
+    }
+  ],
+  "mainPath": [
+    "start",
+    "scan",
+    "optimize",
+    "greedy"
+  ],
+  "nodes": [
+    {
+      "id": "start",
+      "lane": "measure",
+      "col": 0,
+      "type": "frontend",
+      "label": "Start here",
+      "sublabel": "what do you need?"
+    },
+    {
+      "id": "scan",
+      "lane": "measure",
+      "col": 1,
+      "type": "backend",
+      "label": "scan",
+      "sublabel": "biggest cubes by RAM"
+    },
+    {
+      "id": "optimize",
+      "lane": "measure",
+      "col": 2,
+      "type": "backend",
+      "label": "optimize",
+      "sublabel": "benchmark orders",
+      "tag": "one cube"
+    },
+    {
+      "id": "greedy",
+      "lane": "measure",
+      "col": 3,
+      "type": "database",
+      "label": "Greedy",
+      "sublabel": "no idea of the order",
+      "tag": "Fast mode optional"
+    },
+    {
+      "id": "predefined",
+      "lane": "more",
+      "col": 3,
+      "type": "database",
+      "label": "Predefined",
+      "sublabel": "compare your orders"
+    },
+    {
+      "id": "slot",
+      "lane": "more",
+      "col": 4,
+      "type": "database",
+      "label": "One slot",
+      "sublabel": "Position / Dimension"
+    },
+    {
+      "id": "set",
+      "lane": "apply",
+      "col": 1,
+      "type": "security",
+      "label": "set",
+      "sublabel": "apply one order"
+    },
+    {
+      "id": "sync",
+      "lane": "apply",
+      "col": 2,
+      "type": "external",
+      "label": "Sync Order",
+      "sublabel": "to another server",
+      "tag": "UI"
+    },
+    {
+      "id": "optdb",
+      "lane": "more",
+      "col": 1,
+      "type": "cloud",
+      "label": "optimize-db",
+      "sublabel": "leaf-count rule",
+      "tag": "every cube"
+    }
+  ],
+  "edges": [
+    {
+      "from": "start",
+      "to": "scan",
+      "label": "which cube?"
+    },
+    {
+      "from": "scan",
+      "to": "optimize",
+      "label": "top cubes",
+      "variant": "emphasis"
+    },
+    {
+      "from": "optimize",
+      "to": "greedy",
+      "variant": "emphasis"
+    },
+    {
+      "from": "optimize",
+      "to": "predefined",
+      "role": "branch"
+    },
+    {
+      "from": "optimize",
+      "to": "slot",
+      "role": "branch"
+    },
+    {
+      "from": "start",
+      "to": "set",
+      "label": "know the order",
+      "role": "branch",
+      "fromSide": "top"
+    },
+    {
+      "from": "set",
+      "to": "sync",
+      "role": "branch"
+    },
+    {
+      "from": "start",
+      "to": "optdb",
+      "label": "whole instance",
+      "role": "branch",
+      "fromSide": "bottom"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Measured",
+      "items": [
+        "optimize reorders the real cube, measures each order, then puts the original back unless auto-apply is on",
+        "Already know the cube? Skip scan and go straight to optimize"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Not measured",
+      "items": [
+        "set and Sync Order apply an order as given",
+        "optimize-db sorts by leaf count and keeps a change only if memory did not grow"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Typical path",
+      "items": [
+        "scan, then optimize the top cubes on DEV",
+        "then set or Sync Order the winners on PROD"
+      ]
+    }
+  ]
+}
