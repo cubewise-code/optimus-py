@@ -88,7 +88,7 @@ OptimusPy finds a better storage dimension order for your TM1 cubes and can appl
 - **Where `config.ini` lives.** It is read from the file given with `--config`, else the file linked on the Settings page, else `config/config.ini` in the folder you run from (for the bundle, the executable's folder). OptimusPy doesn't edit it.
 - **Where the log is written.** OptimusPy writes `logs/optimuspy.log` in its install folder: the executable's folder for the bundle, the repository root for a clone. 1.x wrote `optimuspy.log` in the folder you ran from.
 - **Result files.** They go in a folder per instance, and the names no longer include the view or process. An HTML report is always written, and it replaces the 1.x `.png` chart.
-- **Python 3.9 or later.** You install with pip, which also installs the dependencies (TM1py 2.3.0 or later). matplotlib and seaborn are no longer needed.
+- **Python 3.9 or later.** You install with pip, which also installs the dependencies (TM1py 2.3.0 or later). matplotlib, seaborn, pandas, Jinja2 and configparser are no longer needed.
 
 ### Removed
 

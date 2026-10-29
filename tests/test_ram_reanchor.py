@@ -10,7 +10,7 @@ import types
 
 from optimuspy.execution_mode import ExecutionMode
 from optimuspy.executors import OptipyzerExecutor
-from optimuspy.results import ExecutionContext, PermutationResult
+from optimuspy.results import ExecutionContext
 
 
 class _FakeCubes:
