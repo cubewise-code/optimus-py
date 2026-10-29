@@ -10,8 +10,6 @@ from pathlib import Path
 from typing import List, Union
 from optimuspy.execution_mode import ExecutionMode
 
-import pandas as pd
-
 SEPARATOR = ","
 HEADER = ["ID", "Mode", "Is Best", "Composite Query Time", "Query Ratio",
           "Composite Process Time", "Process Ratio", "RAM", "RAM in GB", "% Reduction",
@@ -505,11 +503,6 @@ class OptimusResult:
                         and permutation_result.mode != ExecutionMode.ORIGINAL_ORDER):
                     permutation_result.is_best = True
                     permutation_result.mode = ExecutionMode.RESULT
-
-    def to_dataframe(self) -> pd.DataFrame:
-        header = self.permutation_results[0].build_header()
-        rows = [r.to_row(self.original_order_result) for r in self.permutation_results]
-        return pd.DataFrame(rows, columns=header)
 
     def to_lines(self) -> List[str]:
         lines = itertools.chain(

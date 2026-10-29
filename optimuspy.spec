@@ -29,7 +29,9 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # OptimusPy doesn't use pandas, but TM1py imports it whenever it's
+    # installed, so a local build would bundle it (and numpy) for nothing.
+    excludes=['pandas'],
     noarchive=False,
     optimize=0,
 )
