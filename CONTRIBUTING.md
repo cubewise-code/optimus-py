@@ -24,7 +24,7 @@ python -m mkdocs build --strict -f website/mkdocs.yml
 
 ## Pull requests
 
-Open pull requests against `master`. A pull request runs the tests and, when it changes the code, one Linux build of the executable.
+Open pull requests against `master`. A pull request runs the tests and, when it changes the code, one Linux build of the executable. When it changes the website or the docs, it also builds the site (landing page and documentation, with `--strict`) without deploying it.
 
 ## Releases
 
