@@ -12,17 +12,13 @@ name: Deploy Website
 
 on:
   push:
-    # `optimuspy2dot0` is included so the v2 work-in-progress can be previewed
-    # on GitHub Pages before being merged to master. Remove it after the v2
-    # merge if you don't want every push to that branch to redeploy.
-    branches: [master, main, optimuspy2dot0]
+    branches: [master, main]
     paths:
       - 'website/**'
       - 'docs/**'
       - '.github/workflows/deploy-site.yml'
   pull_request:
-    # `optimuspy2dot0` is checked until the v2 merge. Remove it after the merge.
-    branches: [master, optimuspy2dot0]
+    branches: [master]
     paths:
       - 'website/**'
       - 'docs/**'

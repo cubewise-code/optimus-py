@@ -7,7 +7,6 @@ on:
   push:
     branches:
       - master
-      - optimuspy2dot0
     paths: &code
       - 'src/**'
       - 'tests/**'
@@ -22,7 +21,6 @@ on:
   pull_request:
     branches:
       - master
-      - optimuspy2dot0
     paths: *code
 
 jobs:
