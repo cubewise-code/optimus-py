@@ -25,8 +25,7 @@ name: Build Executable
 
 on:
   pull_request:
-    # `optimuspy2dot0` is validated until the v2 merge. Remove it after the merge.
-    branches: [master, optimuspy2dot0]
+    branches: [master]
     paths:
       - 'src/**'
       - 'pyproject.toml'
