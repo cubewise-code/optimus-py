@@ -1,0 +1,180 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "An optimize run, step by step",
+    "quality_profile": "showcase",
+    "legend": {
+      "mode": "hidden"
+    }
+  },
+  "lanes": [
+    {
+      "id": "prepare",
+      "label": "Prepare"
+    },
+    {
+      "id": "measure",
+      "label": "Measure each order, then finish"
+    },
+    {
+      "id": "problem",
+      "label": "Stop or error",
+      "variant": "exception"
+    }
+  ],
+  "mainPath": [
+    "check",
+    "protect",
+    "baseline",
+    "next",
+    "reorder",
+    "best",
+    "apply"
+  ],
+  "nodes": [
+    {
+      "id": "check",
+      "lane": "prepare",
+      "col": 0,
+      "type": "frontend",
+      "label": "Check config",
+      "sublabel": "cube, views, TIs exist"
+    },
+    {
+      "id": "protect",
+      "lane": "prepare",
+      "col": 1,
+      "type": "security",
+      "label": "Protect",
+      "sublabel": "VMM/VMT up (v11)",
+      "tag": "checkpoint"
+    },
+    {
+      "id": "baseline",
+      "lane": "prepare",
+      "col": 2,
+      "type": "database",
+      "label": "Original order",
+      "sublabel": "RAM + timings"
+    },
+    {
+      "id": "next",
+      "lane": "measure",
+      "col": 2,
+      "type": "backend",
+      "label": "Next order",
+      "sublabel": "one at a time, until done",
+      "width": 128
+    },
+    {
+      "id": "reorder",
+      "lane": "measure",
+      "col": 3,
+      "type": "database",
+      "label": "Reorder + time",
+      "sublabel": "cache cleared each run",
+      "tag": "median"
+    },
+    {
+      "id": "best",
+      "lane": "measure",
+      "col": 4,
+      "type": "backend",
+      "label": "Pick the best",
+      "sublabel": "within 1%, 2.5%, 5%"
+    },
+    {
+      "id": "apply",
+      "lane": "measure",
+      "col": 5,
+      "type": "security",
+      "label": "Apply or restore",
+      "sublabel": "then write the report",
+      "width": 128
+    },
+    {
+      "id": "stopped",
+      "lane": "problem",
+      "col": 3,
+      "type": "security",
+      "label": "Stopped",
+      "sublabel": "original put back"
+    },
+    {
+      "id": "resume",
+      "lane": "problem",
+      "col": 4,
+      "type": "messagebus",
+      "label": "Run again",
+      "sublabel": "resumes"
+    }
+  ],
+  "edges": [
+    {
+      "from": "check",
+      "to": "protect"
+    },
+    {
+      "from": "protect",
+      "to": "baseline"
+    },
+    {
+      "from": "baseline",
+      "to": "next"
+    },
+    {
+      "from": "next",
+      "to": "reorder"
+    },
+    {
+      "from": "reorder",
+      "to": "best",
+      "label": "all tried",
+      "variant": "emphasis"
+    },
+    {
+      "from": "best",
+      "to": "apply"
+    },
+    {
+      "from": "reorder",
+      "to": "stopped",
+      "role": "error",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "from": "stopped",
+      "to": "resume",
+      "role": "branch"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "How an order is measured",
+      "items": [
+        "Each view and TI runs 'executions' times with the cube cache cleared before every run; the median counts",
+        "Memory comes from the server's reported change after each reorder"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "How the best is picked",
+      "items": [
+        "The first order within 1% of the best on memory and on query (and TI) time wins; then 2.5%, then 5%",
+        "The original order is checked first, so it wins when nothing is clearly better"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "When it stops",
+      "items": [
+        "The original order is put back and a partial report is written",
+        "The checkpoint is kept: run the same command again to continue"
+      ]
+    }
+  ]
+}

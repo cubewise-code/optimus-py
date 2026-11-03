@@ -1,0 +1,8 @@
+{
+  "instance": "tm1srv01",
+  "cube": "Sales",
+  "views": ["Optimus"],
+  "executions": 3,
+  "output": "csv",
+  "optimize_position": "last"
+}

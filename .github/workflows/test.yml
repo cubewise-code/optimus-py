@@ -1,0 +1,58 @@
+name: Tests
+
+# Runs when code changes. A push to master that passes here starts Build
+# Executable, which builds the bundles and releases, so CHANGELOG.md and the
+# build workflow count as code: a PR that only touches them can still release.
+on:
+  push:
+    branches:
+      - master
+      - optimuspy2dot0
+    paths: &code
+      - 'src/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - 'optimuspy.spec'
+      - 'config/**'
+      - 'samples/**'
+      - 'CHANGELOG.md'
+      - '.github/scripts/**'
+      - '.github/workflows/test.yml'
+      - '.github/workflows/build.yml'
+  pull_request:
+    branches:
+      - master
+      - optimuspy2dot0
+    paths: *code
+
+jobs:
+  pytest:
+    name: pytest (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The floor and the ceiling of requires-python in pyproject.toml.
+        python-version: ['3.9', '3.12']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install
+        # Non-editable on purpose: this also proves the package builds and its
+        # declared dependencies resolve. The suite itself runs against src/
+        # either way — pyproject sets pythonpath = ["src"].
+        run: |
+          python -m pip install --upgrade pip
+          pip install .
+          pip install pytest
+
+      - name: Run tests
+        # testpaths, pythonpath and --import-mode=importlib all come from
+        # pyproject.toml, so no extra arguments are needed here.
+        run: python -m pytest -q

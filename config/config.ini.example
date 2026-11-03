@@ -1,0 +1,7 @@
+[tm1srv01]
+address=
+port=
+user=
+password=
+decode_b64=True
+ssl=True

@@ -1,0 +1,17 @@
+{
+  "instance": "tm1srv01",
+  "cube": "Sales",
+  "views": ["Optimus_View1", "Optimus_View2"],
+  "processes": ["load.csv.file"],
+  "executions": 10,
+  "fast": false,
+  "output": "xlsx",
+  "update": false,
+  "dimensions_to_exclude": [],
+  "predefined_orders": [
+    ["Time", "Version", "Product", "Customer", "SalesMeasure"],
+    ["Customer", "Product", "Version", "Time", "SalesMeasure"],
+    ["Product", "Customer", "Time", "Version", "SalesMeasure"]
+  ],
+  "orders_to_ignore": []
+}

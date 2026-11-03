@@ -1,0 +1,13 @@
+{
+  "instance": "tm1srv01",
+  "cube": "Sales",
+  "views": ["Optimus"],
+  "processes": [],
+  "executions": 10,
+  "fast": false,
+  "output": "csv",
+  "update": false,
+  "dimensions_to_exclude": [],
+  "predefined_orders": [],
+  "orders_to_ignore": []
+}
