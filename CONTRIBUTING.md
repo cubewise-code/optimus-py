@@ -26,6 +26,12 @@ python -m mkdocs build --strict -f website/mkdocs.yml
 
 Open pull requests against `master`. A pull request runs the tests and, when it changes the code, one Linux build of the executable. When it changes the website or the docs, it also builds the site (landing page and documentation, with `--strict`) without deploying it.
 
+## Dependency updates
+
+Dependabot checks every Monday and groups what it finds, so each area (GitHub Actions, OptimusPy's Python dependencies, the landing page's npm packages, the docs tooling) gets at most one pull request for patch and minor updates and one for security updates. A major version gets a pull request of its own.
+
+The website's patch and minor updates merge themselves once the site check passes: [`dependabot-auto-merge.yml`](.github/workflows/dependabot-auto-merge.yml) labels them `auto-merge`, merges them and redeploys the site. Everything else, including every update to OptimusPy's own dependencies and every major version, waits for a review. OptimusPy's requirements are minimums, so Dependabot raises one only when a new release falls outside it.
+
 ## Releases
 
 Versions follow [semantic versioning](https://semver.org/): `MAJOR.MINOR.PATCH`. A maintainer picks the release when merging, with one label on the pull request:

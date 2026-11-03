@@ -1,0 +1,149 @@
+# Merges Dependabot's patch and minor updates to the website's dependencies
+# (website/homepage and website/) once the site check passes. A major version,
+# any update outside website/ and anything a person has pushed to stay for a
+# review.
+#
+# It works in two steps, because master has no required checks for GitHub's
+# own auto-merge to wait on:
+# 1. classify: on each Dependabot pull request, label it `auto-merge` when it
+#    qualifies, and take the label off when it no longer does.
+# 2. merge: when Deploy Website's check passes on a labelled pull request,
+#    confirm everything again and merge it. A merge made with GITHUB_TOKEN
+#    starts no other workflow, so it then starts the deploy itself.
+
+name: Dependabot auto-merge
+
+on:
+  pull_request:
+    branches: [master]
+  workflow_run:
+    workflows: [Deploy Website]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  classify:
+    if: github.event_name == 'pull_request' && github.event.pull_request.user.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+    concurrency:
+      group: dependabot-classify-${{ github.event.pull_request.number }}
+      cancel-in-progress: true
+    steps:
+      - name: Read the update
+        id: meta
+        uses: dependabot/fetch-metadata@v3
+
+      - name: Label it when it qualifies
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+          DIRECTORY: ${{ steps.meta.outputs.directory }}
+          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+          DEPENDENCIES: ${{ steps.meta.outputs.dependency-names }}
+        run: |
+          echo "Updates: $DEPENDENCIES"
+          echo "Directory: ${DIRECTORY:-unknown}, update type: ${UPDATE_TYPE:-unknown}"
+          case "$DIRECTORY" in
+            /website|/website/homepage) website=yes ;;
+            *) website=no ;;
+          esac
+          case "$UPDATE_TYPE" in
+            version-update:semver-patch|version-update:semver-minor) small=yes ;;
+            *) small=no ;;
+          esac
+          gh label create auto-merge --repo "$REPO" --color 0E8A16 \
+            --description "Dependabot update that merges itself once its checks pass" 2>/dev/null || true
+          if [ "$website" = yes ] && [ "$small" = yes ]; then
+            gh pr edit "$PR" --repo "$REPO" --add-label auto-merge
+            echo "Labelled auto-merge: it merges once the site check passes."
+          else
+            gh pr edit "$PR" --repo "$REPO" --remove-label auto-merge 2>/dev/null || true
+            echo "Left for review: only patch and minor updates under website/ merge themselves."
+          fi
+
+  merge:
+    if: >
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.actor.login == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+      checks: read
+    steps:
+      - name: Merge the pull request if it still qualifies
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          # The pull request this check ran on: open, opened by Dependabot,
+          # into master, from a branch of this repository, and still at the
+          # commit that passed.
+          PR=$(gh api "repos/$REPO/commits/$SHA/pulls" | jq -r --arg repo "$REPO" --arg sha "$SHA" '
+            [.[] | select(.state == "open" and .user.login == "dependabot[bot]"
+                          and .base.ref == "master" and .head.repo.full_name == $repo
+                          and .head.sha == $sha)][0].number // empty')
+          if [ -z "$PR" ]; then
+            echo "No open Dependabot pull request at $SHA: nothing to merge."
+            exit 0
+          fi
+          echo "Pull request #$PR at $SHA"
+
+          # Wait for its other checks, the classify job among them, to finish.
+          for _ in $(seq 1 30); do
+            pending=$(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" \
+              --jq '[.check_runs[] | select(.status != "completed")] | length')
+            [ "$pending" = 0 ] && break
+            sleep 10
+          done
+          not_passed=$(gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" \
+            --jq '[.check_runs[] | select(.status != "completed" or
+                    (.conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral"))
+                  | .name] | join(", ")')
+          if [ -n "$not_passed" ]; then
+            echo "Not merging: these checks haven't passed: $not_passed"
+            exit 0
+          fi
+
+          labels=$(gh api "repos/$REPO/issues/$PR/labels" --jq '[.[].name] | join(",")')
+          case ",$labels," in
+            *,auto-merge,*) ;;
+            *) echo "Not labelled auto-merge: left for review."; exit 0 ;;
+          esac
+
+          others=$(gh api "repos/$REPO/pulls/$PR/commits?per_page=100" \
+            --jq '[.[] | select(.author.login != "dependabot[bot]")] | length')
+          if [ "$others" != 0 ]; then
+            echo "Not merging: someone other than Dependabot has pushed to it."
+            exit 0
+          fi
+
+          outside=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
+            --jq '.[].filename' | grep -v '^website/' || true)
+          if [ -n "$outside" ]; then
+            echo "Not merging: it changes files outside website/:"
+            echo "$outside"
+            exit 0
+          fi
+
+          if ! gh pr merge "$PR" --repo "$REPO" --merge --match-head-commit "$SHA"; then
+            echo "GitHub refused the merge, usually because another update merged first."
+            echo "Dependabot rebases the pull request, its check runs again, and so does this."
+            exit 0
+          fi
+          echo "Merged #$PR."
+
+          gh workflow run deploy-site.yml --repo "$REPO" --ref master
+          echo "Started Deploy Website on master."

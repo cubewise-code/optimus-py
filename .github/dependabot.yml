@@ -1,6 +1,15 @@
 version: 2
+
+# Updates are grouped so each area gets one pull request a week instead of
+# one per package: patch and minor version updates in one group, security
+# updates in another. A major version still gets its own pull request.
+#
+# The website's patch and minor updates (website/homepage and website/) merge
+# themselves once the site check passes: see
+# .github/workflows/dependabot-auto-merge.yml. Everything else waits for a
+# review.
 updates:
-  # Enable version updates for GitHub Actions
+  # GitHub Actions used by the workflows.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
@@ -15,18 +24,13 @@ updates:
     labels:
       - "dependencies"
       - "github-actions"
-    reviewers:
-      - "nicolasbisurgi"
-      - "MariusWirtz"
-      # Add more individual reviewers:
-      # - "username2"
-      # - "username3"
-      # Or assign to teams (use org/team-name format):
-      # - "myorg/backend-team"
-      # - "myorg/devops"
+    groups:
+      # Most action updates are majors, so this group takes every update type.
+      actions:
+        patterns: ["*"]
     open-pull-requests-limit: 5
 
-  # Enable version updates for Python dependencies
+  # OptimusPy's own dependencies (requirements.txt, pyproject.toml).
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
@@ -41,13 +45,76 @@ updates:
     labels:
       - "dependencies"
       - "python"
-    reviewers:
-      - "nicolasbisurgi"
-      - "MariusWirtz"
-      # Add more individual reviewers:
-      # - "username2"
-      # - "username3"
-      # Or assign to teams (use org/team-name format):
-      # - "myorg/backend-team"
-      # - "myorg/devops"
+    # The requirements are minimums (TM1py>=2.3.0 is the first version with
+    # what v12 needs). Raise one only when a new release falls outside it, not
+    # every time a newer version exists.
+    versioning-strategy: increase-if-necessary
+    groups:
+      python:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      python-security:
+        applies-to: security-updates
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+
+  # The landing page (React and Vite).
+  - package-ecosystem: "npm"
+    directory: "/website/homepage"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    pull-request-branch-name:
+      separator: "/"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "javascript"
+    # Two majors need a planned migration first, as in RushTI: Tailwind 4 moved
+    # its PostCSS plugin to @tailwindcss/postcss (postcss.config.js uses the
+    # Tailwind 3 one), and lucide-react 1 dropped the brand icons, including
+    # the `Github` icon the landing page imports in three components. Remove an
+    # entry when starting that migration.
+    ignore:
+      - dependency-name: "tailwindcss"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "lucide-react"
+        update-types: ["version-update:semver-major"]
+    groups:
+      homepage:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      homepage-security:
+        applies-to: security-updates
+        patterns: ["*"]
+    open-pull-requests-limit: 5
+
+  # The documentation tooling (MkDocs and its theme).
+  - package-ecosystem: "pip"
+    directory: "/website"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+    pull-request-branch-name:
+      separator: "/"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "python"
+    groups:
+      docs:
+        applies-to: version-updates
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+      docs-security:
+        applies-to: security-updates
+        patterns: ["*"]
     open-pull-requests-limit: 5
