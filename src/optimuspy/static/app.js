@@ -3491,7 +3491,10 @@ const OptimusPy = (function () {
         if (this._sourceInstance && this._targetInstance === this._sourceInstance) {
           Toast.info("Source and target are the same instance");
         }
+        // What the previous target reported says nothing about this one.
+        this._targetMissing = [];
         const cubeNames = Object.keys(this._transferredCubes);
+        cubeNames.forEach(name => { this._transferredCubes[name].current = null; });
         if (cubeNames.length > 0) {
           await this._fetchTargetOrders(cubeNames);
         }
@@ -3538,6 +3541,7 @@ const OptimusPy = (function () {
           header.appendChild(el("div", { className: "font-medium text-sm" }, cubeName));
           header.appendChild(el("button", { className: "btn btn-ghost btn-sm", html: Icons.x, onClick: () => {
             delete this._transferredCubes[cubeName];
+            this._targetMissing = this._targetMissing.filter(name => name !== cubeName);
             this.mount();
           }}));
           card.appendChild(header);
@@ -3553,7 +3557,9 @@ const OptimusPy = (function () {
           if (cube.current) {
             cube.current.forEach(dim => currentCol.appendChild(el("div", { className: "transfer-dim-tag dim-current" }, dim)));
           } else {
-            currentCol.appendChild(el("div", { className: "text-xs text-tertiary" }, this._targetConnected ? "Loading..." : "Connect target to see"));
+            const placeholder = !this._targetConnected ? "Connect target to see"
+              : this._targetMissing.includes(cubeName) ? "Not on target" : "Loading...";
+            currentCol.appendChild(el("div", { className: "text-xs text-tertiary" }, placeholder));
           }
           comparison.appendChild(currentCol);
 
@@ -3633,12 +3639,18 @@ const OptimusPy = (function () {
     async _fetchTargetOrders(cubeNames) {
       try {
         const data = await Api.transferTargetOrders(this._targetInstance, Credentials.get(this._targetInstance), cubeNames);
-        Object.entries(data.orders || {}).forEach(([name, order]) => {
+        const orders = data.orders || {};
+        cubeNames.forEach(name => {
           if (this._transferredCubes[name]) {
-            this._transferredCubes[name].current = order;
+            this._transferredCubes[name].current = orders[name] || null;
           }
         });
-        this._targetMissing = [...new Set([...this._targetMissing, ...(data.missing || [])])];
+        // The target's answer replaces any earlier one for these cubes: a cube
+        // missing on a previous target must not stay flagged on this one.
+        this._targetMissing = [
+          ...this._targetMissing.filter(name => !cubeNames.includes(name)),
+          ...(data.missing || []),
+        ];
       } catch (err) {
         Toast.error(`Failed to fetch target orders: ${err.message}`);
       }
