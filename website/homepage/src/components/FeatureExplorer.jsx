@@ -71,7 +71,7 @@ optimuspy set exports/Sales.json`,
     code: `optimuspy scan --instance tm1srv01 --output configs/`,
     link: DOCS.scan, cta: 'Scan mode' },
   { key: 'bundle', icon: Package, title: 'Windows and Linux bundles', short: 'Unzip and run. No Python.',
-    body: 'Each bundle holds the executable, an example config.ini and sample cube configs. With Python 3.9 or later you can install from the repository instead.',
+    body: 'Each bundle holds the executable, an example config.ini and sample cube configs. With Python 3.11 or later you can install from the repository instead.',
     kind: 'code', lang: 'optimuspy/',
     code: `optimuspy/
 ├── optimuspy(.exe)

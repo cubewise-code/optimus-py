@@ -32,7 +32,7 @@ New to OptimusPy? We'd recommend starting with the [User Guide](guide/choose-a-m
 - **Where `config.ini` lives.** It's read from the file given with `--config`, else the file linked on the Settings page, else `config/config.ini` in the folder you run from (for the bundle, the executable's folder). OptimusPy doesn't edit it, so it can be shared with other TM1py tools. See [TM1 Connection](getting-started/tm1-connection.md#which-configini-is-read).
 - **Where the log is written.** `logs/optimuspy.log` in the install folder: the executable's folder for the bundle, the repository root for a clone. 1.x wrote `optimuspy.log` in the folder you ran from.
 - **Result files.** They go in `results/<instance>/`, named `<instance>_<cube>_<timestamp>`, without the view or process in the name. An HTML report is always written, and it replaces the 1.x `.png` chart.
-- **Python 3.9 or later**, installed with pip along with the dependencies (TM1py 2.3.0 or later). matplotlib and seaborn are no longer needed.
+- **Python 3.11 or later**, installed with pip along with the dependencies (TM1py 2.3.0 or later). matplotlib and seaborn are no longer needed.
 
 ## Removed
 
@@ -40,7 +40,7 @@ New to OptimusPy? We'd recommend starting with the [User Guide](guide/choose-a-m
 
 ## Upgrading from 1.x
 
-1. **Install 2.0.0.** Unzip the Windows or Linux bundle, or with Python 3.9 or later clone the repository and run `pip install -e .`. See [Installation](getting-started/installation.md).
+1. **Install 2.0.0.** Unzip the Windows or Linux bundle, or with Python 3.11 or later clone the repository and run `pip install -e .`. See [Installation](getting-started/installation.md).
 2. **Move `config.ini` into a `config` folder.** 2.0.0 reads `config/config.ini`; a `config.ini` sitting next to the executable is not read. The instance sections keep the same format. To leave the file where it is, pass `--config path/to/config.ini`.
 3. **Turn each command into a JSON cube config.** A 1.x command stops with `error: unrecognized arguments` or `invalid choice`, exit code 2, before it connects. For example, this 1.x command:
 
