@@ -1427,7 +1427,10 @@ const OptimusPy = (function () {
         Sidebar.loadSavedCubes();
         Sidebar.updateActivityMonitor();
         Toast.success(`Connected to ${resp.server_name}`);
-        Router.navigate("#/nav");
+        // Connecting from the Optimize page itself leaves the hash unchanged, so
+        // no hashchange fires: redraw the page directly.
+        if (window.location.hash === "#/nav") Router._resolve();
+        else Router.navigate("#/nav");
       } catch (err) {
         Toast.error(err.message);
       }
@@ -1784,8 +1787,11 @@ const OptimusPy = (function () {
     _searchQuery: "",
 
     mount(params, query) {
+      // Not connected: the page still opens, and says so in place of the cube list.
+      $("#page-nav").classList.toggle("not-connected", !state.connected);
       if (!state.connected) {
-        Router.navigate("#/home");
+        this._selectedCube = null;
+        this._renderNotConnected();
         return;
       }
 
@@ -1980,6 +1986,33 @@ const OptimusPy = (function () {
     },
 
     // ---- Right panel: workspace ----
+    _renderNotConnected() {
+      const panel = $("#workspacePanel");
+      panel.innerHTML = "";
+      const serverIcon = '<svg aria-hidden="true" viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"/><rect x="2" y="14" width="20" height="8" rx="2" ry="2"/><line x1="6" y1="6" x2="6.01" y2="6"/><line x1="6" y1="18" x2="6.01" y2="18"/></svg>';
+      const box = el("div", { className: "empty-state nav-not-connected", style: "padding-top:80px" },
+        el("div", { className: "empty-state-icon", html: serverIcon }),
+        el("div", { className: "empty-state-title" }, "Select an instance to start"),
+      );
+      if (state.instances.length === 0) {
+        box.appendChild(el("div", { className: "empty-state-text" },
+          "No TM1 instances are configured. Add a connection to config.ini, then pick it here."));
+        box.appendChild(el("a", { className: "btn btn-secondary btn-sm empty-state-action", href: "#/settings" }, "Open Settings"));
+      } else {
+        box.appendChild(el("div", { className: "empty-state-text" },
+          "Optimize works on one TM1 instance at a time. Pick one below, or use the instance selector in the sidebar."));
+        const tiles = el("div", { className: "instance-tiles empty-state-action" });
+        state.instances.forEach(name => {
+          tiles.appendChild(el("button", { className: "instance-tile", onClick: () => Sidebar._promptConnect(name) },
+            el("div", { className: "instance-tile-name" }, name),
+            el("div", { className: "instance-tile-hint" }, "Click to connect"),
+          ));
+        });
+        box.appendChild(tiles);
+      }
+      panel.appendChild(box);
+    },
+
     _renderEmptyWorkspace() {
       const panel = $("#workspacePanel");
       panel.innerHTML = "";
