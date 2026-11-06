@@ -2036,6 +2036,14 @@ select {
   display: none !important;
 }
 
+/* Optimize page before an instance is connected: no cube list, just the prompt */
+#page-nav.not-connected .cube-panel { display: none; }
+.nav-not-connected .instance-tiles {
+  width: 100%;
+  max-width: 640px;
+  margin-bottom: 0;
+}
+
 .cube-panel {
   width: 340px;
   min-width: 340px;
