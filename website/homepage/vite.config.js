@@ -10,8 +10,8 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       input: {
-        main: resolve(__dirname, 'index.html'),
-        mocks: resolve(__dirname, 'mocks-page.html'),
+        main: resolve(import.meta.dirname, 'index.html'),
+        mocks: resolve(import.meta.dirname, 'mocks-page.html'),
       },
     },
   },
