@@ -14,8 +14,12 @@ point — exercising BOTH Level-2 recovery branches against a live server:
 
 For each branch it asserts the crash left a valid checkpoint (with pending), then
 runs ``core.main`` again (no fault) and asserts resume: validated (not "starting
-fresh"), recovered the in-flight order, completed, removed the checkpoint, and
-restored the ORIGINAL storage order.
+fresh"), recovered the in-flight order and named its iteration, reordered no
+order the first run had completed, ended on ``Iteration N of N``, removed the
+checkpoint, and restored the ORIGINAL storage order.
+
+A third case drops on the first reorder of the greedy's second slot, the point
+at which a resume used to sweep the finished first slot again (issue #128).
 
 Run with the sandbox disabled (Tailscale IPs) and the pyenv ``python``:
 
@@ -24,6 +28,7 @@ Run with the sandbox disabled (Tailscale IPs) and the pyenv ``python``:
 """
 import argparse
 import logging
+import re
 import sys
 from pathlib import Path
 
@@ -55,10 +60,11 @@ class _Fault:
     the trip_on reorder is applied first (it reached TM1) and then raises.
     """
 
-    def __init__(self, trip_on: int, landed: bool):
-        self.trip_on = trip_on
+    def __init__(self, trip_on: int = None, landed: bool = False):
+        self.trip_on = trip_on      # None: never trip, only record
         self.landed = landed
         self.calls = 0
+        self.applied = []           # every order that reached the cube, in order
         self._orig = CubeService.update_storage_dimension_order
 
     @property
@@ -71,10 +77,13 @@ class _Fault:
 
         def patched(cube_self, cube_name, dimension_names, *a, **kw):
             fault.calls += 1
-            if fault.calls < fault.trip_on:
-                return orig(cube_self, cube_name, dimension_names, *a, **kw)
+            if fault.trip_on is None or fault.calls < fault.trip_on:
+                result = orig(cube_self, cube_name, dimension_names, *a, **kw)
+                fault.applied.append(list(dimension_names))
+                return result
             if fault.landed and fault.calls == fault.trip_on:
                 orig(cube_self, cube_name, dimension_names, *a, **kw)  # this one lands
+                fault.applied.append(list(dimension_names))
             raise _DropSignal(f"connection dropped at reorder #{fault.calls}")
 
         CubeService.update_storage_dimension_order = patched
@@ -149,15 +158,36 @@ def _run_scenario(name, instance, config_ini, original_order, landed, trip_on):
         live = _storage_order(tm1)
     print(f"  cube left at: {live}")
 
-    # 2) resume (no fault) to completion
-    with _LogCapture() as log:
+    completed = [list(r["dimension_order"]) for r in data["completed_results"]]
+
+    # 2) resume (no fault) to completion, recording every reorder it sends
+    with _LogCapture() as log, _Fault() as resumed:
         ok = core.main("optimize", cfg, config_ini, no_resume=False)
     assert ok, "resume run returned False"
     assert log.has("Resuming from checkpoint"), "did NOT resume — started fresh!"
     print(f"  {PASS} resumed from checkpoint (not fresh)")
+    placed = [m for m in log.messages if "slots already placed" in m]
+    if placed:
+        print(f"  i {placed[0].split('— ', 1)[-1]}")
     if pending:
-        assert log.has("Recovered in-flight order"), "pending order not recovered"
-        print(f"  {PASS} recovered the in-flight order")
+        assert log.has("Recovered in-flight order (Iteration "), \
+            "pending order not recovered, or recovered without naming its iteration"
+        print(f"  {PASS} recovered the in-flight order "
+              f"({_first(log, 'Recovered in-flight order (').split('(')[1].split(')')[0]})")
+
+    # Nothing the first run completed is reordered again (#128). The original
+    # order is exempt: the run puts the cube back to it when it finishes.
+    again = [o for o in resumed.applied if o in completed and o != original_order]
+    assert not again, f"resume reordered {len(again)} completed order(s) again: {again}"
+    print(f"  {PASS} no completed order re-measured "
+          f"({len(completed)} restored, {len(resumed.applied)} reorders on resume)")
+
+    # The numbering ends where an uninterrupted run would: Iteration N of N.
+    numbered = [tuple(map(int, hit.groups())) for hit in
+                (re.match(r"Iteration (\d+) of (\d+) - ", m) for m in log.messages) if hit]
+    last, total = max(numbered)
+    assert last == total, f"resumed run ended on Iteration {last} of {total}"
+    print(f"  {PASS} ended on Iteration {last} of {total}")
     assert not mgr.exists(), "checkpoint not removed after successful completion"
     print(f"  {PASS} checkpoint removed on completion")
 
@@ -167,6 +197,21 @@ def _run_scenario(name, instance, config_ini, original_order, landed, trip_on):
         f"original order NOT restored\n   want {original_order}\n   got  {restored}")
     print(f"  {PASS} original storage order restored")
     return True
+
+
+def _first(log, needle):
+    return next(m for m in log.messages if needle in m)
+
+
+def slot_boundary_trip(original_order, last_slot_locked):
+    """The reorder that opens the greedy's second slot (issue #128).
+
+    Reorder #1 is the original order; the first slot then tries every movable
+    dimension but the one already there. Dropping on the next reorder is the
+    moment a finished slot used to be swept again on resume.
+    """
+    movable = len(original_order) - int(last_slot_locked)
+    return 1 + (movable - 1) + 1
 
 
 def _tm1_args(config_ini, instance):
@@ -200,6 +245,11 @@ def main():
                       original_order, landed=False, trip_on=4)
         _run_scenario("LANDED drop", args.instance, args.config,
                       original_order, landed=True, trip_on=4)
+        with TM1Service(**tm1_args) as tm1:
+            locked = not core.is_dimension_only_numeric(tm1, original_order[-1])
+        _run_scenario("SLOT-BOUNDARY drop", args.instance, args.config,
+                      original_order, landed=True,
+                      trip_on=slot_boundary_trip(original_order, locked))
         print(f"\n{PASS} ALL RESUME SMOKE CHECKS PASSED on {args.instance}")
     finally:
         if not args.keep:

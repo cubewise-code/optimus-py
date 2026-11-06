@@ -74,9 +74,22 @@ def test_a_dropped_reorder_resumes_and_restores_the_original_order(
         smoke, parity_fixture, live_instance, tm1_config_path, landed):
     # _run_scenario asserts each step: the crash left a checkpoint with pending,
     # the second run resumed rather than starting fresh, the in-flight order was
-    # recovered, the checkpoint was removed on completion, and the cube was put
-    # back to the order it started in.
+    # recovered under its iteration number, no completed order was reordered
+    # again, the run ended on Iteration N of N, the checkpoint was removed on
+    # completion, and the cube was put back to the order it started in.
     assert smoke._run_scenario(
         f"{'LANDED' if landed else 'NOT-LANDED'} drop",
         live_instance, tm1_config_path, parity_fixture,
         landed=landed, trip_on=4)
+
+
+def test_a_drop_as_a_slot_finishes_does_not_sweep_that_slot_again(
+        smoke, parity_fixture, live_instance, tm1_config_path, tm1):
+    # Issue #128: the drop lands on the first reorder of the second slot, so
+    # the first slot is finished. The resume used to sweep it again and count
+    # past its own total.
+    from optimuspy.core import is_dimension_only_numeric
+    locked = not is_dimension_only_numeric(tm1, parity_fixture[-1])
+    assert smoke._run_scenario(
+        "SLOT-BOUNDARY drop", live_instance, tm1_config_path, parity_fixture,
+        landed=True, trip_on=smoke.slot_boundary_trip(parity_fixture, locked))
