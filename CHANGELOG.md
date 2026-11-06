@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.0.2
+
+### Fixed
+
+- **The report's results table is easier to read.** The headers of the numeric columns (ID, the query and process timings, RAM, Reduction, Reorder) are now right-aligned over their numbers, light dividers separate the columns, and the headers no longer wrap. ([#129](https://github.com/cubewise-code/optimus-py/issues/129))
+- **The podium cards show their figures the same way.** "Best Overall" showed RAM as `4120.0MB` while "#1 Lowest RAM" showed `4112.00MB (33% reduction)`. Every card now prints RAM, query and process times with the table's precision, and "Best Overall" includes its RAM reduction too.
+
 ## 2.0.1
 
 ### Fixed

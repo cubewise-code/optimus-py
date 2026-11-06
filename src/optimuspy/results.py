@@ -356,6 +356,7 @@ REPORT_CSS = """
         background: #F8FAFC; border-bottom: 2px solid #E2E8F0; padding: 10px 12px;
         text-align: left; font-weight: 600; color: #475569; font-size: 11px;
         text-transform: uppercase; letter-spacing: 0.03em; position: sticky; top: 0; z-index: 2;
+        white-space: nowrap;
     }
     th.sortable { cursor: pointer; user-select: none; }
     th.sortable:hover { color: #0F172A; }
@@ -363,6 +364,10 @@ REPORT_CSS = """
     th .sort-arrow { font-size: 10px; margin-left: 3px; }
     td { padding: 8px 12px; border-bottom: 1px solid #F1F5F9; }
     .num { font-family: 'SF Mono', 'Fira Code', monospace; text-align: right; }
+    /* A numeric header sits over its right-aligned numbers, in the header font (#129). */
+    th.num { font-family: inherit; text-align: right; }
+    /* Light column dividers in the results table only, not in the expanded detail. */
+    .results > thead > tr > th + th, .results > tbody > tr > td + td { border-left: 1px solid #EEF2F6; }
     tr.data-row { cursor: pointer; transition: background 0.1s ease; }
     tr.data-row:hover { background: #F8FAFC; }
     tr.row-original { background: #EFF6FF; }
@@ -665,15 +670,15 @@ class OptimusResult:
         query_header = ""
         if self.include_views:
             query_header = """
-                        <th class="sortable" data-sort="qt">Query Time <span class="sort-arrow"></span></th>
-                        <th class="sortable" data-sort="qtRatio">Query Ratio <span class="sort-arrow"></span></th>"""
+                        <th class="sortable num" data-sort="qt">Query Time <span class="sort-arrow"></span></th>
+                        <th class="sortable num" data-sort="qtRatio">Query Ratio <span class="sort-arrow"></span></th>"""
 
         # Process header columns for <thead>
         process_header = ""
         if self.include_process:
             process_header = """
-                        <th class="sortable" data-sort="pt">Process Time <span class="sort-arrow"></span></th>
-                        <th class="sortable" data-sort="ptRatio">Process Ratio <span class="sort-arrow"></span></th>"""
+                        <th class="sortable num" data-sort="pt">Process Time <span class="sort-arrow"></span></th>
+                        <th class="sortable num" data-sort="ptRatio">Process Ratio <span class="sort-arrow"></span></th>"""
 
         total_cols = 7 + (2 if self.include_views else 0) + (2 if self.include_process else 0)
         include_views_js = "true" if self.include_views else "false"
@@ -770,17 +775,17 @@ class OptimusResult:
         <h2>All Permutation Results</h2>
         <div class="podium" id="podium"></div>
         <div class="table-scroll">
-            <table>
+            <table class="results">
                 <thead>
                     <tr>
                         <th style="width:30px"></th>
-                        <th class="sortable" data-sort="id" style="width:40px">ID <span class="sort-arrow">&#9650;</span></th>
+                        <th class="sortable num" data-sort="id" style="width:40px">ID <span class="sort-arrow">&#9650;</span></th>
                         <th style="width:100px">Mode</th>
                         {query_header}
                         {process_header}
-                        <th class="sortable" data-sort="ramGB">RAM <span class="sort-arrow"></span></th>
-                        <th class="sortable" data-sort="ramReduction">Reduction <span class="sort-arrow"></span></th>
-                        <th>Reorder</th>
+                        <th class="sortable num" data-sort="ramGB">RAM <span class="sort-arrow"></span></th>
+                        <th class="sortable num" data-sort="ramReduction">Reduction <span class="sort-arrow"></span></th>
+                        <th class="num">Reorder</th>
                         <th>Dimensions</th>
                     </tr>
                 </thead>
@@ -871,12 +876,18 @@ iterations.forEach(p => {{
 function shortDims(dims) {{ return dims.map(d => `<span class="podium-dim">${{d}}</span>`).join(''); }}
 function formatPct(v) {{ return (v > 0 ? '+' : '') + (v * 100).toFixed(1) + '%'; }}
 function pctClass(v) {{ return v > 0 ? 'positive' : v < 0 ? 'negative' : ''; }}
+// The cards print each figure exactly as the table does, so a card and its row match.
+function formatQuery(p) {{ return p.qt.toFixed(5) + 's'; }}
+function formatProcess(p) {{ return p.pt.toFixed(3) + 's'; }}
+function formatRam(p) {{
+    return (p.ramGB * 1024).toFixed(2) + ' MB (' + (p.ramReduction * 100).toFixed(0) + '% reduction)';
+}}
 
 if (bestOverall) {{
     let bestDetail = [];
-    if (includeViews) bestDetail.push(bestOverall.qt.toFixed(4) + 's');
-    if (includeProcess) bestDetail.push(bestOverall.pt.toFixed(2) + 's');
-    bestDetail.push((bestOverall.ramGB * 1024).toFixed(1) + 'MB');
+    if (includeViews) bestDetail.push(formatQuery(bestOverall));
+    if (includeProcess) bestDetail.push(formatProcess(bestOverall));
+    bestDetail.push(formatRam(bestOverall));
     let podiumHtml = `
         <div class="podium-card podium-best" data-highlight="${{bestOverall.id}}">
             <div class="podium-title">Best Overall</div>
@@ -889,7 +900,7 @@ if (bestOverall) {{
         <div class="podium-card podium-query" data-highlight="${{bestQuery.id}}">
             <div class="podium-title">#1 Fastest Query</div>
             <div class="podium-id">#${{bestQuery.id}}</div>
-            <div class="podium-detail">${{bestQuery.qt.toFixed(5)}}s (${{formatPct(bestQuery.qtRatio)}})</div>
+            <div class="podium-detail">${{formatQuery(bestQuery)}} (${{formatPct(bestQuery.qtRatio)}})</div>
             <div class="podium-dims">${{shortDims(bestQuery.dims)}}</div>
         </div>`;
     }}
@@ -898,7 +909,7 @@ if (bestOverall) {{
         <div class="podium-card podium-process" data-highlight="${{bestProcess.id}}">
             <div class="podium-title">#1 Fastest Process</div>
             <div class="podium-id">#${{bestProcess.id}}</div>
-            <div class="podium-detail">${{bestProcess.pt.toFixed(3)}}s (${{formatPct(bestProcess.ptRatio)}})</div>
+            <div class="podium-detail">${{formatProcess(bestProcess)}} (${{formatPct(bestProcess.ptRatio)}})</div>
             <div class="podium-dims">${{shortDims(bestProcess.dims)}}</div>
         </div>`;
     }}
@@ -906,7 +917,7 @@ if (bestOverall) {{
         <div class="podium-card podium-ram" data-highlight="${{bestRam.id}}">
             <div class="podium-title">#1 Lowest RAM</div>
             <div class="podium-id">#${{bestRam.id}}</div>
-            <div class="podium-detail">${{(bestRam.ramGB * 1024).toFixed(2)}}MB (${{(bestRam.ramReduction * 100).toFixed(0)}}% reduction)</div>
+            <div class="podium-detail">${{formatRam(bestRam)}}</div>
             <div class="podium-dims">${{shortDims(bestRam.dims)}}</div>
         </div>`;
     document.getElementById('podium').innerHTML = podiumHtml;
