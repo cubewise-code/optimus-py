@@ -39,6 +39,8 @@ There's no combined score, because a weighted formula would hide the tradeoff in
 3. If no order qualifies, it retries with 2.5%, then 5%.
 4. If still no order qualifies, it restores the original order and the log says to pick one manually from the results.
 
+When RAM is the only metric (no `views`, no `processes`), there's no trade-off to balance, so the recommendation is the lowest-RAM order. The original order still wins if it's within the 1% tolerance, because then a reorder would buy nothing measurable.
+
 The practical consequence is that the recommended order is a balance, not an extreme: an order that saves the most RAM but doubles query time won't be picked, and neither will the fastest order if it costs a lot of memory. The report's podium shows the single best order per metric next to the **Best Overall** card, so you can see what each extreme would have cost.
 
 The HTML report's **scatter chart** plots RAM against query time so you can see the full picture, not just the winner. Sometimes an order that's slightly worse on one metric is dramatically better on the other, and the scatter view makes that obvious.
