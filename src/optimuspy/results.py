@@ -1095,6 +1095,18 @@ renderTable();
             process_range = [r.composite_process_time() for r in self.permutation_results]
             min_process, max_process = min(process_range), max(process_range)
 
+        if not self.include_views and not self.include_process:
+            # RAM is the only metric, so there is no trade-off to balance: the
+            # lowest-RAM order is the recommendation. The original keeps the
+            # cube only when it is within the 1% tolerance, because then a
+            # reorder buys nothing measurable. Taking the first order inside the
+            # tolerance instead recommended 4120 MB over a measured 4112 MB.
+            original = next((r for r in self.permutation_results
+                             if r.mode == ExecutionMode.ORIGINAL_ORDER), None)
+            if original is not None and original.ram_usage <= min_ram + 0.01 * (max_ram - min_ram):
+                return original
+            return min(self.permutation_results, key=lambda r: r.ram_usage)
+
         # find a good balance between speed and ram and process speed
         for value in (0.01, 0.025, 0.05):
             ram_threshold = min_ram + value * (max_ram - min_ram)

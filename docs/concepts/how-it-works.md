@@ -53,6 +53,8 @@ There is no combined score. For each metric that was measured (RAM always, query
 3. If no order qualifies, it retries with 2.5%, then 5%.
 4. If still no order qualifies, it restores the original order and the log says to pick one manually from the results.
 
+When RAM is the only metric (no `views`, no `processes`), there's no trade-off to balance, so the recommendation is the lowest-RAM order. The original order still wins if it's within the 1% tolerance, because then a reorder would buy nothing measurable.
+
 ## Cache & VMM/VMT handling
 
 TM1's **stargate views** cache aggregated query results per cube. If the cache is warm, query times reflect cache hits, not the real cost of the dimension order.

@@ -6,6 +6,7 @@
 
 - **The report's results table is easier to read.** The headers of the numeric columns (ID, the query and process timings, RAM, Reduction, Reorder) are now right-aligned over their numbers, light dividers separate the columns, and the headers no longer wrap. ([#129](https://github.com/cubewise-code/optimus-py/issues/129))
 - **The podium cards show their figures the same way.** "Best Overall" showed RAM as `4120.0MB` while "#1 Lowest RAM" showed `4112.00MB (33% reduction)`. Every card now prints RAM, query and process times with the table's precision, and "Best Overall" includes its RAM reduction too.
+- **A RAM-only run recommends the lowest-RAM order.** With no views or processes there's nothing to trade RAM against, but Best Overall still took the first order within 1% of the lowest, e.g. 4120 MB over a measured 4112 MB, and that's the order `update: true` applies. It now takes the lowest. The original order still wins when it's within the 1%, so OptimusPy never reorders a cube for a saving it can't measure. Runs with views or processes are unchanged.
 
 ## 2.0.1
 
