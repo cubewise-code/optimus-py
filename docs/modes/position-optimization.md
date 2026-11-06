@@ -57,7 +57,7 @@ If the cube's storage-last dimension has string elements, that slot is [locked](
 - **Targeting the locked slot evaluates nothing.** `"optimize_position": "last"` on such a cube has exactly one legal occupant (the dimension already there), so every candidate is skipped and no result is produced. That is the honest answer, not a failure: the run exits normally and logs the skip count. Earlier versions asked per candidate whether *that candidate* had strings, let a numeric one through, and sent TM1 a reorder it then rejected.
 - **Every other position works normally,** minus one candidate: the locked dimension is never swept out of its slot, so a locked cube's position sweep has N-2 candidates rather than N-1.
 
-A string-bearing dimension that is *not* in the last storage slot is not locked and is an ordinary candidate.
+A string-bearing dimension that is *not* in the last storage slot is not locked and is an ordinary candidate for every position except the last: TM1 refuses to move a string dimension into the last slot, so `"optimize_position": "last"` on a cube whose last dimension is numeric tests every dimension except the string ones.
 
 ## CLI
 

@@ -35,10 +35,10 @@ Admissibility is not one verdict. It is three, and callers handle them different
 | Tier | What it is | Binds | On refusal |
 |---|---|---|---|
 | **1, well-formedness** | The candidate is not an order at all: wrong length, unknown dimension name, a duplicate. Almost always a typo. | Every order source | **Fails loudly.** There is nothing coherent to be courteous about, and a silent no-op is the worst available outcome. |
-| **2, the server constraint** | The locked slot. | Every order source | **Skipped with a logged reason**, processing continues. The user asked for something legitimate that TM1 will refuse anyway. In the iterating modes the reason is logged at DEBUG, like tier 3; in set mode, where the skip is the whole outcome, it is logged at WARNING. |
+| **2, the server constraints** | The locked slot, and no string dimension moved into the last slot. | Every order source | **Skipped with a logged reason**, processing continues. The user asked for something legitimate that TM1 will refuse anyway. In the iterating modes the reason is logged at DEBUG, like tier 3; in set mode, where the skip is the whole outcome, it is logged at WARNING. |
 | **3, user preference** | Position rules, excluded dimensions, ignored orders. | The greedy (and `dimensions_to_exclude` in position optimization) | **Skipped, logged at DEBUG only.** |
 
-Tier 2 is checked before tier 3, so a refusal always names the strongest reason. Each refusal carries a greppable code (`not_a_permutation`, `locked_slot`, `ignored_order`, `position_rule`) alongside the human-readable sentence.
+Tier 2 is checked before tier 3, so a refusal always names the strongest reason. Each refusal carries a greppable code (`not_a_permutation`, `locked_slot`, `string_last_slot`, `ignored_order`, `position_rule`) alongside the human-readable sentence.
 
 ## The locked slot
 
@@ -48,8 +48,12 @@ Four consequences follow, and all four are load-bearing:
 
 1. **Nothing is ever relocated or repaired.** OptimusPy never moves a dimension to satisfy this constraint. A repaired order is one the user did not ask for, reported as though they had; skipping keeps the result set honest, and the result count reflects only orders that were genuinely measured.
 2. **It keys off the position, not the dimension.** Dimensions are shared between cubes, and a dimension carries string elements as a property of the whole model. A dimension that has strings because of how *another* cube uses it is an ordinary sparse dimension here, and is placed by cardinality like any other.
-3. **A cube whose storage-last dimension is numeric-only has no lock at all**, and every position is free.
+3. **A cube whose storage-last dimension is numeric-only has no lock**, but its last slot is still guarded: no dimension with string elements may be moved into it (see below).
 4. **It is one check per cube**, taken before the sweep begins, not a server round-trip per candidate.
+
+### The other side: no string dimension into the last slot
+
+TM1 refuses a reorder that moves a dimension with string elements into the last position, even when the dimension already there is numeric (ADR-0006, #141). The frame is built with the full set of string dimensions, read once per cube, and `can_be_last` answers per dimension; `admits` refuses such an order with the code `string_last_slot`. The greedy also leaves those dimensions out of the last slot's candidates, so they are never generated and the promised total does not count them.
 
 ### Where it produces no results
 
@@ -57,7 +61,7 @@ On a locked cube, `optimize_position: "last"` and `optimize_dimension: <the lock
 
 ### Where the heuristics disagree
 
-Two call sites still apply the older dimension-keyed rule and move every string-bearing dimension to the back: the cardinality suggestion (`_compute_suggested_order`) and the [Optimize DB](optimize-db.md) heuristic pass. On a cube with a shared string-bearing dimension that is not its measure, the measured greedy result and those unmeasured suggestions will recommend different orders. Both are heuristics that propose an order without measuring it.
+The cardinality suggestion (`_compute_suggested_order`) and the [Optimize DB](optimize-db.md) heuristic pass sort by leaf count and want the largest dimension last. Both go through `order_frame.string_safe_order`, which applies the same two rules: a string dimension already last stays last, and otherwise the last slot goes to the largest dimension without strings. They can still recommend a different order from the measured greedy, because they measure nothing, but never one TM1 would refuse.
 
 ## Dimension pinning
 

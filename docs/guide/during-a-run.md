@@ -13,7 +13,7 @@ Every `optimize` run follows the same path, whichever mode picks the orders.
 [Open the diagram full screen](diagrams/optimize-run.html){ target=_blank }
 
 - **Only one mode per config.** `predefined_orders`, `optimize_position` and `optimize_dimension` can't be combined. With none of them, the run uses Greedy, or Fast mode with `"fast": true`.
-- **The locked slot.** If the last dimension of the storage order has string elements, TM1 won't let it move, so OptimusPy never moves it. See [The Locked Slot](../concepts/string-element-constraint.md).
+- **The locked slot.** If the last dimension of the storage order has string elements, TM1 won't let it move, so OptimusPy never moves it. And TM1 never lets any other dimension with string elements move into the last slot, so OptimusPy never tries one there. See [The Locked Slot](../concepts/string-element-constraint.md).
 - **Your rules bind Greedy and Fast.** `dimensions_to_exclude`, `orders_to_ignore` and `dimension_position_rules` shape the orders they try. Orders you list yourself (Predefined) are only checked against the locked slot. See [Dimension Position Rules](../advanced/dimension-position-rules.md).
 
 The full pipeline, including how the cache and VMM/VMT are handled, is on [How It Works](../concepts/how-it-works.md).

@@ -9,7 +9,8 @@ from tests.conftest import offline_executor
 
 def make_main_executor(dims, *, fast=False,
                        view_names=None, process_names=None, last_slot_locked=False,
-                       exclude=None, orders_to_ignore=None, position_rules=None):
+                       exclude=None, orders_to_ignore=None, position_rules=None,
+                       string_dimensions=None):
     return offline_executor(
         MainExecutor, dims,
         view_names=view_names, process_names=process_names,
@@ -18,7 +19,8 @@ def make_main_executor(dims, *, fast=False,
             dims, last_slot_locked,
             dimensions_to_exclude=exclude,
             orders_to_ignore=orders_to_ignore,
-            position_rules=position_rules),
+            position_rules=position_rules,
+            string_dimensions=string_dimensions),
         fast=fast)
 
 
@@ -246,3 +248,30 @@ def test_progress_reports_the_planned_total(measure_orders, caplog):
 
     assert "up to 10 order(s) to measure" in caplog.text
     assert "Iteration 10 of 10" in caplog.text
+
+
+# --- #141: a dimension with string elements is never tried in the last slot ---
+
+@pytest.mark.parametrize("fast", [False, True], ids=["thorough", "fast"])
+def test_greedy_never_tries_a_string_dimension_in_the_last_slot(measure_orders, caplog, fast):
+    # The Revenue cube from #141: the last dimension is numeric, so the slot is
+    # free, but Month and Version carry string elements and TM1 refuses either
+    # one there. The run used to die on the first of them.
+    dims = ["organization", "Channel", "product", "Month", "Year", "Version", "Revenue"]
+    ex = make_main_executor(dims, fast=fast, string_dimensions=["Month", "Version"])
+    log = []
+    measure_orders(ex, lambda o: 100.0 + list(o).index("product"), log)
+    ex.context.set_initial_ram(100.0)
+    ex.context.next_id()  # the original order takes id 1, as it does in a real run
+
+    with caplog.at_level("INFO"):
+        results = ex.execute()
+
+    assert results and all(o[-1] not in ("Month", "Version") for o in log)
+    # the last slot was still swept, with every dimension that may go there
+    assert {o[-1] for o in log} >= {"organization", "Channel", "product", "Year"}
+    # the promised total counts only what is measured: the run ends on N of N
+    numbered = [m for m in caplog.messages if m.startswith("Iteration ") and " - Result" in m]
+    last = numbered[-1].split(" - ")[0]
+    n, total = last.split()[1], last.split()[3]
+    assert n == total == str(len(log))

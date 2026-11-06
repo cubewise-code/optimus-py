@@ -465,7 +465,16 @@ class MainExecutor(OptipyzerExecutor):
         has_views, has_processes = bool(self.view_names), bool(self.process_names)
 
         pre_applied = resulting_order != list(self.dimensions)
-        total = search.planned_evaluations(len(dimension_pool), len(slots)) + int(pre_applied)
+        # A dimension with string elements may never take the last slot (#141),
+        # so it is not a candidate there, and the promised total leaves it out.
+        # The last slot is the first one the walk sweeps, so the pool is whole then.
+        last_slot = len(self.dimensions) - 1
+        barred_from_last = (
+            sum(1 for d in dimension_pool
+                if d != resulting_order[last_slot] and not self.order_frame.can_be_last(d))
+            if last_slot in slots else 0)
+        total = (search.planned_evaluations(len(dimension_pool), len(slots))
+                 - barred_from_last + int(pre_applied))
 
         # Result representing the current resulting_order. It carries the "keep the
         # dim already here" option into _pick_best, so the dim already sitting at a
@@ -504,10 +513,11 @@ class MainExecutor(OptipyzerExecutor):
                 continue
 
             ranking = search.ranking_for_position(target_position, mid, has_views, has_processes)
-            # Every unplaced dim is a candidate; the occupant's "keep" value is
-            # current_result.
+            # Every unplaced dim is a candidate, except a string dimension at the
+            # last slot; the occupant's "keep" value is current_result.
             occupant = resulting_order[target_position]
-            candidates = [d for d in dimension_pool if d != occupant]
+            candidates = [d for d in dimension_pool if d != occupant
+                          and (target_position != last_slot or self.order_frame.can_be_last(d))]
 
             def checkpoint_cb(dim, results, _pp=list(placed_positions)):
                 self._save_greedy_checkpoint(

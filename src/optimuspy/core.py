@@ -20,7 +20,7 @@ from optimuspy.executors import (OriginalOrderExecutor, MainExecutor, Predefined
                                  OptimizationCancelled)
 from optimuspy.metrics import (detect_is_v12, cube_memory_used_bytes, memory_by_cube_bytes,
                                ram_source_ready, read_cube_memory_bytes)
-from optimuspy.order_frame import OrderFrame, REASON_NOT_A_PERMUTATION
+from optimuspy.order_frame import OrderFrame, REASON_NOT_A_PERMUTATION, string_safe_order
 from optimuspy.resume import recover, RecoveryEffects
 from optimuspy.results import ExecutionContext, OptimusResult, ram_signal_is_dead
 
@@ -357,6 +357,16 @@ def _validate_position_rules(order_frame, cube_name: str):
         f"Invalid dimension_position_rules for cube '{cube_name}':\n{detail}")
 
 
+def string_dimensions(tm1: TM1Service, dimensions: List[str]) -> List[str]:
+    """The dimensions with string elements, in the order given.
+
+    One check per dimension, once per cube before any reorder: the order frame
+    needs it to keep string dimensions out of the last slot (#141), and asking
+    per candidate inside the sweep would be a round-trip per order.
+    """
+    return [d for d in dimensions if not is_dimension_only_numeric(tm1, d)]
+
+
 def is_dimension_only_numeric(tm1: TM1Service, dimension_name: str) -> bool:
     if tm1.hierarchies.exists(dimension_name=dimension_name, hierarchy_name="Leaves"):
         hierarchy_name = "Leaves"
@@ -468,9 +478,10 @@ def main(mode: str, cube_config: dict, config_ini_path: str, password: str = Non
 
         # SET mode: apply order directly, no benchmarking
         if mode == 'set':
+            strings = string_dimensions(tm1, initial_dimension_order)
             frame = OrderFrame(
-                initial_dimension_order,
-                not is_dimension_only_numeric(tm1, initial_dimension_order[-1]))
+                initial_dimension_order, initial_dimension_order[-1] in strings,
+                string_dimensions=strings)
             return _execute_set_mode(tm1, cube_name, predefined_orders[0], is_v12, frame)
 
         # OPTIMIZE mode
@@ -651,16 +662,25 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
     # moves (TM1 rejects the write regardless). Resolved from the ORIGINAL order —
     # on resume that is the checkpoint's original, not the reordered live cube,
     # whose last dim need not be the one the lock keys off.
-    last_slot_locked = not is_dimension_only_numeric(tm1, initial_dimension_order[-1])
+    # The other side of the same TM1 rule: no other dimension with string
+    # elements may ever be moved into the last slot (#141). Checked once, here.
+    strings = string_dimensions(tm1, initial_dimension_order)
+    last_slot_locked = initial_dimension_order[-1] in strings
     if last_slot_locked:
         logging.info(
             f"Last slot locked for cube '{cube_name}': dimension "
             f"'{initial_dimension_order[-1]}' has string elements and never moves")
+    never_last = [d for d in strings if d != initial_dimension_order[-1]]
+    if never_last:
+        logging.info(
+            f"Never tried in the last slot for cube '{cube_name}': {never_last} "
+            f"(string elements, which TM1 refuses to move into the last position)")
 
     # The frame every order source consults. Only the greedy adds the user
     # preferences to its own copy (decision 10); an explicitly named order is
-    # subject to the lock alone.
-    cube_frame = OrderFrame(initial_dimension_order, last_slot_locked)
+    # subject to the server constraints alone.
+    cube_frame = OrderFrame(initial_dimension_order, last_slot_locked,
+                            string_dimensions=strings)
 
     # The greedy is the only order source that honours the user preferences
     # (decision 10), so it is the only frame built with them. Built here rather
@@ -668,6 +688,7 @@ def _execute_optimize_mode(tm1: TM1Service, cube_name: str, instance_name: str,
     # work, as the documentation promises.
     greedy_frame = OrderFrame(
         initial_dimension_order, last_slot_locked,
+        string_dimensions=strings,
         dimensions_to_exclude=dimensions_to_exclude,
         orders_to_ignore=orders_to_ignore,
         position_rules=dimension_position_rules)
@@ -871,32 +892,38 @@ def _compute_nibble_depth(leaf_count: int) -> int:
     return math.ceil(math.log(leaf_count, 16))
 
 
-def _compute_suggested_order(dimensions_metadata: list) -> dict:
-    """Generate a size-based suggested dimension order.
+def _compute_suggested_order(dimensions_metadata: list, storage_order: list = None) -> dict:
+    """Generate a size-based suggested dimension order, one TM1 would accept.
 
     Rules:
-    1. If any dimension has strings, it stays last (TM1 constraint)
-    2. Remaining dimensions sorted by leaf element count ascending (small to large)
-    3. Confidence based on ratio of largest to second-largest leaf count
+    1. Dimensions sorted by leaf element count ascending (small to large).
+    2. The last slot follows TM1's string rule (#141): a dimension with string
+       elements that is already the cube's last dimension stays last; any other
+       one may go anywhere except last, so the largest dimension without strings
+       takes the slot.
+    3. Confidence based on ratio of largest to second-largest leaf count among
+       the dimensions that may go last.
+
+    `storage_order` is the cube's storage order; its last dimension is the one a
+    string lock keys off. Without it, the metadata's own order stands in.
     """
     dims = list(dimensions_metadata)
+    by_name = {d["name"]: d for d in dims}
+    storage = list(storage_order) if storage_order else [d["name"] for d in dims]
+    storage_last = storage[-1]
+    strings = [d["name"] for d in dims if d["has_strings"]]
+    locked = storage_last if storage_last in strings else None
+    never_last = [name for name in strings if name != locked]
 
-    # Separate string-locked dims (must be last)
-    string_dims = [d for d in dims if d["has_strings"]]
-    non_string_dims = [d for d in dims if not d["has_strings"]]
+    by_size = sorted(dims, key=lambda d: d["leaf_elements"])
+    suggested_order = string_safe_order([d["name"] for d in by_size], strings, storage_last)
 
-    # Sort non-string dims by leaf count ascending
-    non_string_dims.sort(key=lambda d: d["leaf_elements"])
-
-    # Build suggested order: small to large, strings at end
-    suggested = non_string_dims + string_dims
-    suggested_order = [d["name"] for d in suggested]
-
-    # Compute confidence
-    if len(non_string_dims) >= 2:
-        sorted_by_size = sorted(non_string_dims, key=lambda d: d["leaf_elements"], reverse=True)
-        largest = sorted_by_size[0]["leaf_elements"]
-        second = sorted_by_size[1]["leaf_elements"]
+    # Confidence: how clearly the dimension taking the last slot stands out.
+    may_be_last = sorted((d for d in dims if d["name"] != locked and d["name"] not in never_last),
+                         key=lambda d: d["leaf_elements"], reverse=True)
+    if len(may_be_last) >= 2:
+        largest = may_be_last[0]["leaf_elements"]
+        second = may_be_last[1]["leaf_elements"]
         ratio = largest / max(second, 1)
         if ratio >= 10:
             confidence = "high"
@@ -907,16 +934,16 @@ def _compute_suggested_order(dimensions_metadata: list) -> dict:
     else:
         confidence = "high"
 
-    # Notes
     notes = []
-    if string_dims:
-        names = ", ".join(d["name"] for d in string_dims)
-        notes.append(f"{names} locked last (has string elements)")
+    if locked:
+        notes.append(f"{locked} stays last (has string elements)")
+    if never_last:
+        notes.append(f"{', '.join(never_last)} can't go last (has string elements)")
     if confidence == "low":
         notes.append("Dimensions are similarly sized. Density matters more than size — run greedy benchmarking.")
-    if confidence == "high" and len(non_string_dims) >= 2:
-        last_candidate = suggested[-1 - len(string_dims)] if string_dims else suggested[-1]
-        notes.append(f"{last_candidate['name']} is clearly the largest — strong last-position candidate")
+    if confidence == "high" and len(may_be_last) >= 2 and not locked:
+        notes.append(f"{by_name[suggested_order[-1]]['name']} is clearly the largest — "
+                     f"strong last-position candidate")
 
     return {
         "order": suggested_order,
@@ -1005,7 +1032,7 @@ def _scan_to_data(tm1: TM1Service, instance_name: str, ram_threshold_pct: int = 
 
             # Collect per-dimension metadata for intelligence
             dimensions_metadata = _collect_dimension_metadata(tm1, visible_order)
-            suggested = _compute_suggested_order(dimensions_metadata)
+            suggested = _compute_suggested_order(dimensions_metadata, storage_order)
 
             candidates.append({
                 "cube_name": cube_name,

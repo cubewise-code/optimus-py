@@ -17,9 +17,7 @@ The target order is **leaf-count ascending**, always. The `order` option control
 String-bearing dimensions go to the back, under `string_policy`:
 
 - `skip_any` (default): any cube with a string-bearing dimension is skipped entirely.
-- `pin_last`: one string-bearing dimension is placed last and the numeric dimensions are sorted ascending in front of it. More than one string-bearing dimension is always skipped: TM1 keeps string values in the last dimension, so there is no safe placement and the cube needs separate analysis.
-
-This is the dimension-keyed rule, not the [locked slot](order-frame.md#the-locked-slot). On a cube with a shared string-bearing dimension that is not its measure, this pass and the measured greedy recommend different orders.
+- `pin_last`: a cube with one string-bearing dimension is reordered by leaf count like any other, under TM1's two string rules (`order_frame.string_safe_order`): if that dimension is already last it stays pinned there, and if it isn't, it can't be moved into the last slot (#141), so the largest numeric dimension takes it. More than one string-bearing dimension is always skipped and needs separate analysis.
 
 ## Methods
 

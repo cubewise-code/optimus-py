@@ -74,7 +74,7 @@ Instance-scoped, deliberately **not** the per-cube schema, because `cube`, `view
 | `order` | `"asc"` | Order the **cubes** are processed in: `asc` smallest-to-largest, `desc` largest-to-smallest. It does not affect the dimension order applied, which comes from each cube's [method](#methods). |
 | `exclude_cubes` | `[]` | Cube names to leave alone. Case-insensitive, `*` and `?` wildcards supported. |
 | `min_cube_mb` | `10.0` | Cubes below this RAM are skipped. A rebuild on a tiny cube costs more attention than it saves. |
-| `string_policy` | `"skip_any"` | `skip_any` skips any cube with string elements; `pin_last` reorders the numeric dimensions and pins the single string dimension last. |
+| `string_policy` | `"skip_any"` | `skip_any` skips any cube with string elements; `pin_last` also reorders cubes with a single string dimension: it stays pinned last when it's already the last dimension, and otherwise it's sorted with the rest but never moved into the last slot, which TM1 refuses. |
 | `include_optimized` | `false` | Also reorder cubes that are already optimized, meaning their storage order differs from their presentation order. Left `false`, they're skipped, because that order was set on purpose (often by [Optimize mode](optimize-mode.md)) and this pass would overwrite it. |
 | `revert_on_regression` | `true` | Put a cube back in its original order when the reorder made it use more memory. |
 | `disable_active_chores` | `false` | Deactivate the chores that are active **when the run starts**, for the duration of the run. |

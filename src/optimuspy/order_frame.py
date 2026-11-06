@@ -5,11 +5,16 @@ A cube has one authoritative dimension order: `tm1.cubes.get_storage_dimension_o
 The frame owns that order and answers one question: is this candidate order
 admissible, and if not, why.
 
-If the dimension in the **last position** of the storage order contains string
-elements, that position is a **locked slot**: the dimension never moves, whatever
-the order source. This is a *server* constraint — TM1 rejects the write regardless
-— so every order source consults the frame, and a candidate that would move the
-locked dimension is skipped with a logged reason. Nothing is ever relocated.
+TM1 constrains the last slot from both sides, on v11 and v12 alike:
+
+- If the dimension in the **last position** of the storage order contains string
+  elements, that position is a **locked slot**: the dimension never moves.
+- A dimension with string elements can never be moved **into** the last position,
+  even when the slot is free (#141). It moves freely everywhere else.
+
+These are *server* constraints (TM1 rejects the write regardless), so every order
+source consults the frame, and a candidate that breaks one is skipped with a
+logged reason. Nothing is ever relocated.
 
 Everything else the frame knows — position rules, excluded dimensions, ignored
 orders — is a *user preference*, supplied by the greedy search only. A TM1 developer
@@ -22,12 +27,13 @@ category as `search.py`.
 
 See CONTEXT.md ("Order admissibility") and docs/concepts/string-element-constraint.md.
 """
-from typing import Dict, List, NamedTuple, Optional, Sequence, Set, Tuple
+from typing import Dict, Iterable, List, NamedTuple, Optional, Sequence, Set, Tuple
 
 # Greppable codes for the reasons a candidate order is refused. The human-readable
 # message travels alongside in `Admissibility.reason`.
 REASON_NOT_A_PERMUTATION = "not_a_permutation"
 REASON_LOCKED_SLOT = "locked_slot"
+REASON_STRING_LAST_SLOT = "string_last_slot"
 REASON_IGNORED_ORDER = "ignored_order"
 REASON_POSITION_RULE = "position_rule"
 
@@ -55,11 +61,15 @@ class OrderFrame:
     """
 
     def __init__(self, storage_order: Sequence[str], last_slot_locked: bool, *,
+                 string_dimensions: Iterable[str] = None,
                  dimensions_to_exclude: Sequence[str] = None,
                  orders_to_ignore: Sequence[Sequence[str]] = None,
                  position_rules: Sequence[Dict] = None):
         self.storage_order = list(storage_order)
         self.last_slot_locked = bool(last_slot_locked)
+        # Every dimension with string elements, wherever it sits. Checked once per
+        # cube by the caller, before the sweep; the frame itself does no I/O.
+        self.string_dimensions = frozenset(string_dimensions or ())
         self.dimensions_to_exclude = list(dimensions_to_exclude or [])
         self.orders_to_ignore = [list(order) for order in (orders_to_ignore or [])]
         self.position_rules = list(position_rules or [])
@@ -119,6 +129,17 @@ class OrderFrame:
             return None
         return self.storage_order[-1]
 
+    def can_be_last(self, dimension: str) -> bool:
+        """May this dimension occupy the last slot?
+
+        TM1 refuses to move a dimension with string elements into the last
+        position. The one string dimension allowed there is the one already in
+        it, which is the locked dimension when the caller marked the slot locked.
+        """
+        if dimension not in self.string_dimensions:
+            return True
+        return bool(self.storage_order) and dimension == self.storage_order[-1]
+
     @property
     def locked_position(self) -> Optional[int]:
         """The index of the locked slot, or None when there is no lock."""
@@ -174,6 +195,12 @@ class OrderFrame:
                 False, REASON_LOCKED_SLOT,
                 f"'{locked}' has string elements and is locked to the last position; "
                 f"this order moves it to position {candidate.index(locked)}")
+
+        if not self.can_be_last(candidate[-1]):
+            return Admissibility(
+                False, REASON_STRING_LAST_SLOT,
+                f"'{candidate[-1]}' has string elements, and TM1 refuses to move a "
+                f"dimension with string elements into the last position")
 
         if candidate in self.orders_to_ignore:
             return Admissibility(
@@ -314,6 +341,12 @@ class OrderFrame:
                 continue
             seen_position[slot] = index
 
+            if slot == count - 1 and not self.can_be_last(dimension):
+                problems.append((index, f"'{dimension}' has string elements, and TM1 refuses "
+                                        f"to move a dimension with string elements into the "
+                                        f"last position"))
+                continue
+
             locked = self.locked_dimension
             if locked is not None:
                 if dimension == locked and slot != self.locked_position:
@@ -325,4 +358,37 @@ class OrderFrame:
                                             f"elements and never moves; it cannot be given to "
                                             f"'{dimension}'"))
 
+        if not problems and self.storage_order:
+            # Seating the pinned dimensions refills the other slots in storage
+            # order, which can leave a string dimension last without any rule
+            # naming it. Report it against the rule that moved the last dimension.
+            last = self.pre_applied_order()[-1]
+            if not self.can_be_last(last):
+                moved = next((i for i, rule in enumerate(self.position_rules)
+                              if rule.get('dimension') == self.storage_order[-1]), 0)
+                problems.append((moved, f"seating the pinned dimensions leaves '{last}', which "
+                                        f"has string elements, in the last position, and TM1 "
+                                        f"refuses that; pin a dimension without string elements "
+                                        f"to the last position as well"))
+
         return problems
+
+
+def string_safe_order(ordered: Sequence[str], string_dimensions: Iterable[str],
+                      storage_last: str) -> List[str]:
+    """Adjust a heuristic order so TM1 accepts it, keeping its sequence otherwise.
+
+    The heuristics (Suggested Order, Optimize DB's leaf-count pass) sort by size
+    and want the biggest dimension last. TM1 decides what may go there: a string
+    dimension already last stays last, and no other string dimension may take the
+    slot, so the last slot goes to the last dimension in `ordered` that may hold
+    it. Unlike the frame, this builds an order rather than judging one, so moving
+    a dimension here is the point, not a repair.
+    """
+    strings = frozenset(string_dimensions)
+    ordered = list(ordered)
+    if storage_last in strings:
+        last = storage_last
+    else:
+        last = next(d for d in reversed(ordered) if d not in strings)
+    return [d for d in ordered if d != last] + [last]

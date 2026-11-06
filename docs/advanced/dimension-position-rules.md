@@ -64,7 +64,7 @@ A dimension may not appear in both (one says leave it alone, the other says move
 
 ## Interaction with the string-element constraint
 
-The [locked slot](../concepts/string-element-constraint.md) is a server constraint, so it wins over a rule, which is a preference. A rule that moves the locked dimension off the last slot (or hands that slot to another dimension) fails on startup:
+The [string-element rules](../concepts/string-element-constraint.md) are server constraints, so they win over a rule, which is a preference. A rule that moves the locked dimension off the last slot, hands that slot to another dimension, or seats a dimension with string elements in the last position (directly, or by freeing the last slot so that one lands there) fails on startup:
 
 ```
 ERROR: Invalid dimension_position_rules for cube 'Sales':

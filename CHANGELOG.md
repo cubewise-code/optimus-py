@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.0.3
+
+### Fixed
+
+- **Optimizing a cube with string elements outside its last dimension no longer fails.** TM1 refuses to move a dimension with string elements into the last position, even when the cube's last dimension is numeric. OptimusPy only knew the other half of the rule (a string dimension already last never moves), so on a cube like that the greedy tried a string dimension in the last slot, TM1 refused, and the run stopped with `Last dimension has strings and cannot be repositioned`. Every mode now skips those orders, the greedy never tries them and leaves them out of its total, and a position rule that would put a string dimension last fails at startup. Confirmed on TM1 v11 and v12. ([#141](https://github.com/cubewise-code/optimus-py/issues/141))
+- **The Suggested Order and Optimize DB's `pin_last` only suggest orders TM1 accepts.** Both used to move every string dimension to the back, which TM1 refuses unless that dimension is already last. A string dimension now stays last only if it's already there; otherwise the largest dimension without strings takes the last slot.
+
+### Changed
+
+- **The UI marks every dimension with string elements with a Str badge:** red for the cube's last dimension, which is locked there, and orange for any other, which can move anywhere except the last position. The badge appears in the Overview's dimension table, on the Configure tab's dimension cards and in the cube list.
+
 ## 2.0.2
 
 ### Fixed

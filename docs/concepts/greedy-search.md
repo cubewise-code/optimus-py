@@ -52,6 +52,7 @@ Leaf counts are still used where nothing is measured: scan's suggested order, an
 ## What the search never overrides
 
 - **The locked slot.** If the dimension in the last storage position has string elements, it never moves and its slot is not searched, see [The Locked Slot](string-element-constraint.md). The walk passes over it: the first slot comes first, then the second-to-last.
+- **No string dimension in the last slot.** When the last slot is free, every dimension is tried there except the ones with string elements, which TM1 refuses to move into it. They're searched in every other slot like any other dimension.
 - **Excluded dimensions** (`dimensions_to_exclude`) stay where they are, and their slots are not searched.
 - **Position rules** ([`dimension_position_rules`](../advanced/dimension-position-rules.md)) seat their dimensions before the search starts. If that changes the order, the seated order is measured first and the search starts from it. Their slots are not searched.
 - **Ignored orders** (`orders_to_ignore`) are skipped and never measured.

@@ -28,6 +28,8 @@ Rules are validated against the cube's storage order as soon as it has been read
 | Position is the right number, wrong type (`"3"`, `3.0`) | position must be an integer: write `3`, not `"3"` |
 | Rule moves the locked dimension off the last slot | `'<name>'` has string elements and is locked to position `<n>` |
 | Rule gives the locked slot to another dimension | position `<n>` holds `'<locked>'`, which has string elements and never moves |
+| Rule seats a string dimension in the last slot | `'<name>'` has string elements, and TM1 refuses to move a dimension with string elements into the last position |
+| Seating the pinned dimensions leaves a string dimension last | seating the pinned dimensions leaves `'<name>'`, which has string elements, in the last position |
 
 The last two distinctions are deliberate. A value that plainly names a slot but carries the wrong JSON type is told which number to write, because reporting `"3"` as an unreadable position (at a value the user can see is a number) reads as an accusation of a typo. A value that genuinely names no slot is told that it names no slot.
 
