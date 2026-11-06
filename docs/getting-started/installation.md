@@ -3,7 +3,7 @@
 !!! info "Requirements"
     - Network access to your TM1 / Planning Analytics server
     - For the web UI: a modern browser (Chrome, Firefox, Edge, Safari)
-    - For an install from source: Python 3.9 or newer
+    - For an install from source: Python 3.11 or newer
 
 ## From source
 

@@ -10,7 +10,7 @@ OptimusPy finds a better storage dimension order for a TM1 cube by applying real
 
 1. **Install.** Either:
     - download the Windows (`optimuspy-windows.zip`) or Linux (`optimuspy-linux.tar.gz`, or `optimuspy-linux-arm64.tar.gz` on ARM) bundle from the [Releases page](https://github.com/cubewise-code/optimus-py/releases) and unpack it. It holds the executable, `config/config.ini.example` and `samples/` (example cube configs). No Python needed;
-    - or, with Python 3.9 or later, clone the repository and run `pip install -e .`, which adds the `optimuspy` command.
+    - or, with Python 3.11 or later, clone the repository and run `pip install -e .`, which adds the `optimuspy` command.
 
     See [Installation](https://cubewise-code.github.io/optimus-py/docs/getting-started/installation/).
 2. **Connect to TM1.** Copy `config/config.ini.example` to `config/config.ini` and add a section for your instance. If you already keep a `config.ini` for RushTI or your scripts, link it on the UI's *Settings* page instead. See [TM1 Connection](https://cubewise-code.github.io/optimus-py/docs/getting-started/tm1-connection/).

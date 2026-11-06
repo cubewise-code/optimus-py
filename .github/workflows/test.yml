@@ -30,8 +30,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # The floor and the ceiling of requires-python in pyproject.toml.
-        python-version: ['3.9', '3.12']
+        # The floor of requires-python in pyproject.toml and the newest
+        # release; the versions in between are assumed to work.
+        python-version: ['3.11', '3.15']
     steps:
       - name: Checkout code
         uses: actions/checkout@v7

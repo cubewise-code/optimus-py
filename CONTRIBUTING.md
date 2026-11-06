@@ -2,7 +2,7 @@
 
 ## Development
 
-With Python 3.9 or later, clone the repository and install it with its development tools:
+With Python 3.11 or later, clone the repository and install it with its development tools:
 
 ```bash
 pip install -e ".[dev]"

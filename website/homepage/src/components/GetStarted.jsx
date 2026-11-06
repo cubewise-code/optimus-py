@@ -8,7 +8,7 @@ const TABS = [
     note: 'Download optimuspy-windows.zip or optimuspy-linux.tar.gz from Releases, unpack it, then:',
     code: '# Windows: double-click optimuspy.exe\n# Linux:\n./optimuspy ui\n# The UI opens at http://127.0.0.1:8765' },
   { key: 'python', label: 'Python',
-    note: 'With Python 3.9 or later:',
+    note: 'With Python 3.11 or later:',
     code: `git clone ${GITHUB_URL}.git\ncd optimus-py\npip install -e .\noptimuspy ui` },
   { key: 'cli', label: 'Command line',
     note: 'Find the cubes worth optimizing, add your views to each config, then run one:',
