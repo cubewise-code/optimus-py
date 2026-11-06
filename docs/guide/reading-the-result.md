@@ -2,7 +2,7 @@
 
 What the report tells you, and where the cube ends up.
 
-- **Best Overall** is the recommended order. OptimusPy checks the orders in the order they were tested, starting with the original. The first one within 1% of the best on memory, and on query and TI time where you gave views or processes, wins. The 1% is of the gap between the best and the worst order tested. If none qualifies, it tries again at 2.5%, then 5%. If there is still none, the original order is put back and the log asks you to pick one from the results. So the original order wins whenever nothing is clearly better.
+- **Best Overall** is the recommended order. OptimusPy checks the orders in the order they were tested, starting with the original. The first one within 1% of the best on memory, and on query and TI time where you gave views or processes, wins. The 1% is of the gap between the best and the worst order tested. If none qualifies, it tries again at 2.5%, then 5%. If there is still none, the original order is put back and the log asks you to pick one from the results. In a run that measures RAM only, there's nothing to balance, so Best Overall is simply the lowest-RAM order, unless the original is within the 1%. Either way, the original order wins whenever nothing is clearly better.
 
     ![Report podium with the Best Overall, #1 Fastest Query and #1 Lowest RAM cards](../assets/images/optimuspy/report/report-podium.png)
 
