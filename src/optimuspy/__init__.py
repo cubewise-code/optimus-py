@@ -1,6 +1,6 @@
 """OptimusPy — TM1 Cube Dimension Order Optimizer"""
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 # Public API re-exports (preserves: from optimuspy import get_tm1_config, etc.)
 from optimuspy.core import (
