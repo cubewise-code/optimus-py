@@ -8,8 +8,11 @@ in-flight order) and proves the shared-layer fix covers the greedy search and a
 targeted mode (predefined), plus the landed recovery branch and original-order
 preservation.
 """
+import logging
+
 import pytest
 
+from optimuspy import search
 from optimuspy.checkpoint import CheckpointManager
 from optimuspy.core import _recover_pending_order
 from optimuspy.executors import (MainExecutor, OriginalOrderExecutor,
@@ -246,7 +249,7 @@ def test_greedy_resume_after_drop_matches_uninterrupted_best(tmp_path):
 # --------------------------------------------------------------------------- #
 # Landed recovery branch — cube already at the pending order on resume.
 # --------------------------------------------------------------------------- #
-def test_landed_recovery_does_not_reapply_and_backcalcs(tmp_path):
+def test_landed_recovery_does_not_reapply_and_backcalcs(tmp_path, caplog):
     dims = ["A", "B", "C", "M"]
     orders = [["A", "C", "B", "M"], ["C", "A", "B", "M"]]
     ram_of = lambda o: {("A", "B", "C", "M"): 100.0,
@@ -274,10 +277,111 @@ def test_landed_recovery_does_not_reapply_and_backcalcs(tmp_path):
 
     # Simulate that orders[1] DID land before the drop: put the cube there.
     tm1c = FakeTM1(ram_of, orders[1], fail_after=None)
-    out = _resume(lambda c: factory(c, tm1c, mgr), tm1c, mgr, list(tm1c._order))
+    with caplog.at_level(logging.INFO):
+        out = _resume(lambda c: factory(c, tm1c, mgr), tm1c, mgr, list(tm1c._order))
 
     # landed: the reorder is NOT repeated for the pending order
     assert orders[1] not in tm1c.applied
     # the recovered order carries the fresh absolute RAM (80.0) as its usage
     recovered = next(r for r in out["resumed"] if list(r.dimension_order) == orders[1])
     assert recovered.ram_usage == 80.0
+    # The log names the iteration the recovered order took. Without it a resume
+    # read "Restored 1 completed" and then went on at Iteration 3 (issue #127).
+    assert recovered.label == "Iteration 2"
+    assert any("Recovered in-flight order (Iteration 2)" in m for m in caplog.messages)
+
+
+# --------------------------------------------------------------------------- #
+# Greedy search — a resume never measures an order twice (issues #127, #128).
+#
+# A run dropped right after a slot finished came back saying "2 of 13 slots
+# already placed" when three were, swept the third slot again and counted on to
+# "Iteration 117 of 104". Every drop point is tried, landed and not landed: the
+# interrupted run plus its resume must measure exactly the orders an uninterrupted
+# run measures, each once, numbered within the total.
+# --------------------------------------------------------------------------- #
+def _greedy_drop_and_resume(tmp_path, dims, ram_of, factory, drop_after, landed):
+    mgr = CheckpointManager("C", "inst", "fp", tmp_path / f"run-{drop_after}-{landed}")
+    tm1 = FakeTM1(ram_of, dims, fail_after=drop_after)
+    ctx = ExecutionContext()
+    original = _run_original(tm1, mgr, dims, dims, ctx, False)
+    ex = factory(ctx, tm1, mgr)
+    ex.set_resume_context(dims, original, [], resuming=False)
+    with pytest.raises(RuntimeError):
+        ex.execute()
+    data = mgr.load()
+    completed = [list(r["dimension_order"]) for r in data["completed_results"]]
+    pending = (data.get("pending") or {}).get("dimension_order")
+    # Landed: the reorder reached the cube before the drop, so the cube sits there.
+    resume_at = pending if (landed and pending) else list(tm1._order)
+    tm1c = FakeTM1(ram_of, resume_at, fail_after=None)
+    out = _resume(lambda c: factory(c, tm1c, mgr), tm1c, mgr, list(tm1c._order))
+    return completed, tm1c, out
+
+
+def test_greedy_resume_measures_every_order_once_at_every_drop_point(tmp_path):
+    dims = ["A", "B", "C", "D", "E", "F", "G", "M"]
+    ram_of = (lambda o: 100.0 - 10 * list(o).index("E") + list(o).index("M")
+              + 0.5 * list(o).index("A") - 0.25 * list(o).index("C"))
+    factory = _greedy_factory(dims, True)
+
+    ctx = ExecutionContext()
+    mgr = CheckpointManager("C", "inst", "fp", tmp_path / "ref")
+    tm1 = FakeTM1(ram_of, dims)
+    original = _run_original(tm1, mgr, dims, dims, ctx, False)
+    ex = factory(ctx, tm1, mgr)
+    ex.set_resume_context(dims, original, [], resuming=False)
+    ref_results = ex.execute()
+    ref_orders = sorted(tuple(r.dimension_order) for r in ref_results)
+    total = len(ref_results)
+    ref_best = _best_order(original, ref_results)
+
+    # reorder #1 is the original order; the drop hits reorder drop_after + 1
+    for drop_after in range(1, total + 1):
+        for landed in (False, True):
+            case = f"drop after reorder {drop_after}, landed={landed}"
+            completed, tm1c, out = _greedy_drop_and_resume(
+                tmp_path, dims, ram_of, factory, drop_after, landed)
+
+            # nothing completed before the drop is reordered again
+            again = [o for o in tm1c.applied if o in completed]
+            assert again == [], f"{case}: re-measured {again}"
+
+            merged = [r for r in _dedup(out["resumed"], out["new"])]
+            orders = sorted(tuple(r.dimension_order) for r in merged)
+            assert orders == ref_orders, case          # same orders, each once
+            # the iteration numbers run 1..total, as the progress log promised
+            assert sorted(r.permutation_id - 1 for r in merged) == list(range(1, total + 1)), case
+            assert _best_order(out["original"], merged) == ref_best, case
+
+
+def test_greedy_checkpoint_counts_a_finished_slot_as_placed(tmp_path):
+    # Drop on the first reorder of the second slot. The first slot is finished,
+    # and the checkpoint has to say so or the resume sweeps it again.
+    dims = ["A", "B", "C", "D", "E", "F", "G", "M"]
+    ram_of = lambda o: 100.0 - list(o).index("E")
+    factory = _greedy_factory(dims, True)
+    first_slot = search.outside_in_slots(len(dims), [len(dims) - 1])[0]
+    first_slot_candidates = len(dims) - 2  # every movable dim but the occupant
+    mgr = CheckpointManager("C", "inst", "fp", tmp_path / "run")
+    tm1 = FakeTM1(ram_of, dims, fail_after=1 + first_slot_candidates)
+    ctx = ExecutionContext()
+    original = _run_original(tm1, mgr, dims, dims, ctx, False)
+    ex = factory(ctx, tm1, mgr)
+    ex.set_resume_context(dims, original, [], resuming=False)
+    with pytest.raises(RuntimeError):
+        ex.execute()
+
+    data = mgr.load()
+    assert data["pending"] is not None  # the drop hit the second slot's first reorder
+    assert data["executor_state"]["greedy_state"]["placed_positions"] == [first_slot]
+
+
+def _dedup(*result_lists):
+    seen, unique = set(), []
+    for rl in result_lists:
+        for r in rl:
+            if r.permutation_id not in seen:
+                seen.add(r.permutation_id)
+                unique.append(r)
+    return unique
