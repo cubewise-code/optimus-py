@@ -516,7 +516,10 @@ def _recover_pending_order(tm1: TM1Service, cube_name: str, executor, pending: d
 
     recovered = recover(pending_order, current_order, prev_abs_ram, effects)
     executor.register_recovered(recovered)
-    logging.info(f"Recovered in-flight order for cube '{cube_name}': {pending_order}")
+    # Name the iteration: a landed order is never re-tested, so this is the only
+    # line that accounts for the number it took (issue #127).
+    logging.info(f"Recovered in-flight order ({recovered.label}) for cube '{cube_name}': "
+                 f"{pending_order}")
 
 
 def _execute_set_mode(tm1: TM1Service, cube_name: str, target_order: List[str],

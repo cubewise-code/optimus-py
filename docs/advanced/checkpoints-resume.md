@@ -58,11 +58,14 @@ OptimusPy detects the checkpoint, validates that:
 If all match, it logs:
 
 ```
-Resuming from checkpoint — restoring previous progress
-Restored 23 completed permutations from checkpoint
+Resuming from checkpoint — restoring the progress of the run started 2026-11-05_09-35-11
+Restored 39 completed permutations from checkpoint
+Recovered in-flight order (Iteration 40) for cube 'Sales': [...]
+Resuming the greedy search — 3 of 13 slots already placed
+Iteration 41 of 104 - Testing order: [...]
 ```
 
-…and continues from where it left off. Already-completed permutations are not re-evaluated.
+…and continues from where it left off. Already-completed permutations are not re-evaluated, and the iteration numbers carry on from the interrupted run, so a resumed run ends on the same `Iteration N of N` an uninterrupted one would. The *Recovered in-flight order* line appears only when an order was cut off mid-reorder (below); it names the iteration that order keeps.
 
 ### Recovering the in-flight order
 

@@ -79,8 +79,10 @@ class OptipyzerExecutor:
         # Snapshot of the last `received` checkpoint (completed results + executor
         # state), so a `submitted` write can preserve it while adding pending.
         self._last_checkpoint = None
-        # Level-2 recovered in-flight orders keyed by tuple(order); the evaluation
-        # paths inject these instead of re-applying the reorder.
+        # Orders an earlier session of this run already measured, keyed by
+        # tuple(order): the completed results restored from the checkpoint and the
+        # Level-2 recovered in-flight order. The evaluation paths inject these
+        # instead of re-applying the reorder.
         self._recovered_results = {}
 
     def _check_cancelled(self):
@@ -94,10 +96,17 @@ class OptipyzerExecutor:
         `resuming` arms the one-shot RAM re-anchor: True only when actually
         resuming a checkpoint (the %-chain anchor is stale then). On a fresh run
         core passes resuming=False so the first iteration keeps the fast % method.
+
+        Every resumed result is indexed by its order so a sweep that reaches it
+        again injects it rather than measuring it twice. The greedy resumes a
+        slot from its first candidate, so without this the candidates measured
+        before the interruption would be reordered and numbered all over again
+        (issue #128).
         """
         self._initial_dimension_order = initial_dimension_order
         self._original_order_result = original_order_result
         self._resumed_results = resumed_results
+        self._recovered_results = {tuple(r.dimension_order): r for r in resumed_results}
         self._reanchor_needed = resuming
 
     def register_recovered(self, result):
@@ -501,14 +510,9 @@ class MainExecutor(OptipyzerExecutor):
             candidates = [d for d in dimension_pool if d != occupant]
 
             def checkpoint_cb(dim, results, _pp=list(placed_positions)):
-                self._save_checkpoint(
-                    new_results=permutation_results + results,
-                    last_applied_order=list(results[-1].dimension_order),
-                    executor_state={"greedy_state": {
-                        "resulting_order": list(resulting_order),
-                        "dimension_pool": list(dimension_pool),
-                        "placed_positions": _pp,
-                    }})
+                self._save_greedy_checkpoint(
+                    permutation_results + results, list(results[-1].dimension_order),
+                    resulting_order, dimension_pool, _pp)
 
             results = self._sweep_into_position(
                 resulting_order, target_position, candidates, total,
@@ -525,7 +529,28 @@ class MainExecutor(OptipyzerExecutor):
             dimension_pool.remove(resulting_order[target_position])
             placed_positions.append(target_position)
 
+            # Record the placement now. Until this write the checkpoint still
+            # holds the slot as open, and every `submitted` write of the next
+            # slot copies that state, so a drop there would bring the resume
+            # back to a slot that was already finished (issue #128).
+            last_applied = (self._last_checkpoint["last_applied_order"]
+                            if self._last_checkpoint else list(resulting_order))
+            self._save_greedy_checkpoint(
+                permutation_results, last_applied,
+                resulting_order, dimension_pool, list(placed_positions))
+
         return permutation_results
+
+    def _save_greedy_checkpoint(self, results, last_applied_order, resulting_order,
+                                dimension_pool, placed_positions):
+        self._save_checkpoint(
+            new_results=results,
+            last_applied_order=last_applied_order,
+            executor_state={"greedy_state": {
+                "resulting_order": list(resulting_order),
+                "dimension_pool": list(dimension_pool),
+                "placed_positions": list(placed_positions),
+            }})
 
 
 class PredefinedOrderExecutor(OptipyzerExecutor):

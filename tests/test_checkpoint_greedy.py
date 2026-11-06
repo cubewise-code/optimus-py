@@ -41,14 +41,11 @@ def test_fingerprint_stable_for_same_inputs():
 # state exactly as core does (set_resume_context feeds _resumed_results, and the
 # merged report is OptimusResult over [original] + resumed + new).
 #
-# Accepted resume-granularity characteristic (documented, out of scope to fix):
-# the search resumes slot-granular. A crash mid slot re-evaluates that whole
-# slot on resume; those
-# re-measured orders get fresh permutation_ids that _deduplicate_results (keyed
-# on id) will not collapse, so the merged report can carry duplicate rows. This
-# is OUTPUT-SAFE (the recommended best is unchanged). Assertions below therefore
-# check the recommended BEST outcome and that COMPLETED work is not re-run — not
-# exact evaluated-set equality.
+# The search resumes a slot from its first candidate, but a candidate measured
+# before the crash is injected from the resumed results rather than measured
+# again (set_resume_context indexes them by order), so the resumed run measures
+# only what the crashed one had not. Every drop point, against a real checkpoint
+# file, is covered in test_resume_integration.py.
 # ---------------------------------------------------------------------------
 
 
@@ -154,7 +151,9 @@ def test_greedy_resume_skips_placed_slots_and_matches_best(measure_orders):
     #     only the still-open positions (4, then 1) are.
     assert all(p not in locked for p in swept_positions)
     assert swept_positions == [4, 1]
-    assert len(resume_log) < len(ref_log)  # strictly less work than a full run
+    # exactly the work the crash left undone: nothing completed is measured again
+    assert not [o for o in resume_log if o in [list(r.dimension_order) for r in precrash]]
+    assert len(precrash) + len(resume_log) == len(ref_log)
     # (b) recommended best order is identical to the uninterrupted run
     resumed_best = _recommended_order(original, precrash, resumed_results)
     assert resumed_best == ref_best

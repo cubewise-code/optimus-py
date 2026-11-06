@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.1
+
+### Fixed
+
+- **A resumed optimization no longer measures orders a second time.** A run interrupted just after the greedy search finished a slot came back one slot short ("2 of 13 slots already placed" when three were), swept that slot again and counted past its own total (`Iteration 117 of 104`), with the repeated orders listed twice in the report. Resume now reuses every order the interrupted run completed, and the checkpoint records a slot as placed as soon as it has its winner. A resumed run measures each order once and ends on the same total as an uninterrupted one. ([#128](https://github.com/cubewise-code/optimus-py/issues/128))
+- **The resume log accounts for the in-flight order.** When the order that was mid-reorder at the interruption is recovered, the log now names its iteration (`Recovered in-flight order (Iteration 40)`), so a resume that restores 39 orders and continues at Iteration 41 no longer looks like it skipped one. ([#127](https://github.com/cubewise-code/optimus-py/issues/127))
+- **The report numbers orders the way the log does.** The HTML, CSV and Excel reports showed each order's internal ID, one higher than its iteration number, so the log's "Iteration 80 was the best one" was #81 in the report. The reports now show the iteration number, with the original order as 0.
+
 ## 2.0.0 - 2026-11-03
 
 OptimusPy finds a better storage dimension order for your TM1 cubes and can apply it. In 2.0.0 you work either in a web UI or on the command line, where each cube is described in a JSON file you can keep and run again. It supports TM1 v11 and v12, and it ships as a Windows or Linux bundle that runs without Python. New to OptimusPy? Start with the [User Guide](docs/guide/choose-a-mode.md).

@@ -135,16 +135,22 @@ class PermutationResult:
         return statistics.median(medians) if len(medians) > 1 else medians[0]
 
     @property
-    def label(self) -> str:
-        """Run label matching the progress logs ("Original Order" / "Iteration 5").
+    def iteration_number(self) -> int:
+        """The number a person sees for this order: 0 for the original, then 1, 2, ...
 
-        The original order always consumes permutation_id 1, so the iteration
-        number is permutation_id - 1 — the same value the executors log while
-        the order is being tested.
+        The original order always consumes permutation_id 1, so this is
+        permutation_id - 1 — the value the executors log while the order is
+        being tested. Every report prints this, never permutation_id, so the
+        log and the report agree on what "Iteration 80" is.
         """
+        return self.permutation_id - 1
+
+    @property
+    def label(self) -> str:
+        """Run label matching the progress logs ("Original Order" / "Iteration 5")."""
         if self.mode == ExecutionMode.ORIGINAL_ORDER:
             return "Original Order"
-        return f"Iteration {self.permutation_id - 1}"
+        return f"Iteration {self.iteration_number}"
 
     def stats_summary(self) -> str:
         """RAM / query / process stats in the same shape as the progress logs."""
@@ -164,7 +170,7 @@ class PermutationResult:
 
     def to_row(self, original_order_result: 'PermutationResult') -> List[str]:
         row = [
-            str(self.permutation_id),
+            str(self.iteration_number),
             self.mode.label,
             str(self.is_best)]
 
@@ -622,7 +628,7 @@ class OptimusResult:
             else:
                 y_value = round(r.ram_reduction, 4)
             chart_data.append({
-                "id": r.permutation_id,
+                "id": r.iteration_number,
                 "x": round(ram_gb, 4),
                 "y": round(y_value, 4),
                 "mode": r.mode.label,
@@ -635,7 +641,7 @@ class OptimusResult:
         for r in self.permutation_results:
             ram_gb = float(r.ram_usage) / (1024 ** 3)
             entry = {
-                "id": r.permutation_id,
+                "id": r.iteration_number,
                 "mode": r.mode.label,
                 "isBest": r.is_best,
                 "dims": list(r.dimension_order),
