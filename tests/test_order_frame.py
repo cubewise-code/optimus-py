@@ -9,6 +9,7 @@ from optimuspy.order_frame import (
     REASON_LOCKED_SLOT,
     REASON_NOT_A_PERMUTATION,
     REASON_POSITION_RULE,
+    REASON_STRING_LAST_SLOT,
 )
 
 STORAGE = ["Year", "Region", "Product", "Account", "Measure"]
@@ -245,3 +246,66 @@ def test_frame_copies_its_inputs():
     excluded.append("Product")
     assert f.storage_order == STORAGE
     assert f.movable_dimensions() == ["Year", "Product", "Account"]
+
+
+# --- a dimension with string elements never moves INTO the last slot (#141) ----
+#
+# TM1 refuses it on v11 and v12 alike ("ReorderDimensions: Last dimension has
+# strings and cannot be repositioned"), even when the cube's last dimension is
+# numeric and the slot is free. The shape is the Revenue cube from #141.
+
+REVENUE = ["organization", "Channel", "product", "Month", "Year", "Version", "Revenue"]
+REVENUE_STRINGS = ["Month", "Version"]
+
+
+def revenue_frame(**kwargs):
+    return OrderFrame(REVENUE, False, string_dimensions=REVENUE_STRINGS, **kwargs)
+
+
+def test_a_string_dimension_moved_into_the_last_slot_is_refused():
+    verdict = revenue_frame().admits(
+        ["organization", "Channel", "product", "Revenue", "Year", "Version", "Month"])
+    assert not verdict.admissible
+    assert verdict.code == REASON_STRING_LAST_SLOT
+    assert "'Month' has string elements" in verdict.reason
+
+
+def test_a_string_dimension_moves_freely_everywhere_but_the_last_slot():
+    f = revenue_frame()
+    assert f.admits(["Month", "Channel", "product", "organization", "Year", "Version", "Revenue"]).admissible
+    assert f.admits(["organization", "Channel", "product", "Version", "Year", "Month", "Revenue"]).admissible
+
+
+def test_a_numeric_dimension_can_take_the_free_last_slot():
+    assert revenue_frame().admits(
+        ["Revenue", "Channel", "product", "Month", "Year", "Version", "organization"]).admissible
+
+
+def test_can_be_last_answers_per_dimension():
+    f = revenue_frame()
+    assert [d for d in REVENUE if not f.can_be_last(d)] == ["Month", "Version"]
+
+
+def test_the_locked_dimension_is_a_string_dimension_that_stays_last():
+    f = OrderFrame(["Year", "Notes", "Measure"], True, string_dimensions=["Notes", "Measure"])
+    assert f.can_be_last("Measure")
+    assert not f.can_be_last("Notes")
+    # moving the locked one out still reports the lock, the stronger reason
+    assert f.admits(["Year", "Measure", "Notes"]).code == REASON_LOCKED_SLOT
+
+
+def test_a_rule_that_seats_a_string_dimension_last_is_reported():
+    f = revenue_frame(position_rules=[{"dimension": "Month", "position": "last"}])
+    [(index, message)] = f.validate_position_rules()
+    assert index == 0
+    assert "'Month' has string elements" in message
+
+
+def test_a_rule_that_pushes_a_string_dimension_into_the_last_slot_is_reported():
+    # Pinning Revenue first frees the last slot, and pre-application fills it
+    # with the next dimension back in storage order, which is Version.
+    f = revenue_frame(position_rules=[{"dimension": "Revenue", "position": "first"}])
+    assert f.pre_applied_order()[-1] == "Version"
+    [(index, message)] = f.validate_position_rules()
+    assert index == 0
+    assert "'Version'" in message and "last position" in message

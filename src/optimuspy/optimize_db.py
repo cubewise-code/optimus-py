@@ -48,6 +48,7 @@ from typing import Callable, List, Optional, Tuple
 from optimuspy import core
 from optimuspy.core import RESULT_PATH, _dimension_metadata
 from optimuspy.executors import OptimizationCancelled
+from optimuspy.order_frame import string_safe_order
 from optimuspy.metrics import (detect_is_v12, memory_by_cube_bytes, ram_source_ready,
                                read_cube_memory_bytes)
 from optimuspy.results import report_page
@@ -222,13 +223,16 @@ def resolve_target_order(record: dict, options: dict) -> Tuple[Optional[List[str
     if string_dims and options["string_policy"] == "skip_any":
         return None, "string_elements"
     if len(string_dims) > 1:
-        # TM1 keeps string values in the last dimension; with two string
-        # dimensions there is no safe placement, and it needs separate analysis.
+        # With two string dimensions at most one may sit last and the other can
+        # never go there (#141). Legal orders exist, but this pass doesn't plan
+        # them yet; the cube needs separate analysis.
         return None, "multiple_string_dims"
 
-    numeric = [d for d in dimensions if d not in string_dims]
-    numeric.sort(key=lambda d: (meta.get(d, {}).get("leaf_elements", 0), d))
-    target = numeric + string_dims
+    # Leaf count ascending, then TM1's string rule decides the last slot (#141):
+    # a string dimension already last is pinned there; one anywhere else may go
+    # anywhere but last, so the largest numeric dimension takes the slot.
+    by_size = sorted(dimensions, key=lambda d: (meta.get(d, {}).get("leaf_elements", 0), d))
+    target = string_safe_order(by_size, string_dims, dimensions[-1])
 
     if target == dimensions:
         return None, "already_in_target_order"

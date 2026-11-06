@@ -1,5 +1,7 @@
 # The storage order is the frame, and the last slot is the only thing locked in it
 
+> **Amended by [ADR-0006](0006-no-string-dimension-moves-into-the-last-slot.md).** The last slot is not the only thing TM1 guards: no dimension with string elements may be moved *into* it either. "Only the last slot is locked" still holds; "every position is free" on a numeric-last cube does not, and neither does the claim below that the heuristics' string-last rule is merely conservative.
+
 > **Note, [ADR-0005](0005-greedy-measures-every-candidate.md).** τ-pruning and the two greedy folds were later removed. The front/back split still comes from the full storage order (now `search.midpoint`), and it still decides which metric ranks each slot. Where this record says "both greedy folds", read "the greedy".
 
 ## Context

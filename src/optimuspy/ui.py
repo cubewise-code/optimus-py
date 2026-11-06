@@ -889,7 +889,7 @@ class OptimusPyHandler(BaseHTTPRequestHandler):
                 visible_order = tm1.cubes.get_dimension_names(cube_name=cube)
                 storage_order = tm1.cubes.get_storage_dimension_order(cube_name=cube)
                 dimensions_metadata = _collect_dimension_metadata(tm1, visible_order)
-                suggested = _compute_suggested_order(dimensions_metadata)
+                suggested = _compute_suggested_order(dimensions_metadata, storage_order)
             self._send_json(200, {
                 "cube": cube,
                 "storage_order": list(storage_order),

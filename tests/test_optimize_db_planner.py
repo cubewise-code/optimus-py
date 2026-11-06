@@ -79,11 +79,23 @@ def test_skip_any_skips_a_cube_with_string_elements():
 
 
 def test_pin_last_keeps_the_single_string_dimension_last():
-    record = cube("Comments", 5, ["Measure", "Time", "Product"], strings=["Measure"],
+    record = cube("Comments", 5, ["Time", "Product", "Measure"], strings=["Measure"],
                   leaves={"Time": 900, "Product": 40, "Measure": 12})
     target, reason = resolve_target_order(record, options(string_policy="pin_last"))
     assert reason is None
     assert target == ["Product", "Time", "Measure"]
+
+
+def test_pin_last_never_moves_a_string_dimension_into_the_last_slot():
+    # #141: TM1 refuses to move a dimension with string elements into the last
+    # slot. When it is not already there, it is sorted like any other dimension
+    # and the largest numeric dimension takes the last slot instead.
+    record = cube("Revenue", 5, ["Month", "Time", "Product"], strings=["Month"],
+                  leaves={"Time": 900, "Product": 40, "Month": 1200})
+    target, reason = resolve_target_order(record, options(string_policy="pin_last"))
+    assert reason is None
+    assert target == ["Product", "Month", "Time"]
+
 
 
 def test_two_string_dimensions_are_skipped_even_under_pin_last():

@@ -30,7 +30,7 @@ For an 8-dimension cube that's 7 evaluations, one per position other than the on
 
 ## Interaction with the locked slot
 
-The constraint is on the **slot**, not on the dimension: if the dimension sitting last in the storage order has string elements, that last slot is locked and nothing else can move into it. So on a cube with a locked slot, the sweep skips the last position and tests one fewer (6 positions on an 8-dimension cube). A dimension that carries string elements somewhere else in the order isn't special; it's tried in every open position like any other.
+The constraint is on the **slot**, not on the dimension: if the dimension sitting last in the storage order has string elements, that last slot is locked and nothing else can move into it. So on a cube with a locked slot, the sweep skips the last position and tests one fewer (6 positions on an 8-dimension cube). A dimension that carries string elements somewhere else in the order is tried in every open position except the last, because TM1 refuses to move a string dimension into the last slot. On a cube whose last dimension is numeric, optimizing such a dimension tests every position but the last.
 
 One thing to bear in mind is that if `optimize_dimension` names the locked dimension itself, every move of it is refused, so the run evaluates nothing and the log reports the skipped candidates. See [The Locked Slot](../concepts/string-element-constraint.md).
 

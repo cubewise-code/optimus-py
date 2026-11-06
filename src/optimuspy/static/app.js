@@ -95,6 +95,20 @@ const OptimusPy = (function () {
     }
     return e;
   }
+  // "Str" marks a dimension with string elements. TM1 constrains the last
+  // storage slot from both sides (#141), so the colour says which side applies:
+  // red, it's the last dimension and is locked there; orange, it moves freely
+  // but can never be placed last.
+  function strBadge(isLast, extraStyle) {
+    const attrs = {
+      className: `badge ${isLast ? "badge-error" : "badge-warning"} str-badge`,
+      title: isLast
+        ? "Has string elements and is the last dimension: locked there, it never moves"
+        : "Has string elements: it can move anywhere except the last position",
+    };
+    if (extraStyle) attrs.style = extraStyle;
+    return el("span", attrs, "Str");
+  }
   function formatBytes(bytes) {
     if (bytes < 1024) return bytes + " B";
     if (bytes < 1048576) return (bytes / 1024).toFixed(1) + " KB";
@@ -698,6 +712,7 @@ const OptimusPy = (function () {
   function createDimensionConfigurator({ dimensions, metadata, mode, onChange }) {
     // dimensions: [name, ...] in storage order, metadata: { name: { leaf_elements, has_strings, ... } }
     const _origDims = dimensions.map((name, i) => ({ name, meta: metadata[name] || {} }));
+    const _storageLast = dimensions[dimensions.length - 1];
     let _dims = _origDims.map((d, i) => ({ ...d, included: true, locked: false }));
     let _mode = mode;
     let _targetPosition = 1;                      // position mode: 1-based
@@ -767,7 +782,7 @@ const OptimusPy = (function () {
           metaWrap.appendChild(el("span", { className: "badge" }, `${dim.meta.leaf_elements.toLocaleString()} elem`));
         }
         if (dim.meta.has_strings) {
-          metaWrap.appendChild(el("span", { className: "dim-card-warning", html: Icons.alertTriangle + " Strings" }));
+          metaWrap.appendChild(strBadge(dim.name === _storageLast));
         }
         card.appendChild(metaWrap);
       }
@@ -1738,7 +1753,7 @@ const OptimusPy = (function () {
         },
         {
           icon: "&#x26A0;", title: "Watch for String Dimensions",
-          text: "TM1 requires the dimension with string elements to stay in the last position. This can prevent the optimal dimension from taking that spot. Best practice: separate string elements into a different cube."
+          text: "A dimension with string elements that sits last in the storage order stays there, and TM1 never lets any other dimension with string elements move into the last position. Either way this can keep the best dimension out of that spot. OptimusPy marks them with a Str badge: red when locked last, orange elsewhere. Best practice: separate string elements into a different cube."
         },
         {
           icon: "&#x1F4CA;", title: "Density Matters More Than Size",
@@ -1971,7 +1986,7 @@ const OptimusPy = (function () {
         meta.appendChild(el("span", null, `${c.dim_count || 0} dims`));
         meta.appendChild(el("span", null, `${(c.pct_of_total || 0).toFixed(1)}%`));
         if (c.already_optimized) meta.appendChild(el("span", { className: "badge badge-success", style: "font-size:9px;padding:0 4px" }, "opt"));
-        if (c.last_dim_has_strings) meta.appendChild(el("span", { className: "badge badge-warning", style: "font-size:9px;padding:0 4px" }, "str"));
+        if (c.last_dim_has_strings) meta.appendChild(strBadge(true, "font-size:9px;padding:0 4px"));
         item.appendChild(meta);
         container.appendChild(item);
       });
@@ -2228,7 +2243,7 @@ const OptimusPy = (function () {
         if (scanCandidate.last_dim_has_strings) {
           statsGrid.appendChild(el("div", { className: "stat-card", style: "flex:1;min-width:120px" },
             el("div", { className: "stat-label" }, "Last Dimension"),
-            el("div", { className: "stat-value" }, el("span", { className: "dim-card-warning", html: Icons.alertTriangle + " Has Strings" })),
+            el("div", { className: "stat-value" }, strBadge(true), " Locked last"),
           ));
         }
         statsCard.appendChild(statsGrid);
@@ -2360,7 +2375,7 @@ const OptimusPy = (function () {
           { key: "name", label: "Dimension" },
           { key: "leaf_elements", label: "Leaf Elements", align: "right", value: r => (r.leaf_elements || 0).toLocaleString() },
           { key: "has_strings", label: "Strings", render: r =>
-            r.has_strings ? el("span", { className: "dim-card-warning", html: Icons.alertTriangle + " Yes" }) : "No"
+            r.has_strings ? strBadge(r.position === orderedDims.length) : "No"
           },
           { key: "string_elements", label: "String Count", align: "right", value: r => r.string_elements || 0 },
         ],
